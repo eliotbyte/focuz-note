@@ -44,6 +44,13 @@ if ($waitSupported) {
   $exitCode = (docker inspect -f "{{.State.ExitCode}}" focuz-test-runner)
 }
 
+# If tests failed, dump useful logs before tearing everything down
+if ([int]$exitCode -ne 0) {
+  Write-Host "Tests failed (exit code $exitCode). Showing logs..." -ForegroundColor Red
+  try { docker compose -f docker-compose.test.yml logs --no-color test-runner | Write-Host } catch {}
+  try { docker compose -f docker-compose.test.yml logs --no-color test-api | Write-Host } catch {}
+}
+
 Write-Host "Cleaning up API test environment..." -ForegroundColor Green
 try { docker compose -f docker-compose.test.yml down -v --remove-orphans | Out-Null } catch {}
 

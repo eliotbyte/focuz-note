@@ -40,6 +40,8 @@ services:
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-me-please-0123456789abcdef}
       - APP_ENV=${APP_ENV:-production}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8082,http://127.0.0.1:8082}
+      - ALLOW_CREDENTIALS=${ALLOW_CREDENTIALS:-false}
       - MINIO_ENDPOINT=minio:9000
       - MINIO_EXTERNAL_ENDPOINT=${MINIO_EXTERNAL_ENDPOINT:-http://localhost:9000}
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
@@ -85,7 +87,7 @@ services:
       - focuz-network
 
   web:
-    profiles: ["prod"]
+    profiles: ["${COMPOSE_PROFILES:-prod}"]
     build:
       context: ./focuz-web
       dockerfile: Dockerfile
