@@ -40,7 +40,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-me-please-0123456789abcdef}
       - APP_ENV=${APP_ENV:-production}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081,http://localhost:5173,http://127.0.0.1:5173}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081,http://localhost:8082,http://127.0.0.1:8082,http://localhost:5173,http://127.0.0.1:5173}
       - ALLOW_CREDENTIALS=${ALLOW_CREDENTIALS:-false}
       - MINIO_ENDPOINT=minio:9000
       - MINIO_EXTERNAL_ENDPOINT=${MINIO_EXTERNAL_ENDPOINT:-http://localhost:9000}
@@ -61,7 +61,7 @@ services:
   swagger-ui:
     image: swaggerapi/swagger-ui
     ports:
-      - "8081:8080"
+      - "8082:8080"
     environment:
       SWAGGER_JSON: /foo/openapi.yaml
     volumes:
@@ -70,19 +70,18 @@ services:
       - focuz-network
     profiles: ["dev"]
 
-  web-dev:
-    profiles: ["dev"]
-    image: node:20.18.1-alpine
-    working_dir: /app
-    volumes:
-      - ./focuz-web:/app
-      - /app/node_modules
-    environment:
-      - NODE_ENV=development
-      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8080}
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+
+  web:
+    build:
+      context: ./focuz-web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
     ports:
-      - "5173:5173"
+      - "8081:80"
+    depends_on:
+      api:
+        condition: service_started
     networks:
       - focuz-network
 
