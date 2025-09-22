@@ -25,6 +25,8 @@ services:
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio-data:/data
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -48,6 +50,11 @@ services:
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_BUCKET=notes
       - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
+      # Rate limit toggles for dev
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-1}
+      - RATE_LIMIT_RPS=${RATE_LIMIT_RPS:-5}
+      - RATE_LIMIT_BURST=${RATE_LIMIT_BURST:-20}
+      - RATE_LIMIT_WHITELIST=${RATE_LIMIT_WHITELIST:-127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     depends_on:
       db:
         condition: service_healthy
@@ -77,6 +84,10 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        VITE_SYNC_INTERVAL_MS: ${VITE_SYNC_INTERVAL_MS:-60000}
+        VITE_SYNC_DEBOUNCE_MS: ${VITE_SYNC_DEBOUNCE_MS:-2000}
+        VITE_SYNC_WS_COOLDOWN_MS: ${VITE_SYNC_WS_COOLDOWN_MS:-3000}
+        VITE_SYNC_BACKOFF_MS: ${VITE_SYNC_BACKOFF_MS:-15000}
     ports:
       - "8081:80"
     depends_on:
@@ -91,4 +102,5 @@ networks:
     driver: bridge
 
 volumes:
-  db-data: 
+  db-data:
+  minio-data: 

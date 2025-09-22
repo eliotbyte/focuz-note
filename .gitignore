@@ -28,6 +28,7 @@ go.work
 *.swp
 *.swo
 *~
+.cursorrules
 
 # OS generated files
 .DS_Store
