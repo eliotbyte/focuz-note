@@ -3,7 +3,7 @@ services:
   # Test database - isolated from main app
   test-db:
     container_name: focuz-test-db
-    image: groonga/pgroonga:latest-alpine-15
+    image: postgres:15-alpine
     environment:
       POSTGRES_DB: focuz_test
       POSTGRES_USER: postgres

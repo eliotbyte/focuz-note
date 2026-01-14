@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   db:
-    image: groonga/pgroonga:latest-alpine-15
+    image: postgres:15-alpine
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-focuz_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
@@ -84,6 +84,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        VITE_APP_ENV: ${APP_ENV:-production}
         VITE_SYNC_INTERVAL_MS: ${VITE_SYNC_INTERVAL_MS:-60000}
         VITE_SYNC_DEBOUNCE_MS: ${VITE_SYNC_DEBOUNCE_MS:-2000}
         VITE_SYNC_WS_COOLDOWN_MS: ${VITE_SYNC_WS_COOLDOWN_MS:-3000}

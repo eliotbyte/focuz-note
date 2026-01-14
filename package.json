@@ -1,4 +1,7 @@
 {
+  "name": "focuz-note",
+  "private": true,
+  "version": "0.1.0-alpha",
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
