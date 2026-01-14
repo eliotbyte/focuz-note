@@ -1,0 +1,10 @@
+[submodule "focuz-api"]
+	path = focuz-api
+	url = https://github.com/eliotbyte/focuz-api.git
+	branch = main
+
+[submodule "focuz-web"]
+	path = focuz-web
+	url = https://github.com/eliotbyte/focuz-web.git
+	branch = main
+
