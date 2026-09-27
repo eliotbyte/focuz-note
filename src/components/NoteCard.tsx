@@ -59,7 +59,7 @@ export default function NoteCard({
 
   return (
     <SurfaceNoPad className="relative group">
-      <div className="p-[25px] min-w-0 space-y-5">
+      <div className="p-[var(--pad-surface)] min-w-0 space-y-3">
         {/* Reply preview (pill) */}
         {showParentPreview && note.parentId != null && parentNote && !parentNote.deletedAt && (
           <div className="min-w-0 max-w-full">
@@ -81,7 +81,7 @@ export default function NoteCard({
 
         {/* Activities (pills) */}
         {activities.length > 0 && (
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
             {activities.map((a, i) => (
               <Pill
                 key={`${a.serverId ?? a.id}-${i}`}
@@ -105,7 +105,7 @@ export default function NoteCard({
 
         {/* Tags (pills) */}
         {note.tags?.length ? (
-          <div className="relative z-20 flex flex-wrap gap-3">
+          <div className="relative z-20 flex flex-wrap gap-1.5">
             {note.tags.filter(t => !(hiddenTags?.has(t))).map((t, i) => (
               <Pill
                 key={`${t}-${i}`}
@@ -124,7 +124,7 @@ export default function NoteCard({
           <div className="min-w-0">
             {hasReplies && (
               <button className="note-footer inline-flex items-baseline gap-2 text-primary hover:underline" type="button" onClick={() => onOpenThread && onOpenThread(note.id!)}>
-                <SubdirectoryArrowRightRoundedIcon fontSize="inherit" className="icon-35 icon-shift-down-15 text-secondary" />
+                <SubdirectoryArrowRightRoundedIcon fontSize="inherit" className="icon-sm icon-shift-down-15 text-secondary" />
                 <span>{repliesCount} {repliesCount === 1 ? 'reply' : 'replies'}</span>
               </button>
             )}
@@ -136,10 +136,10 @@ export default function NoteCard({
             <span>{formatRelativeShort(note.createdAt)}</span>
             <span aria-label={syncStage === 'pending' ? 'Not synced yet' : syncStage === 'syncing' ? 'Syncing' : 'Synced'}>
               {syncStage === 'pending'
-                ? <DoneRoundedIcon fontSize="inherit" className="icon-35 text-secondary" />
+                ? <DoneRoundedIcon fontSize="inherit" className="icon-sm text-secondary" />
                 : syncStage === 'syncing'
-                  ? <DoneRoundedIcon fontSize="inherit" className="icon-35 text-secondary" />
-                  : <DoneAllRoundedIcon fontSize="inherit" className="icon-35 text-secondary" />}
+                  ? <DoneRoundedIcon fontSize="inherit" className="icon-sm text-secondary" />
+                  : <DoneAllRoundedIcon fontSize="inherit" className="icon-sm text-secondary" />}
             </span>
           </div>
         </div>
@@ -149,14 +149,14 @@ export default function NoteCard({
       {onOpenThread && (
         <div
           className={[
-            'absolute inset-x-0 bottom-0 z-10 h-[118px] transition-opacity',
+            'absolute inset-x-0 bottom-0 z-10 h-[64px] transition-opacity',
             (menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'),
           ].join(' ')}
           style={{
             background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 100%)',
             backdropFilter: 'blur(2px)',
-            borderBottomLeftRadius: '15px',
-            borderBottomRightRadius: '15px',
+            borderBottomLeftRadius: 'var(--radius)',
+            borderBottomRightRadius: 'var(--radius)',
             WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 55%, black 100%)',
             maskImage: 'linear-gradient(to bottom, transparent 0%, black 55%, black 100%)',
           }}
@@ -170,12 +170,12 @@ export default function NoteCard({
           />
 
           {/* menu trigger (the circle) */}
-          <div className="absolute right-[25px] bottom-[20px] z-20">
+          <div className="absolute right-3 bottom-2.5 z-20">
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="flex items-center justify-center w-[52px] h-[52px] rounded-full"
+                  className="flex items-center justify-center w-8 h-8 rounded-full"
                   style={{
                     background: 'rgb(var(--c-surface))',
                     boxShadow: '0 0 8px 8px rgb(var(--c-surface) / 0.85)',

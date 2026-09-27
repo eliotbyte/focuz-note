@@ -3,7 +3,8 @@ import { jobs, kv } from '../data'
 import type { JobKind } from './types'
 
 const AUTH_REQUIRED_LS = 'authRequired'
-const LAST_SYNC_KV = 'lastSyncAt'
+// Wall-clock time of the last successful sync on this device (not the server checkpoint).
+export const LAST_SYNC_OK_KV = 'lastSyncOkAt'
 
 export interface AppStateSnapshot {
   online: boolean
@@ -11,6 +12,10 @@ export interface AppStateSnapshot {
   authRequired: boolean
   lastSyncAt: string | null
   syncError: string | null
+  // false after a sync attempt could not reach the API (down, timeout, DNS...)
+  serverReachable: boolean
+  // when the next automatic retry is scheduled after a failure
+  nextRetryAt: string | null
   // One-shot-ish events as state stamps (UI decides how/when to render).
   lastConflictAt: string | null
   lastConflictCount: number
@@ -27,6 +32,8 @@ let state: AppStateSnapshot = {
   authRequired: false,
   lastSyncAt: null,
   syncError: null,
+  serverReachable: true,
+  nextRetryAt: null,
   lastConflictAt: null,
   lastConflictCount: 0,
   jobsFailedCount: 0,
@@ -51,6 +58,8 @@ function setState(partial: Partial<AppStateSnapshot>) {
     next.authRequired === state.authRequired &&
     next.lastSyncAt === state.lastSyncAt &&
     next.syncError === state.syncError &&
+    next.serverReachable === state.serverReachable &&
+    next.nextRetryAt === state.nextRetryAt &&
     next.lastConflictAt === state.lastConflictAt &&
     next.lastConflictCount === state.lastConflictCount &&
     next.jobsFailedCount === state.jobsFailedCount &&
@@ -80,7 +89,7 @@ export function useAppState<T>(selector: (s: AppStateSnapshot) => T): T {
 }
 
 async function refreshLastSyncAt(): Promise<void> {
-  const v = await kv.get<string>(LAST_SYNC_KV)
+  const v = await kv.get<string>(LAST_SYNC_OK_KV)
   setState({ lastSyncAt: v ?? null })
 }
 
@@ -140,6 +149,13 @@ export function setSyncing(syncing: boolean): void {
 
 export function setSyncError(message: string | null): void {
   setState({ syncError: message })
+}
+
+/** Sync-engine status fields; the leader tab broadcasts them to other tabs. */
+export type SyncStatePatch = Partial<Pick<AppStateSnapshot, 'syncing' | 'syncError' | 'serverReachable' | 'nextRetryAt' | 'lastSyncAt'>>
+
+export function patchSyncState(patch: SyncStatePatch): void {
+  setState(patch)
 }
 
 export function markConflictsDetected(count: number): void {

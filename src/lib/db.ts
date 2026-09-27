@@ -139,9 +139,76 @@ class AppDatabase extends Dexie {
         })
       } catch {}
     })
+    // Notes: parentId becomes strictly a *local* id (it used to hold a server id for pulled notes
+    // and a local id for notes created on this device), plus sync bookkeeping fields.
+    // Only non-indexed fields change, the store layout stays the same.
+    this.version(9).stores({
+      spaces: '++id, serverId, name, createdAt, modifiedAt, deletedAt, isDirty',
+      notes: '++id, serverId, clientId, spaceId, parentId, date, createdAt, modifiedAt, deletedAt, isDirty',
+      noteConflicts: '++id, noteLocalId, noteServerId, isResolved, createdAt',
+      tags: '++id, serverId, spaceId, name, createdAt, modifiedAt, deletedAt, isDirty',
+      filters: '++id, serverId, clientId, spaceId, parentId, name, createdAt, modifiedAt, deletedAt, isDirty',
+      activities: '++id, serverId, noteId, typeId, createdAt, modifiedAt, deletedAt, isDirty',
+      activityTypes: '++id, serverId, spaceId, name, valueType, createdAt, modifiedAt, deletedAt',
+      charts: '++id, serverId, noteId, createdAt, modifiedAt, deletedAt, isDirty',
+      meta: 'key',
+      attachments: '++id, serverId, clientId, noteId, fileName, createdAt, modifiedAt, deletedAt, isDirty',
+      jobs: '++id, kind, attachmentId, priority, status, attempts, createdAt, updatedAt',
+    }).upgrade(async tx => {
+      const notes = await tx.table('notes').toArray() as NoteRecord[]
+      for (const u of planNoteParentMigration(notes)) {
+        await tx.table('notes').update(u.id, u.changes)
+      }
+      await tx.table('filters').toCollection().modify((f: FilterRecord) => {
+        if (f.serverId && f.isDirty === 0 && !f.serverModifiedAt) f.serverModifiedAt = f.modifiedAt
+      })
+      // Give stuck/failed jobs a fresh start with the new retry policy.
+      await tx.table('jobs').toCollection().modify((j: JobRecord) => {
+        if (j.status !== 'pending') { j.status = 'pending'; j.attempts = 0 }
+        j.nextAttemptAt = null
+      })
+    })
     // Ensure the connection closes on external version changes (e.g., deleteDatabase in another tab)
     try { this.on('versionchange', () => { try { this.close() } catch {} }) } catch {}
   }
+}
+
+/**
+ * Computes the v9 note migration. Before v9, `parentId` held the server id for notes that came
+ * from the server (pull overwrote it) and a local id for notes created on this device and not
+ * synced yet. After v9 it is always a local id; the server id is kept in `parentServerId`.
+ * Exported for tests.
+ */
+export function planNoteParentMigration(notes: NoteRecord[]): Array<{ id: number; changes: Partial<NoteRecord> }> {
+  const byLocal = new Map<number, NoteRecord>()
+  const localByServer = new Map<number, number>()
+  for (const n of notes) {
+    if (n.id != null) byLocal.set(n.id, n)
+    if (n.serverId != null && n.id != null) localByServer.set(n.serverId, n.id)
+  }
+  const out: Array<{ id: number; changes: Partial<NoteRecord> }> = []
+  for (const n of notes) {
+    if (n.id == null) continue
+    const changes: Partial<NoteRecord> = {}
+    const pid = n.parentId ?? null
+    if (pid != null) {
+      if (n.serverId != null) {
+        // Came from the server: parentId is a server id.
+        const local = localByServer.get(pid)
+        changes.parentId = local ?? null
+        changes.parentServerId = pid
+      } else {
+        // Local draft: parentId already is a local id.
+        const parent = byLocal.get(pid)
+        changes.parentServerId = parent?.serverId ?? null
+      }
+    } else {
+      changes.parentServerId = null
+    }
+    if (n.serverId != null && n.isDirty === 0 && !n.serverModifiedAt) changes.serverModifiedAt = n.modifiedAt
+    out.push({ id: n.id, changes })
+  }
+  return out
 }
 
 export let db = new AppDatabase()
@@ -231,20 +298,11 @@ export async function ensureDbOpen(): Promise<void> {
 
   try {
     await openAndValidate()
-    return
   } catch {
-    // First try: close and recreate Dexie instance (should trigger upgrade without data loss).
+    // Close and recreate the Dexie instance (triggers the upgrade without data loss).
+    // Never delete the database here: it may hold notes that were not synced yet.
     try { db.close() } catch {}
     db = new AppDatabase()
-    try {
-      await openAndValidate()
-      return
-    } catch {
-      // Last resort: drop DB and recreate (data may be lost, but avoids a broken offline state loop).
-      try { await deleteDatabaseWithRetry(5000) } catch {}
-      try { db.close() } catch {}
-      db = new AppDatabase()
-      await db.open()
-    }
+    await openAndValidate()
   }
 }

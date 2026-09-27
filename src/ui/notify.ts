@@ -21,3 +21,12 @@ export function notifyUndoable(message: string, action: { label: string; onClick
   })
 }
 
+
+export function notifyUpdateAvailable(onApply: () => void) {
+  return toast('Доступно обновление', {
+    id: 'pwa-update-available',
+    description: 'Обновление будет применено автоматически.',
+    duration: 3500,
+    action: { label: 'Обновить', onClick: onApply },
+  })
+}

@@ -31,7 +31,7 @@ export const DialogContent = React.forwardRef<
         ref={ref}
         className={cn(
           'fixed left-1/2 top-1/2 z-[100] w-[min(92vw,32rem)] -translate-x-1/2 -translate-y-1/2',
-          'rounded-[15px] p-0',
+          'rounded-[var(--radius)] p-0',
           'surface',
           className,
         )}

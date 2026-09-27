@@ -1,0 +1,163 @@
+import { test, expect, type Page } from '@playwright/test'
+import { seed } from './seed.mjs'
+
+const API = process.env.E2E_API_URL || 'http://localhost:8080'
+const SHOTS = process.env.E2E_SHOTS_DIR // optional: save screenshots for review
+
+async function shot(page: Page, name: string) {
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` })
+}
+
+async function makeWebp(page: Page, w = 900, h = 600): Promise<Buffer> {
+  const b64 = await page.evaluate(async ([w, h]) => {
+    const c = document.createElement('canvas'); c.width = w; c.height = h
+    const g = c.getContext('2d')!
+    const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, '#0ea5e9'); grd.addColorStop(1, '#6366f1')
+    g.fillStyle = grd; g.fillRect(0, 0, w, h)
+    g.fillStyle = 'rgba(255,255,255,.85)'; g.font = 'bold 64px sans-serif'; g.fillText('focuz', w / 2 - 90, h / 2 + 20)
+    const blob: Blob = await new Promise(r => c.toBlob(b => r(b!), 'image/webp', 0.8))
+    const buf = new Uint8Array(await blob.arrayBuffer()); let s = ''; for (const x of buf) s += String.fromCharCode(x); return btoa(s)
+  }, [w, h])
+  return Buffer.from(b64, 'base64')
+}
+
+async function signIn(page: Page, token: string) {
+  await page.goto('/')
+  await page.evaluate((t) => { localStorage.clear(); localStorage.setItem('authToken', t); localStorage.setItem('authUsername', 'demo') }, token)
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: /Sync status: Synced/ })).toBeVisible({ timeout: 20000 })
+}
+
+async function apiGet(token: string, path: string) {
+  const res = await fetch(API + path, { headers: { Authorization: `Bearer ${token}` } })
+  return (await res.json()).data
+}
+
+test('feed, compact layout and sync status', async ({ page }) => {
+  await page.goto('/')
+  const s = await seed(API, undefined, await makeWebp(page))
+  await signIn(page, s.token)
+  await expect(page.getByText('Заметка про PWA')).toBeVisible()
+  await expect(page.locator('img[alt="photo.webp"]').first()).toBeVisible({ timeout: 15000 })
+  // Body text is desktop-sized now (was 24px).
+  const fontSize = await page.evaluate(() => getComputedStyle(document.body).fontSize)
+  expect(fontSize).toBe('15px')
+  await shot(page, '01-feed-1440')
+
+  await page.getByRole('button', { name: /Sync status/ }).click()
+  await expect(page.getByText('Everything is saved on the server.')).toBeVisible()
+  await shot(page, '02-status-popover')
+  await page.keyboard.press('Escape')
+
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await shot(page, '03-feed-1920')
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await shot(page, '04-feed-1280')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await shot(page, '05-mobile')
+  await page.getByRole('button', { name: 'Open spaces' }).click()
+  await expect(page.getByRole('tree', { name: 'Saved filters' }).last()).toBeVisible()
+  await shot(page, '06-mobile-drawer')
+})
+
+test('filter tree: collapsed by default, remembers expanded branches, scrolls', async ({ page }) => {
+  await page.goto('/')
+  const s = await seed(API)
+  await page.setViewportSize({ width: 1440, height: 640 })
+  await signIn(page, s.token)
+  const tree = page.getByRole('tree', { name: 'Saved filters' })
+  // Only roots are visible by default.
+  await expect(tree.getByRole('treeitem', { name: 'Работа' })).toBeVisible()
+  await expect(tree.getByRole('treeitem', { name: 'Проекты' })).toHaveCount(0)
+
+  await tree.getByRole('treeitem', { name: 'Работа' }).getByRole('button', { name: 'Expand' }).click()
+  await tree.getByRole('treeitem', { name: 'Проекты' }).getByRole('button', { name: 'Expand' }).click()
+  await tree.getByRole('treeitem', { name: 'Focuz' }).getByRole('button', { name: 'Expand' }).click()
+  await tree.getByRole('treeitem', { name: 'Личное' }).getByRole('button', { name: 'Expand' }).click()
+  await tree.getByRole('treeitem', { name: 'Здоровье' }).getByRole('button', { name: 'Expand' }).click()
+  await tree.getByRole('treeitem', { name: 'Чтение' }).getByRole('button', { name: 'Expand' }).click()
+  await expect(tree.getByRole('treeitem', { name: 'Синхронизация' })).toBeVisible()
+  await shot(page, '07-filters-expanded')
+
+  // The list scrolls when it is taller than the sidebar.
+  const scroll = await tree.evaluate(el => { el.scrollTop = 10000; return { top: el.scrollTop, overflow: el.scrollHeight > el.clientHeight } })
+  expect(scroll.overflow).toBe(true)
+  expect(scroll.top).toBeGreaterThan(0)
+  await expect(tree.getByRole('treeitem', { name: 'Входящие' })).toBeInViewport()
+  await shot(page, '08-filters-scrolled')
+
+  await page.reload()
+  await expect(tree.getByRole('treeitem', { name: 'Синхронизация' })).toBeVisible()
+  await expect(tree.getByRole('treeitem', { name: 'Кухня' })).toHaveCount(0)
+})
+
+test('paste an image from the clipboard into a new note', async ({ page }) => {
+  await page.goto('/')
+  const s = await seed(API)
+  await signIn(page, s.token)
+  const webp = await makeWebp(page, 800, 600)
+
+  await page.getByRole('button', { name: 'Add note…' }).click()
+  const textarea = page.getByPlaceholder(/Add note/)
+  await textarea.fill('Скриншот из буфера обмена')
+  await textarea.evaluate((el, b64) => {
+    const bin = atob(b64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const dt = new DataTransfer()
+    dt.items.add(new File([bytes], 'image.png', { type: 'image/webp' }))
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+  }, webp.toString('base64'))
+  await expect(page.getByRole('button', { name: 'Remove attachment' })).toHaveCount(1, { timeout: 10000 })
+  await shot(page, '09-paste-image')
+  await page.getByRole('button', { name: 'Create' }).click()
+
+  // Note is shown immediately and the image reaches the server.
+  await expect(page.getByText('Скриншот из буфера обмена')).toBeVisible()
+  await expect.poll(async () => {
+    const data = await apiGet(s.token, '/sync?since=1970-01-01T00:00:00Z')
+    const n = (data.notes ?? []).find((x: any) => x.text === 'Скриншот из буфера обмена')
+    return n?.attachments?.length ?? 0
+  }, { timeout: 20000 }).toBe(1)
+})
+
+test('server loss: data stays local, status explains it, sync resumes', async ({ page }) => {
+  await page.goto('/')
+  const s = await seed(API)
+  await signIn(page, s.token)
+
+  await page.route(`${API}/**`, r => r.abort('connectionrefused'))
+  await page.routeWebSocket(/\/ws/, ws => ws.close())
+  await page.getByRole('button', { name: 'Add note…' }).click()
+  await page.getByPlaceholder(/Add note/).fill('Написано без сервера')
+  await page.getByRole('button', { name: 'Create' }).click()
+  await expect(page.getByText('Написано без сервера')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Sync status: Server unreachable/ })).toBeVisible({ timeout: 15000 })
+  await page.getByRole('button', { name: /Sync status/ }).click()
+  await expect(page.getByText('Cannot reach the server.', { exact: false }).first()).toBeVisible()
+  await shot(page, '10-server-unreachable')
+
+  await page.unroute(`${API}/**`)
+  await page.getByRole('button', { name: 'Sync now' }).click()
+  await expect(page.getByRole('button', { name: /Sync status: Synced/ })).toBeVisible({ timeout: 20000 })
+  const data = await apiGet(s.token, '/sync?since=1970-01-01T00:00:00Z')
+  expect((data.notes ?? []).filter((n: any) => n.text === 'Написано без сервера')).toHaveLength(1)
+})
+
+test('replies stay attached to their parent on another device', async ({ page, browser }) => {
+  await page.goto('/')
+  const s = await seed(API)
+  await signIn(page, s.token)
+  // Reply to a note on device A.
+  await page.locator('li', { hasText: 'Купить: молоко' }).getByRole('button', { name: 'Open note' }).click({ force: true })
+  await page.getByRole('button', { name: 'Reply…' }).click()
+  await page.getByPlaceholder('Reply…').fill('И ещё сыр')
+  await page.getByRole('button', { name: 'Reply', exact: true }).click()
+  await expect(page.getByRole('button', { name: /Sync status: Synced/ })).toBeVisible({ timeout: 20000 })
+
+  // Device B: fresh browser profile.
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } })
+  const b = await ctx.newPage()
+  await signIn(b, s.token)
+  await b.locator('li', { hasText: 'Купить: молоко' }).getByRole('button', { name: 'Open note' }).click({ force: true })
+  await expect(b.getByText('И ещё сыр')).toBeVisible()
+  await ctx.close()
+})

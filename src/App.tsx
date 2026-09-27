@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { NoteRecord, FilterRecord, SpaceRecord } from './lib/types'
-import { ensureDefaultSpace, getCurrentSpaceId, runSync, scheduleAutoSync, login, register, isAuthenticated, logout, deleteNote, getLastUsername, addLocalAttachment, teardownSync, purgeAndLogout } from './lib/sync'
+import { ensureDefaultSpace, getCurrentSpaceId, runSync, scheduleAutoSync, login, register, isAuthenticated, logout, deleteNote, getLastUsername, addLocalAttachment, teardownSync, purgeAndLogout, countUnsyncedChanges } from './lib/sync'
 import { updateNoteLocal, createFilterLocal, updateFilterLocal } from './lib/sync'
 import { searchNotes, ensureNoteIndexForSpace, initSearch } from './lib/search'
 import { activityTypes as activityTypesRepo, activities as activitiesRepo, filters as filtersRepo, kv, notes as notesRepo, spaces as spacesRepo } from './data'
@@ -15,9 +15,9 @@ import { AppToaster } from './ui/toaster'
 import NoteEditor, { type NoteEditorValue } from './components/NoteEditor'
 import NoteCard from './components/NoteCard'
 import TagsInput from './components/TagsInput'
+import FiltersTree from './components/FiltersTree'
 import ActivitiesPicker from './components/ActivitiesPicker'
 import { applyStoredTheme, setStoredTheme } from './lib/theme'
-import FilterAltRoundedIcon from '@mui/icons-material/FilterAltRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
@@ -39,7 +39,7 @@ function TopBar({
   onBack?: () => void
 }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)_340px] gap-[40px] items-center">
+    <div className="grid grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)] lg:grid-cols-[250px_minmax(0,1fr)_270px] xl:grid-cols-[270px_minmax(0,1fr)_290px] gap-6 items-center">
       <div className="flex items-center gap-3">
         {isThread ? (
           <button className="icon-btn icon-35" onClick={onBack} type="button" aria-label="Back">
@@ -53,7 +53,7 @@ function TopBar({
         <h1 className="text-title text-primary">focuz</h1>
       </div>
       <div className="hidden md:block" />
-      <div className="flex items-center justify-end gap-9">
+      <div className="flex items-center justify-end gap-2">
         <SystemStatusInline />
         <button className="icon-btn icon-35" onClick={onOpenSettings} type="button" aria-label="Settings">
           <SettingsRoundedIcon fontSize="inherit" />
@@ -75,11 +75,11 @@ function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="overflow-hidden">
-        <div className="space-y-5">
+        <div className="space-y-4">
           <DialogTitle>Settings</DialogTitle>
           <div className="flex items-center justify-between gap-6">
             <label className="text-secondary">Theme</label>
-            <select className="input w-[220px]" value={theme} onChange={e => setTheme(e.target.value)}>
+            <select className="input w-[180px]" value={theme} onChange={e => setTheme(e.target.value)}>
               <option value="dark">Dark</option>
               <option value="light">Light</option>
             </select>
@@ -261,7 +261,7 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
   )
 }
 
-function SpaceDrawer({ open, onClose, currentId, onSelected }: { open: boolean; onClose: () => void; currentId?: number | null; onSelected?: (id: number) => void }) {
+function SpaceDrawer({ open, onClose, currentId, onSelected, children }: { open: boolean; onClose: () => void; currentId?: number | null; onSelected?: (id: number) => void; children?: ReactNode }) {
   const spaces = useLiveQuery(() => spacesRepo.listAll(), []) ?? []
   async function selectSpace(id: number) {
     await kv.set('currentSpaceId', id)
@@ -273,23 +273,23 @@ function SpaceDrawer({ open, onClose, currentId, onSelected }: { open: boolean; 
     <div className={`fixed inset-0 z-[80] transition ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/60 ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <aside
-        className={`absolute left-0 top-0 h-full w-72 ${open ? '' : '-translate-x-full'} transition-transform`}
+        className={`absolute left-0 top-0 h-full w-72 max-w-[85vw] flex flex-col ${open ? '' : '-translate-x-full'} transition-transform`}
         style={{
           background: 'rgb(var(--c-surface))',
           boxShadow: 'var(--shadow-surface)',
-          borderTopRightRadius: '15px',
-          borderBottomRightRadius: '15px',
+          borderTopRightRadius: 'var(--radius)',
+          borderBottomRightRadius: 'var(--radius)',
         }}
       >
-        <div className="p-[25px]">
-          <h2 className="text-title text-muted mb-4">Spaces</h2>
-          <ul className="space-y-3">
+        <div className="p-4">
+          <h2 className="text-title text-muted mb-3">Spaces</h2>
+          <ul className="space-y-1">
             {spaces.map((s: SpaceRecord) => (
               <li key={s.id}>
                 <button
                   type="button"
                   className={[
-                    'w-full text-left px-3 py-3 rounded-[15px] transition-colors',
+                    'w-full text-left px-3 py-1.5 rounded-[var(--radius-control)] transition-colors',
                     (currentId === s.id ? 'text-primary' : 'text-secondary hover:text-primary'),
                   ].join(' ')}
                   style={currentId === s.id ? { background: 'rgba(var(--c-text) / 0.03)' } : undefined}
@@ -301,296 +301,8 @@ function SpaceDrawer({ open, onClose, currentId, onSelected }: { open: boolean; 
             ))}
           </ul>
         </div>
+        {children ? <div className="md:hidden flex-1 min-h-0 px-2 pb-3">{children}</div> : null}
       </aside>
-    </div>
-  )
-}
-
-function FiltersList({
-  spaceId,
-  selectedId,
-  isNoFiltersActive,
-  onSelect,
-  onClearAll,
-}: {
-  spaceId: number
-  selectedId?: number | null
-  isNoFiltersActive: boolean
-  onSelect: (f: FilterRecord | null) => void
-  onClearAll: () => void
-}) {
-  const filters = useLiveQuery(() => filtersRepo.listActiveBySpace(spaceId), [spaceId]) ?? []
-  const [collapsed, setCollapsed] = useState<Record<number, boolean>>({})
-  const [manage, setManage] = useState(false)
-  const [dragId, setDragId] = useState<number | null>(null)
-  const [dropOver, setDropOver] = useState<{ id: number; pos: 'before' | 'after' | 'inside' } | null>(null)
-  const ref = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!manage) return
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current) return
-      if (!ref.current.contains(e.target as Node)) setManage(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => { document.removeEventListener('mousedown', onDown) }
-  }, [manage])
-
-  type TreeNode = { rec: FilterRecord; id: number; serverId: number | null; clientId?: string | null; parentServerId: number | null; parentClientId?: string | null; depth: number; children: TreeNode[] }
-  const treeRoots = useMemo(() => {
-    const byLocal = new Map<number, FilterRecord>()
-    const byServer = new Map<number, FilterRecord>()
-    const byClient = new Map<string, FilterRecord>()
-    for (const f of filters) {
-      if (f.id) byLocal.set(f.id, f)
-      if (typeof f.serverId === 'number') byServer.set(f.serverId!, f)
-      if (f.clientId) byClient.set(f.clientId, f)
-    }
-    const nodesByLocal = new Map<number, TreeNode>()
-    const roots: TreeNode[] = []
-    function ensureNode(f: FilterRecord): TreeNode {
-      const key = f.id!
-      let n = nodesByLocal.get(key)
-      if (n) return n
-      n = { rec: f, id: f.id!, serverId: f.serverId ?? null, clientId: f.clientId ?? null, parentServerId: f.parentId ?? null, parentClientId: (f.params as any)?._parentClientId ?? null, depth: 0, children: [] }
-      nodesByLocal.set(key, n)
-      return n
-    }
-    for (const f of filters) ensureNode(f)
-    for (const n of nodesByLocal.values()) n.children = []
-    for (const n of nodesByLocal.values()) {
-      let parent: TreeNode | null = null
-      if (n.parentServerId != null) {
-        const p = byServer.get(n.parentServerId)
-        if (p?.id) parent = nodesByLocal.get(p.id) || null
-      } else if (n.parentClientId) {
-        const p = byClient.get(n.parentClientId)
-        if (p?.id) parent = nodesByLocal.get(p.id) || null
-      }
-      if (parent) parent.children.push(n)
-      else roots.push(n)
-    }
-    // sort helper by params._order then name then createdAt
-    const cmp = (a: TreeNode, b: TreeNode) => {
-      const ao = ((a.rec.params as any)?._order ?? 1e9) as number
-      const bo = ((b.rec.params as any)?._order ?? 1e9) as number
-      if (ao !== bo) return ao - bo
-      const an = a.rec.name.toLowerCase()
-      const bn = b.rec.name.toLowerCase()
-      if (an !== bn) return an < bn ? -1 : 1
-      return a.rec.createdAt.localeCompare(b.rec.createdAt)
-    }
-    function markDepth(node: TreeNode, d: number) {
-      node.depth = d
-      node.children.sort(cmp)
-      for (const ch of node.children) markDepth(ch, d + 1)
-    }
-    roots.sort(cmp)
-    for (const r of roots) markDepth(r, 0)
-    return roots
-  }, [JSON.stringify(filters)])
-
-  const flat = useMemo(() => {
-    const out: Array<{ node: TreeNode; hidden: boolean }> = []
-    const walk = (n: TreeNode, hidden: boolean) => {
-      out.push({ node: n, hidden })
-      const isCollapsed = !!collapsed[n.id]
-      for (const ch of n.children) walk(ch, hidden || isCollapsed)
-    }
-    for (const r of treeRoots) walk(r, false)
-    return out
-  }, [treeRoots, collapsed])
-
-  async function toggleCollapse(id: number) {
-    setCollapsed(s => ({ ...s, [id]: !s[id] }))
-  }
-
-  async function deleteWithChildren(localId: number) {
-    // collect descendants
-    const ids: number[] = []
-    const byId = new Map<number, TreeNode>(flat.map(x => [x.node.id, x.node]))
-    function collect(id: number) {
-      ids.push(id)
-      const n = byId.get(id)
-      if (!n) return
-      for (const ch of n.children) collect(ch.id)
-    }
-    collect(localId)
-    await filtersRepo.softDeleteMany(ids)
-    notifyUndoable('Filters deleted', { label: 'Undo', onClick: () => filtersRepo.restoreDeletedMany(ids) })
-    if (selectedId && ids.includes(selectedId)) onSelect(null)
-  }
-
-  useEffect(() => {
-    const handler = (e: CustomEvent) => {
-      const id = (e.detail?.id as number) || 0
-      if (id) deleteWithChildren(id)
-    }
-    window.addEventListener('focuz:delete-filter-request', handler as any)
-    return () => { window.removeEventListener('focuz:delete-filter-request', handler as any) }
-  }, [flat, selectedId])
-
-  async function applyReparentAndOrder(dragLocalId: number, targetLocalId: number, pos: 'before' | 'after' | 'inside') {
-    const drag = flat.find(x => x.node.id === dragLocalId)?.node
-    const target = flat.find(x => x.node.id === targetLocalId)?.node
-    if (!drag || !target) return
-    // Prevent dropping into own subtree
-    if (dragLocalId === targetLocalId) return
-    let ancestor: TreeNode | undefined = target
-    while (ancestor) {
-      if (ancestor.id === dragLocalId) return
-      const parentServerOrClient: number | string | null = ancestor.parentServerId != null ? ancestor.parentServerId : (ancestor.parentClientId || null)
-      if (parentServerOrClient == null) break
-      ancestor = flat.find(x => (typeof parentServerOrClient === 'number' ? (x.node.serverId === parentServerOrClient) : (x.node.clientId === parentServerOrClient)))?.node
-    }
-
-    let newParentServerId: number | null = null
-    let newParentClientId: string | null = null
-    if (pos === 'inside') {
-      newParentServerId = target.serverId ?? null
-      newParentClientId = target.serverId ? null : (target.clientId || null)
-    } else {
-      // sibling of target → inherit its parent
-      if (target.parentServerId != null) newParentServerId = target.parentServerId
-      else if (target.parentClientId) newParentClientId = target.parentClientId
-    }
-
-    // Compute sibling list of destination parent for ordering
-    const siblings = flat
-      .filter(x => !x.hidden)
-      .map(x => x.node)
-      .filter(n => (pos === 'inside' ? (n.parentServerId === newParentServerId && (n.parentClientId || null) === (newParentClientId || null)) : (n.parentServerId === target.parentServerId && (n.parentClientId || null) === (target.parentClientId || null))))
-      .filter(n => n.id !== dragLocalId)
-
-    let insertIndex = siblings.findIndex(n => n.id === targetLocalId)
-    if (pos === 'after') insertIndex++
-    if (insertIndex < 0) insertIndex = siblings.length
-
-    const ordered = [...siblings]
-    ordered.splice(insertIndex, 0, drag)
-    // Assign incremental _order
-    const updates: Array<{ id: number; params: any }> = []
-    for (let i = 0; i < ordered.length; i++) {
-      const n = ordered[i]
-      const p = { ...(n.rec.params as any), _order: (i + 1) * 10 }
-      updates.push({ id: n.id, params: p })
-    }
-    const now = new Date().toISOString()
-    const bulk: Array<{ id: number; changes: Partial<Pick<FilterRecord, 'parentId' | 'params' | 'modifiedAt' | 'isDirty'>> }> =
-      updates.map(u => ({ id: u.id, changes: { params: u.params as any, isDirty: 1 as const, modifiedAt: now } }))
-    // update parent for dragged + ensure _parentClientId matches new parent mode
-    const dragUpdate = bulk.find(x => x.id === dragLocalId)
-    const dragParams = { ...(drag.rec.params as any), ...(dragUpdate?.changes?.params as any), _parentClientId: (newParentServerId != null ? undefined : (newParentClientId || undefined)) }
-    if (dragUpdate) {
-      dragUpdate.changes = {
-        ...dragUpdate.changes,
-        parentId: (newParentServerId != null ? newParentServerId : null),
-        params: dragParams as any,
-        isDirty: 1 as const,
-        modifiedAt: now,
-      }
-    } else {
-      bulk.push({
-        id: dragLocalId,
-        changes: {
-          parentId: (newParentServerId != null ? newParentServerId : null),
-          params: dragParams as any,
-          isDirty: 1 as const,
-          modifiedAt: now,
-        },
-      })
-    }
-    await filtersRepo.bulkUpdate(bulk)
-  }
-
-  function onDragStart(e: React.DragEvent, id: number) {
-    setDragId(id)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-  function onDragOver(e: React.DragEvent, id: number) {
-    e.preventDefault()
-    if (dragId == null) return
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const y = e.clientY - rect.top
-    const pos: 'before' | 'after' | 'inside' = y < rect.height * 0.25 ? 'before' : y > rect.height * 0.75 ? 'after' : 'inside'
-    setDropOver({ id, pos })
-  }
-  function onDragLeave() { setDropOver(d => d) }
-  async function onDrop(e: React.DragEvent, id: number) {
-    e.preventDefault()
-    const d = dropOver
-    setDropOver(null)
-    const drag = dragId
-    setDragId(null)
-    if (drag == null || !d || d.id !== id) return
-    await applyReparentAndOrder(drag, id, d.pos)
-  }
-
-  return (
-    <div className="min-w-0" ref={ref}>
-      <div className="card h-full flex flex-col">
-        <div className="mb-2 font-medium flex items-center justify-between">
-          <span className="inline-flex items-center gap-2 text-title text-muted">
-            <FilterAltRoundedIcon fontSize="inherit" className="icon-35 text-secondary" />
-            <span>Filters</span>
-          </span>
-          <button className={manage ? 'text-primary' : 'text-secondary hover:text-primary'} onClick={() => setManage(m => !m)}>Manage</button>
-        </div>
-        <ul className="space-y-1 overflow-y-auto min-h-0 pr-1">
-          <li>
-            <div
-              className={`relative flex items-center justify-between px-3 py-3 cursor-pointer rounded-[15px] ${(isNoFiltersActive ? 'text-primary' : 'text-secondary hover:text-primary')}`}
-              style={isNoFiltersActive ? { background: 'rgba(var(--c-text) / 0.03)' } : undefined}
-              onClick={onClearAll}
-            >
-              <span className="truncate">No filters</span>
-            </div>
-          </li>
-          {flat.map(({ node, hidden }) => (
-            hidden ? null : (
-              <li key={node.id}
-                draggable={manage}
-                onDragStart={(e) => onDragStart(e, node.id)}
-                onDragOver={(e) => onDragOver(e, node.id)}
-                onDragLeave={onDragLeave}
-                onDrop={(e) => onDrop(e, node.id)}
-              >
-                <div
-                  className={`relative flex items-center justify-between px-3 py-3 cursor-pointer rounded-[15px] ${selectedId === node.id ? 'text-primary' : 'text-secondary hover:text-primary'}`}
-                  onClick={() => onSelect(node.rec)}
-                  style={{
-                    paddingLeft: `${12 + node.depth * 14 + (node.children.length > 0 ? 14 : 0)}px`,
-                    ...(selectedId === node.id ? { background: 'rgba(var(--c-text) / 0.03)' } : {}),
-                  }}
-                >
-                  {/* collapse/expand icon positioned without affecting indent */}
-                  {node.children.length > 0 && (
-                    <button
-                      className="absolute text-secondary hover:text-primary"
-                      style={{ left: `${12 + node.depth * 14}px` }}
-                      onClick={(e) => { e.stopPropagation(); toggleCollapse(node.id) }}
-                      title={collapsed[node.id] ? 'Expand' : 'Collapse'}
-                    >
-                      {collapsed[node.id] ? '+' : '−'}
-                    </button>
-                  )}
-                  <span className="truncate">{node.rec.name}</span>
-                  {manage && (
-                    <button className="px-1 text-secondary hover:text-primary" title="Delete filter" onClick={(e) => { e.stopPropagation(); deleteWithChildren(node.id) }}>×</button>
-                  )}
-                </div>
-                {dropOver && dropOver.id === node.id && (
-                  <div className="px-2">
-                    {dropOver.pos === 'before' && <div className="h-0.5 bg-sky-600 rounded" />}
-                    {dropOver.pos === 'inside' && <div className="h-0.5 bg-transparent" />}
-                    {dropOver.pos === 'after' && <div className="h-0.5 bg-sky-600 rounded" />}
-                  </div>
-                )}
-              </li>
-            )
-          ))}
-        </ul>
-      </div>
     </div>
   )
 }
@@ -991,7 +703,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
   }
 
   return (
-    <ul className="space-y-5">
+    <ul className="space-y-3">
       {notes.flatMap((n: NoteRecord) => {
         const items: ReactNode[] = []
         const positiveQuickTags = ((quick as any).tags || []).filter((t: string) => !t.startsWith('!')) as string[]
@@ -1113,7 +825,7 @@ function ReauthOverlay({ onDone, onLogout }: { onDone: () => void; onLogout: () 
       <div className="absolute inset-0 bg-black/60" />
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div className="w-full max-w-sm card space-y-4">
-          <h2 className="text-lg font-medium">Session expired</h2>
+          <h2 className="text-title text-primary">Session expired</h2>
           <input className="input" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
           <div className="input-wrap">
             <input className="input" placeholder="Password" type={show ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} />
@@ -1566,6 +1278,14 @@ function App() {
     })()
   }
 
+  async function handleLogout() {
+    // Logging out drops the local database: warn before losing changes that never reached the server.
+    const unsynced = await countUnsyncedChanges().catch(() => 0)
+    if (unsynced > 0 && !window.confirm(`${unsynced} change(s) have not been synced to the server yet and will be lost. Log out anyway?`)) return
+    setAuthed(false)
+    purgeAndLogout().catch(() => { teardownSync(); logout() })
+  }
+
   if (!authed) return <AuthScreen onDone={() => setAuthed(true)} />
 
   const isNoFiltersActive = !selectedFilter && !hasActiveQuickFilters(currentQuick)
@@ -1583,7 +1303,7 @@ function App() {
   }
 
   const left = currentSpaceId ? (
-    <FiltersList
+    <FiltersTree
       spaceId={currentSpaceId}
       selectedId={selectedFilter?.id ?? null}
       isNoFiltersActive={isNoFiltersActive}
@@ -1617,7 +1337,7 @@ function App() {
       )
     } else {
       center = (
-        <div className="min-w-0 space-y-5">
+        <div className="min-w-0 space-y-3">
           <NoteComposer spaceId={currentSpaceId} positiveQuickTags={(quickFeed.tags || []).filter(t => !t.startsWith('!'))} />
           <NoteList
             spaceId={currentSpaceId}
@@ -1661,15 +1381,15 @@ function App() {
         <div
           className="absolute left-0 right-0 top-0 pointer-events-none"
           style={{
-            height: 'var(--topbar-h, 96px)',
+            height: 'var(--topbar-h, 64px)',
             background: 'linear-gradient(to bottom, rgb(var(--c-page)) 0%, rgb(var(--c-page)) 65%, rgb(var(--c-page) / 0) 100%)',
           }}
         />
-        <div className="relative mx-auto max-w-[1440px] px-[40px] py-6">
+        <div className="relative mx-auto max-w-[1440px] px-4 md:px-6 py-3">
           <TopBar
             onOpenSpaces={() => setDrawerOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
-            onLogout={() => { setAuthed(false); purgeAndLogout().catch(() => { teardownSync(); logout() }) }}
+            onLogout={() => { void handleLogout() }}
             isThread={!!currentNoteId}
             onBack={goBack}
           />
@@ -1707,10 +1427,10 @@ function App() {
           })
         }}
       >
-        <div className="mx-auto max-w-[1440px] px-[40px]">
-          <div className="grid grid-cols-1 md:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)_340px] gap-[40px]">
+        <div className="mx-auto max-w-[1440px] px-4 md:px-6">
+          <div className="grid grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)] lg:grid-cols-[250px_minmax(0,1fr)_270px] xl:grid-cols-[270px_minmax(0,1fr)_290px] gap-6">
             <aside
-              className="hidden md:block py-6 self-start"
+              className="hidden md:block py-4 self-start"
               style={{
                 position: 'sticky',
                 // The global scroll container already has padding-top = topbar height.
@@ -1722,14 +1442,14 @@ function App() {
               <div className="h-full">{left}</div>
             </aside>
 
-            <main className="min-w-0 py-6">
+            <main className="min-w-0 py-4">
               {center}
               {/* Spacer below feed equals topbar height */}
               <div style={{ height: 'var(--topbar-h, 96px)' }} />
             </main>
 
             <aside
-              className="hidden lg:block py-6 self-start"
+              className="hidden lg:block py-4 self-start"
               style={{
                 position: 'sticky',
                 top: 0,
@@ -1763,17 +1483,34 @@ function App() {
         </div>
       </div>
 
-      {drawerOpen && <SpaceDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} currentId={currentSpaceId} onSelected={(id) => { openSpace(id) }} />}
+      {drawerOpen && (
+        <SpaceDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} currentId={currentSpaceId} onSelected={(id) => { openSpace(id) }}>
+          {currentSpaceId ? (
+            <FiltersTree
+              spaceId={currentSpaceId}
+              selectedId={selectedFilter?.id ?? null}
+              isNoFiltersActive={isNoFiltersActive}
+              onSelect={(f) => {
+                setSelectedFilter(f)
+                if (currentNoteId) setCurrentNoteId(null)
+                pushQuery({ space: currentSpaceId, note: null, filter: f?.id ?? null })
+                setDrawerOpen(false)
+              }}
+              onClearAll={() => { void clearAllFilters(); setDrawerOpen(false) }}
+            />
+          ) : null}
+        </SpaceDrawer>
+      )}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       {authRequired && (
         <ReauthOverlay
           onDone={() => { /* authRequired toggled by sync module */ }}
-          onLogout={() => { setAuthed(false); purgeAndLogout().catch(() => { teardownSync(); logout() }) }}
+          onLogout={() => { void handleLogout() }}
         />
       )}
       {saveOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-[110]">
-          <div className="w-full sm:max-w-md surface space-y-5">
+          <div className="w-full sm:max-w-md surface space-y-4">
             <h2 className="text-title text-muted">Save filter</h2>
             <input
               className="input"
@@ -1868,9 +1605,12 @@ function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTa
     if (mainNote) setEditValue({ text: mainNote.text, tags: mainNote.tags || [] })
   }, [mainNote])
 
-  async function saveEdit() {
+  async function saveEdit(extra?: { attachments?: File[] }) {
     if (!mainNote?.id) return
     await updateNoteLocal(mainNote.id, { text: editValue.text.trim(), tags: editValue.tags })
+    for (const f of (extra?.attachments ?? []).slice(0, 10)) {
+      try { await addLocalAttachment(mainNote.id, f) } catch {}
+    }
     window.dispatchEvent(new Event('focuz:local-write'))
     setEditing(false)
   }
@@ -1893,9 +1633,9 @@ function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTa
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="min-w-0 space-y-3">
       {editing ? (
-        <NoteEditor value={editValue} onChange={setEditValue} onSubmit={saveEdit} onCancel={() => setEditing(false)} mode="edit" autoCollapse={false} spaceId={spaceId} noteId={noteId} />
+        <NoteEditor value={editValue} onChange={setEditValue} onSubmit={() => saveEdit()} onSubmitWithExtra={(extra) => saveEdit(extra)} onCancel={() => setEditing(false)} mode="edit" autoCollapse={false} spaceId={spaceId} noteId={noteId} />
       ) : (
         <SingleNoteCard note={mainNote} onEdit={() => setEditing(true)} onDelete={removeMain} onOpenThread={onOpenThread} />
       )}

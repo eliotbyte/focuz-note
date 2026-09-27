@@ -5,7 +5,7 @@ import '@fontsource/manrope/700.css'
 import './index.css'
 import App from './App.tsx'
 import { registerSW } from 'virtual:pwa-register'
-import { toast } from 'sonner'
+import { notifyUpdateAvailable } from './ui/notify'
 import { applyStoredTheme } from './lib/theme'
 
 applyStoredTheme()
@@ -13,15 +13,7 @@ applyStoredTheme()
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    toast('Доступно обновление', {
-      id: 'pwa-update-available',
-      description: 'Обновление будет применено автоматически.',
-      duration: 3500,
-      action: {
-        label: 'Обновить',
-        onClick: () => { void updateSW(true) },
-      },
-    })
+    notifyUpdateAvailable(() => { void updateSW(true) })
     // Auto-apply updates so UI changes are not stuck behind SW cache during dev in Docker.
     setTimeout(() => { void updateSW(true) }, 400)
   },

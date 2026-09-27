@@ -139,3 +139,6 @@ ts-trace*.txt
 
 # Local development
 *.local 
+# Test artifacts
+test-results/
+playwright-report/
