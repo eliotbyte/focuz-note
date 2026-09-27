@@ -46,6 +46,8 @@ cd focuz-web && E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8
 - Web: IndexedDB schema v9 converts `notes.parentId` to local ids in place and resets the
   attachment job queue; no data is deleted. Unsynced changes made with the previous version
   are pushed on the first sync.
+- Note text is now read as Markdown (GFM checklists `- [ ] item`). Existing plain-text notes are not
+  rewritten and display as before (line breaks kept, no raw HTML); a note only changes when you edit it.
 
 ## Security checklist for a self-hosted install
 
