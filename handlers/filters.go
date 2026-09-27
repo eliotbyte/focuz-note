@@ -48,6 +48,11 @@ func (h *FiltersHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if !h.parentInSpace(req.ParentID, req.SpaceID) {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "Parent filter must be in the same space"))
+		return
+	}
+
 	filter, err := h.repo.CreateFilter(userID, req.SpaceID, req.Name, req.ParentID, req.Params)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
@@ -95,6 +100,11 @@ func (h *FiltersHandler) Update(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "params must be valid JSON"))
 			return
 		}
+	}
+
+	if req.ParentID != nil && (*req.ParentID == id || !h.parentInSpace(req.ParentID, existing.SpaceID)) {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "Parent filter must be another filter in the same space"))
+		return
 	}
 
 	if err := h.repo.UpdateFilter(id, req.Name, req.ParentID, req.Params); err != nil {
@@ -191,4 +201,13 @@ func (h *FiltersHandler) List(c *gin.Context) {
 	}
 	response := pagination.BuildResponse(items, total)
 	c.JSON(http.StatusOK, types.NewSuccessResponse(response))
+}
+
+// parentInSpace reports whether an optional parent filter id refers to a filter of the same space.
+func (h *FiltersHandler) parentInSpace(parentID *int, spaceID int) bool {
+	if parentID == nil {
+		return true
+	}
+	parent, err := h.repo.GetByID(*parentID)
+	return err == nil && parent != nil && parent.SpaceID == spaceID
 }

@@ -173,6 +173,17 @@ func (h *SpacesHandler) InviteUser(c *gin.Context) {
 		c.JSON(http.StatusNotFound, types.NewErrorResponse(types.ErrorCodeNotFound, "User not found"))
 		return
 	}
+	if user.ID == userID {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "You are already a member of this space"))
+		return
+	}
+	if existingRole, err := h.spacesRepo.GetUserRoleIDInSpace(user.ID, spaceID); err != nil {
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		return
+	} else if existingRole != 0 {
+		c.JSON(http.StatusConflict, types.NewErrorResponse(types.ErrorCodeConflict, "User is already a member of this space"))
+		return
+	}
 
 	roleGuest, err := h.rolesRepo.GetRoleByName("guest")
 	if err != nil {

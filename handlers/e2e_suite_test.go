@@ -14,11 +14,17 @@ type E2ETestSuite struct {
 	guestToken     string
 	createdSpaceID int
 	createdNoteID  int
+	// security tests: username by token / user id, and the last registered name
+	usernames    map[string]string
+	lastUsername string
 }
 
 func (s *E2ETestSuite) SetupSuite() {
+	s.usernames = map[string]string{}
 	// Use test API container name when running in Docker, localhost otherwise
-	if os.Getenv("CI") != "" || os.Getenv("DOCKER") != "" {
+	if u := os.Getenv("API_URL"); u != "" {
+		s.baseURL = u
+	} else if os.Getenv("CI") != "" || os.Getenv("DOCKER") != "" {
 		s.baseURL = "http://test-api:8080"
 	} else {
 		s.baseURL = "http://localhost:8080"

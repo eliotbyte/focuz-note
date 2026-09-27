@@ -185,7 +185,7 @@ func (r *SpacesRepository) InviteUserToSpace(userID, spaceID, roleID int) error 
 	_, err := r.db.Exec(`
 		INSERT INTO user_to_space (user_id, space_id, role_id, is_pending)
 		VALUES ($1, $2, $3, TRUE)
-		ON CONFLICT (user_id, space_id) DO UPDATE SET role_id = EXCLUDED.role_id, is_pending = TRUE
+		ON CONFLICT (user_id, space_id) DO NOTHING -- never demote or re-pend an existing member
 	`, userID, spaceID, roleID)
 	return err
 }
