@@ -161,3 +161,50 @@ test('replies stay attached to their parent on another device', async ({ page, b
   await expect(b.getByText('И ещё сыр')).toBeVisible()
   await ctx.close()
 })
+
+test.describe('sign in page', () => {
+  test('works with the keyboard only: Tab between fields, Enter submits', async ({ page }) => {
+    await page.goto('/')
+    await page.evaluate(() => localStorage.clear())
+    await page.goto('/')
+    const name = `kb${Date.now().toString(36)}`
+    // Create an account without touching the mouse.
+    await page.getByRole('tab', { name: 'Create account' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
+    await page.getByLabel('Username').focus()
+    await page.keyboard.type(name)
+    await page.keyboard.press('Tab')
+    await page.keyboard.type('weak')
+    await page.keyboard.press('Enter')
+    // Validation is announced and focus goes to the field to fix.
+    await expect(page.getByText('Password does not meet the requirements')).toBeVisible()
+    await expect(page.getByLabel('Password', { exact: true })).toBeFocused()
+    await shot(page, '13-register-validation')
+    await page.keyboard.press('ControlOrMeta+a')
+    await page.keyboard.type('Password123')
+    await page.keyboard.press('Tab') // show/hide button
+    await page.keyboard.press('Tab')
+    await page.keyboard.type('Password123')
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: /Sync status/ })).toBeVisible({ timeout: 20000 })
+  })
+
+  test('explains wrong credentials and keeps the username', async ({ page }) => {
+    await page.goto('/')
+    await page.evaluate(() => localStorage.clear())
+    await page.goto('/')
+    await expect(page.getByLabel('Username')).toBeFocused()
+    await shot(page, '14-sign-in')
+    await page.getByLabel('Username').fill('nobody-here')
+    await page.getByLabel('Password', { exact: true }).fill('wrong-password')
+    await page.getByLabel('Password', { exact: true }).press('Enter')
+    await expect(page.getByText('Wrong username or password.')).toBeVisible()
+    await expect(page.getByLabel('Username')).toHaveValue('nobody-here')
+    await expect(page.getByLabel('Password', { exact: true })).toBeFocused()
+    await shot(page, '15-sign-in-error')
+    // Password managers need these to fill the right fields.
+    await expect(page.getByLabel('Username')).toHaveAttribute('autocomplete', 'username')
+    await expect(page.getByLabel('Password', { exact: true })).toHaveAttribute('autocomplete', 'current-password')
+  })
+})

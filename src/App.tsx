@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { NoteRecord, FilterRecord, SpaceRecord } from './lib/types'
-import { ensureDefaultSpace, getCurrentSpaceId, runSync, scheduleAutoSync, login, register, isAuthenticated, logout, deleteNote, getLastUsername, addLocalAttachment, teardownSync, purgeAndLogout, countUnsyncedChanges } from './lib/sync'
+import { ensureDefaultSpace, getCurrentSpaceId, runSync, scheduleAutoSync, isAuthenticated, logout, deleteNote, addLocalAttachment, teardownSync, purgeAndLogout, countUnsyncedChanges } from './lib/sync'
 import { updateNoteLocal, createFilterLocal, updateFilterLocal } from './lib/sync'
 import { searchNotes, ensureNoteIndexForSpace, initSearch } from './lib/search'
 import { activityTypes as activityTypesRepo, activities as activitiesRepo, filters as filtersRepo, kv, notes as notesRepo, spaces as spacesRepo } from './data'
@@ -16,14 +16,13 @@ import NoteEditor, { type NoteEditorValue } from './components/NoteEditor'
 import NoteCard from './components/NoteCard'
 import TagsInput from './components/TagsInput'
 import FiltersTree from './components/FiltersTree'
+import AuthScreen, { ReauthDialog } from './components/AuthScreen'
 import ActivitiesPicker from './components/ActivitiesPicker'
 import { applyStoredTheme, setStoredTheme } from './lib/theme'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
-import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded'
 
 function TopBar({
   onOpenSpaces,
@@ -91,173 +90,6 @@ function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         </div>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function AuthScreen({ onDone }: { onDone: () => void }) {
-  const [mode, setMode] = useState<'login' | 'register'>('login')
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [password2, setPassword2] = useState('')
-  const [show, setShow] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [loginError, setLoginError] = useState<string | null>(null)
-  const [registerError, setRegisterError] = useState<string | null>(null)
-
-  const passwordRules = useMemo(() => {
-    const p = password || ''
-    return {
-      minLen: p.length >= 8,
-      hasLower: /[a-z]/.test(p),
-      hasUpper: /[A-Z]/.test(p),
-      hasDigit: /[0-9]/.test(p),
-      noSpaces: !/\s/.test(p),
-    }
-  }, [password])
-
-  const isPasswordValid = useMemo(() => {
-    const r = passwordRules
-    return r.minLen && r.hasLower && r.hasUpper && r.hasDigit && r.noSpaces
-  }, [passwordRules])
-
-  const confirmTouched = password2.length > 0
-  const passwordsMatch = password2.length > 0 && password2 === password
-
-  // Prevent error leakage between modes.
-  useEffect(() => {
-    if (mode === 'login') setRegisterError(null)
-    else setLoginError(null)
-  }, [mode])
-
-  async function submit() {
-    setLoading(true)
-    if (mode === 'register') setRegisterError(null)
-    else setLoginError(null)
-    try {
-      if (mode === 'register') {
-        if (!isPasswordValid) throw new Error('Password does not meet requirements')
-        if (password !== password2) throw new Error('Passwords do not match')
-        await register(username.trim(), password)
-      }
-      await login(username.trim(), password)
-      await ensureDefaultSpace()
-      await runSync()
-      onDone()
-    } catch (e: any) {
-      const raw = String(e?.message || '')
-      if (mode === 'register') {
-        if (raw.startsWith('409')) setRegisterError('User already exists')
-        else if (raw === 'Password does not meet requirements') setRegisterError('Password does not meet requirements')
-        else if (raw === 'Passwords do not match') setRegisterError('Passwords do not match')
-        else setRegisterError(raw || 'Registration failed')
-      } else {
-        if (raw.startsWith('401')) setLoginError('Incorrect login or password')
-        else setLoginError(raw || 'Sign in failed')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const canSubmit =
-    username.trim().length >= 3 &&
-    password.length >= 8 &&
-    (mode === 'login' || (isPasswordValid && password === password2))
-
-  return (
-    <div className="min-h-dvh flex items-center justify-center p-4">
-      <div className="w-full max-w-sm card space-y-4">
-        <h2 className="text-title text-primary">{mode === 'register' ? 'Create account' : 'Sign in'}</h2>
-        <input
-          className="input"
-          placeholder="Username"
-          value={username}
-          onChange={e => {
-            setUsername(e.target.value)
-            if (mode === 'register') setRegisterError(null)
-            else setLoginError(null)
-          }}
-        />
-        <div className="space-y-2">
-          <div className="input-wrap">
-            <input
-              className="input"
-              placeholder="Password"
-              type={show ? 'text' : 'password'}
-              value={password}
-              onChange={e => {
-                setPassword(e.target.value)
-                if (mode === 'register') setRegisterError(null)
-                else setLoginError(null)
-              }}
-            />
-            <button className="icon-btn icon-35 input-icon-btn" onClick={() => setShow(s => !s)} type="button" aria-label={show ? 'Hide password' : 'Show password'}>
-              {show ? <VisibilityOffRoundedIcon fontSize="inherit" /> : <VisibilityRoundedIcon fontSize="inherit" />}
-            </button>
-          </div>
-          {mode === 'register' && password.length > 0 && (() => {
-            const unmet = [
-              !passwordRules.minLen ? 'at least 8 characters' : null,
-              !passwordRules.hasLower ? 'at least one lowercase letter' : null,
-              !passwordRules.hasUpper ? 'at least one uppercase letter' : null,
-              !passwordRules.hasDigit ? 'at least one digit' : null,
-              !passwordRules.noSpaces ? 'no spaces' : null,
-            ].filter(Boolean) as string[]
-            if (unmet.length === 0) return null
-            return (
-              <div className="text-secondary text-sm space-y-1">
-                <div>Password rules:</div>
-                {unmet.map((t) => (
-                  <div key={t} className="text-red-400">- {t}</div>
-                ))}
-              </div>
-            )
-          })()}
-          {mode === 'register' && (
-            <div className="space-y-1">
-              <div className="input-wrap">
-                <input
-                  className="input"
-                  placeholder="Confirm password"
-                  type={show ? 'text' : 'password'}
-                  value={password2}
-                  onChange={e => {
-                    setPassword2(e.target.value)
-                    setRegisterError(null)
-                  }}
-                />
-              <button className="icon-btn icon-35 input-icon-btn" onClick={() => setShow(s => !s)} type="button" aria-label={show ? 'Hide password' : 'Show password'}>
-                {show ? <VisibilityOffRoundedIcon fontSize="inherit" /> : <VisibilityRoundedIcon fontSize="inherit" />}
-              </button>
-            </div>
-              {confirmTouched && (
-                passwordsMatch
-                  ? <div className="text-secondary text-sm">Passwords match</div>
-                  : <div className="text-red-400 text-sm">Passwords do not match</div>
-              )}
-            </div>
-          )}
-        </div>
-        {mode === 'login' && loginError && <div className="text-sm text-red-400">{loginError}</div>}
-        {mode === 'register' && registerError && <div className="text-sm text-red-400">{registerError}</div>}
-        <div className="space-y-2">
-          <button className="button w-full justify-center" onClick={submit} disabled={!canSubmit || loading}>
-            {loading ? '...' : (mode === 'register' ? 'Register' : 'Sign in')}
-          </button>
-          {mode === 'login' ? (
-            <div className="text-secondary text-sm">
-              <span>No account? </span>
-              <button className="link" type="button" onClick={() => setMode('register')}>Create new</button>
-            </div>
-          ) : (
-            <div className="text-secondary text-sm">
-              <span>Have an account? </span>
-              <button className="link" type="button" onClick={() => setMode('login')}>Sign in</button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -794,55 +626,6 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
       })}
       {notes.length === 0 && <li className="text-secondary">No notes</li>}
     </ul>
-  )
-}
-
-function ReauthOverlay({ onDone, onLogout }: { onDone: () => void; onLogout: () => void }) {
-  const [username, setUsername] = useState<string>(getLastUsername() || '')
-  const [password, setPassword] = useState('')
-  const [show, setShow] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function submit() {
-    setLoading(true)
-    setError(null)
-    try {
-      await login(username.trim(), password)
-      await runSync()
-      onDone()
-    } catch (e: any) {
-      setError(e?.message || 'Auth failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const canSubmit = username.trim().length >= 3 && password.length >= 8
-
-  return (
-    <div className="fixed inset-0 z-[60]">
-      <div className="absolute inset-0 bg-black/60" />
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm card space-y-4">
-          <h2 className="text-title text-primary">Session expired</h2>
-          <input className="input" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
-          <div className="input-wrap">
-            <input className="input" placeholder="Password" type={show ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} />
-            <button className="icon-btn icon-35 input-icon-btn" onClick={() => setShow(s => !s)} type="button" aria-label={show ? 'Hide password' : 'Show password'}>
-              {show ? <VisibilityOffRoundedIcon fontSize="inherit" /> : <VisibilityRoundedIcon fontSize="inherit" />}
-            </button>
-          </div>
-          {error && <div className="text-sm text-red-400">{error}</div>}
-          <div className="flex justify-between gap-2">
-            <button className="icon-btn icon-35" onClick={onLogout} type="button" aria-label="Logout" disabled={loading}>
-              <LogoutRoundedIcon fontSize="inherit" />
-            </button>
-            <button className="button" onClick={submit} disabled={!canSubmit || loading}>{loading ? '...' : 'Sign in'}</button>
-          </div>
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -1503,7 +1286,7 @@ function App() {
       )}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       {authRequired && (
-        <ReauthOverlay
+        <ReauthDialog
           onDone={() => { /* authRequired toggled by sync module */ }}
           onLogout={() => { void handleLogout() }}
         />
