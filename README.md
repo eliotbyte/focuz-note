@@ -25,3 +25,24 @@ APP_ENV=test docker compose up -d --build
 - **Focuz-Web**: `0.1.0-alpha` (see `focuz-web/package.json`)
 - **Focuz-API**: `0.1.0-alpha` (see `focuz-api/pkg/buildinfo`)
 
+
+## Tests
+
+```bash
+# API: e2e suite (Postgres + MinIO + API in containers)
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit test-runner
+
+# Web: unit tests (sync engine, IndexedDB migrations) — no backend needed
+cd focuz-web && npm ci && npm test
+
+# Web: end-to-end against a running stack (APP_ENV=... docker compose up -d --build)
+cd focuz-web && E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8080 npm run test:e2e
+```
+
+## Upgrading existing data
+
+- API: migration `000002_client_ids` only adds nullable columns and partial unique indexes
+  (`note.client_id`, `filters.client_id`); existing rows are not modified.
+- Web: IndexedDB schema v9 converts `notes.parentId` to local ids in place and resets the
+  attachment job queue; no data is deleted. Unsynced changes made with the previous version
+  are pushed on the first sync.
