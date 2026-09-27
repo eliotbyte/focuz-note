@@ -46,3 +46,14 @@ cd focuz-web && E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8
 - Web: IndexedDB schema v9 converts `notes.parentId` to local ids in place and resets the
   attachment job queue; no data is deleted. Unsynced changes made with the previous version
   are pushed on the first sync.
+
+## Security checklist for a self-hosted install
+
+- Set your own secrets in `.env` (see `env.example`): `JWT_SECRET` (e.g. `openssl rand -hex 32`),
+  `POSTGRES_PASSWORD`, `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`. The compose defaults are public;
+  with the default `JWT_SECRET` anyone can forge a login token (the API logs a warning at startup).
+  Changing `JWT_SECRET` signs everyone out once.
+- Postgres and the MinIO console are bound to localhost. Keep it that way unless you need them remotely.
+- If the API is not behind a reverse proxy, set `TRUSTED_PROXIES` to an empty value or to your proxy's
+  address only: with the default private ranges, clients can spoof their IP via `X-Forwarded-For`
+  and bypass per-IP rate limits (logins are additionally limited per account).

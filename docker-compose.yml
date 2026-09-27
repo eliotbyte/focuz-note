@@ -7,8 +7,10 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-focuz_db}
     volumes:
       - db-data:/var/lib/postgresql/data
+    # Localhost only: the API reaches the DB over the compose network. Exposing Postgres with the
+    # default password to the LAN/internet is an easy way to lose all notes.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-focuz_user} -d ${POSTGRES_DB:-focuz_db}"]
       interval: 2s
@@ -26,8 +28,10 @@ services:
     volumes:
       - minio-data:/data
     ports:
+      # 9000 (S3 API) stays reachable for presigned URLs from older clients; the web app now
+      # downloads files through the API. The admin console is localhost only.
       - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9001:9001"
     networks:
       - focuz-network
 
