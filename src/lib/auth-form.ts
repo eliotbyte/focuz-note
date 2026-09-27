@@ -2,7 +2,13 @@
 import { isNetworkError } from './api'
 
 export type AuthMode = 'login' | 'register'
-export type AuthField = 'username' | 'password' | 'confirm'
+export type AuthField = 'username' | 'password' | 'confirm' | 'code'
+/** How accounts are identified on the selected server. */
+export type LoginKind = 'username' | 'email'
+
+export function looksLikeEmail(v: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
+}
 
 export interface PasswordCheck { id: string; label: string; ok: boolean }
 
@@ -16,12 +22,18 @@ export function passwordChecks(p: string): PasswordCheck[] {
   ]
 }
 
-export function validateAuthForm(mode: AuthMode, v: { username: string; password: string; confirm: string }): Partial<Record<AuthField, string>> {
+export function validateAuthForm(mode: AuthMode, v: { username: string; password: string; confirm: string }, kind: LoginKind = 'username'): Partial<Record<AuthField, string>> {
   const errors: Partial<Record<AuthField, string>> = {}
   const name = v.username.trim()
-  if (!name) errors.username = 'Enter your username'
-  else if (name.length < 3 || name.length > 50) errors.username = 'Username must be 3 to 50 characters'
-  else if (mode === 'register' && /\s/.test(name)) errors.username = 'Username cannot contain spaces'
+  if (kind === 'email') {
+    if (!name) errors.username = 'Enter your email'
+    // Existing username accounts can still sign in on an e-mail server.
+    else if (mode === 'register' && !looksLikeEmail(name)) errors.username = 'Enter a valid email address, like name@example.com'
+  } else {
+    if (!name) errors.username = 'Enter your username'
+    else if (name.length < 3 || name.length > 50) errors.username = 'Username must be 3 to 50 characters'
+    else if (mode === 'register' && /\s/.test(name)) errors.username = 'Username cannot contain spaces'
+  }
   if (!v.password) errors.password = 'Enter your password'
   else if (mode === 'register' && passwordChecks(v.password).some(c => !c.ok)) errors.password = 'Password does not meet the requirements'
   if (mode === 'register' && !errors.password) {
@@ -32,11 +44,21 @@ export function validateAuthForm(mode: AuthMode, v: { username: string; password
 }
 
 /** Turns an API failure into a message and, when it is about one field, which field. */
-export function describeAuthError(e: unknown, mode: AuthMode): { message: string; field?: AuthField } {
+export function describeAuthError(e: unknown, mode: AuthMode, kind: LoginKind = 'username'): { message: string; field?: AuthField } {
   if (isNetworkError(e)) return { message: 'Cannot reach the server. Check your connection and try again.' }
   const status = (e as any)?.status
-  if (status === 401) return { message: 'Wrong username or password.', field: 'password' }
-  if (status === 409) return { message: 'This username is already taken.', field: 'username' }
+  const code = String((e as any)?.body?.error?.code || '')
+  switch (code) {
+    case 'EMAIL_NOT_VERIFIED': return { message: 'Confirm your email address first.' }
+    case 'EMAIL_SEND_FAILED': return { message: 'Your account was created, but the confirmation email could not be sent. Try sending a new code in a minute.' }
+    case 'INVALID_CODE': return { message: 'That code is not correct. Check the latest email from focuz.', field: 'code' }
+    case 'CODE_EXPIRED': return { message: 'This code has expired. Send a new one.', field: 'code' }
+    case 'TOO_MANY_ATTEMPTS': return { message: 'Too many wrong codes. Send a new one.', field: 'code' }
+    case 'ALREADY_VERIFIED': return { message: 'This email is already confirmed. Sign in with your password.' }
+  }
+  if (status === 403 && mode === 'register') return { message: 'Registration is closed on this server. Ask its owner for an account.' }
+  if (status === 401) return { message: kind === 'email' ? 'Wrong email or password.' : 'Wrong username or password.', field: 'password' }
+  if (status === 409) return { message: /email/i.test(String((e as any)?.body?.error?.message || '')) ? 'An account with this email already exists. Sign in instead.' : 'This username is already taken.', field: 'username' }
   if (status === 429) return { message: 'Too many attempts. Wait a minute and try again.' }
   if (status === 400) {
     const msg = String((e as any)?.body?.error?.message || '')

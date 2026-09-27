@@ -227,3 +227,84 @@ test('toasts: undo after deleting a note, nothing else pops up', async ({ page }
   await expect(page.getByText('Купить: молоко')).toBeVisible()
   await expect(toast).toHaveCount(0)
 })
+
+// Needs a second API in e-mail mode: E2E_EMAIL_API_URL (e.g. http://localhost:8091) and the
+// file its log mailer writes to: E2E_MAIL_LOG (MAIL_LOG_FILE of that server).
+test.describe('custom server with e-mail accounts', () => {
+  const emailApi = process.env.E2E_EMAIL_API_URL
+  const mailLog = process.env.E2E_MAIL_LOG
+  test.skip(!emailApi || !mailLog, 'E2E_EMAIL_API_URL / E2E_MAIL_LOG not set')
+
+  async function lastCode(to: string): Promise<string> {
+    const { readFileSync } = await import('node:fs')
+    for (let i = 0; i < 20; i++) {
+      const lines = readFileSync(mailLog!, 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter((m: any) => m.to === to)
+      if (lines.length) return lines[lines.length - 1].text.match(/\b(\d{6})\b/)[1]
+      await new Promise(r => setTimeout(r, 250))
+    }
+    throw new Error(`no mail to ${to}`)
+  }
+
+  async function chooseServer(page: Page, address: string) {
+    await page.getByRole('button', { name: 'Change' }).click()
+    await expect(page.getByRole('heading', { name: 'Choose your server' })).toBeVisible()
+    await page.getByLabel('Server address').fill(address)
+    await page.getByLabel('Server address').press('Enter')
+  }
+
+  test('pick a server, sign up with e-mail, confirm with the code', async ({ page }) => {
+    await page.goto('/')
+    await page.evaluate(() => localStorage.clear())
+    await page.goto('/')
+    // Wrong address: explained, stays on the server step.
+    await chooseServer(page, 'localhost:9')
+    await expect(page.getByText(/Cannot reach this server/)).toBeVisible()
+    await shot(page, '17-server-error')
+    await page.getByLabel('Server address').fill(new URL(emailApi!).host)
+    await page.getByLabel('Server address').press('Enter')
+    // The form adapts to the server: e-mail instead of username.
+    await expect(page.getByLabel('Email')).toBeVisible()
+    await expect(page.getByText(new URL(emailApi!).host)).toBeVisible()
+
+    const email = `e2e.${Date.now()}@example.org`
+    await page.getByRole('tab', { name: 'Create account' }).click()
+    await page.getByLabel('Email').fill(email)
+    await page.getByLabel('Password', { exact: true }).fill('Password123')
+    await page.getByLabel('Repeat password').fill('Password123')
+    await shot(page, '18-email-register')
+    await page.getByRole('button', { name: 'Create account', exact: true }).click()
+
+    await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible()
+    await expect(page.getByText(email)).toBeVisible()
+    await shot(page, '19-check-email')
+    await page.getByLabel('Confirmation code').fill('000000')
+    await expect(page.getByText(/not correct|expired|Too many/)).toBeVisible()
+    await page.getByLabel('Confirmation code').fill(await lastCode(email)) // auto-submits at 6 digits
+    await expect(page.getByRole('button', { name: /Sync status/ })).toBeVisible({ timeout: 20000 })
+    // Notes go to the chosen server.
+    await page.getByRole('button', { name: 'Add note…' }).click()
+    await page.getByPlaceholder(/Add note/).fill('stored on the custom server')
+    await page.getByRole('button', { name: 'Create' }).click()
+    const token = await page.evaluate(() => localStorage.getItem('authToken'))
+    await expect.poll(async () => {
+      const res = await fetch(`${emailApi}/sync?since=1970-01-01T00:00:00Z`, { headers: { Authorization: `Bearer ${token}` } })
+      const notes = ((await res.json()).data.notes ?? []) as any[]
+      return notes.some(n => n.text === 'stored on the custom server')
+    }, { timeout: 20000 }).toBe(true)
+  })
+
+  test('signing in before confirming leads to the code step', async ({ page }) => {
+    const email = `later.${Date.now()}@example.org`
+    await fetch(`${emailApi}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'Password123' }) })
+    await page.goto('/')
+    await page.evaluate(() => localStorage.clear())
+    await page.goto('/')
+    await chooseServer(page, emailApi!)
+    await page.getByLabel('Email').fill(email)
+    await page.getByLabel('Password', { exact: true }).fill('Password123')
+    await page.getByLabel('Password', { exact: true }).press('Enter')
+    await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible()
+    await page.getByLabel('Confirmation code').fill(await lastCode(email))
+    await expect(page.getByRole('button', { name: /Sync status/ })).toBeVisible({ timeout: 20000 })
+  })
+})

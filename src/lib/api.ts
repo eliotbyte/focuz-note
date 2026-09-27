@@ -1,14 +1,16 @@
 // HTTP layer: timeouts and a clear split between "server unreachable" and "server said no".
 import { emitAuthRequired, getAuthToken } from './auth'
+import { getServer } from './server'
 
 const DEFAULT_TIMEOUT_MS = 20000
 const UPLOAD_TIMEOUT_MS = 120000
 
-let apiBase: string | undefined = import.meta.env.VITE_API_BASE_URL as string | undefined
+// Test override; normally the server chosen on the sign-in screen (see server.ts).
+let apiBaseOverride: string | undefined
 
-export function getApiBase(): string | undefined { return apiBase }
+export function getApiBase(): string | undefined { return apiBaseOverride ?? getServer() }
 /** Test hook. */
-export function setApiBase(base: string | undefined) { apiBase = base }
+export function setApiBase(base: string | undefined) { apiBaseOverride = base }
 
 /** The request never got an HTTP response: server down, DNS, CORS, offline, timeout. */
 export class NetworkError extends Error {
@@ -41,7 +43,8 @@ export function isTransientError(e: unknown): boolean {
 }
 
 async function send(path: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  if (!apiBase) throw new NetworkError('API base URL is not configured')
+  const apiBase = getApiBase()
+  if (!apiBase) throw new NetworkError('No server selected')
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {

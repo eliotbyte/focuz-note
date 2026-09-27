@@ -34,16 +34,47 @@ try { syncBC = new BroadcastChannel('focuz-sync') } catch {}
 // ---------------------------------------------------------------------------
 // Auth
 
-export async function register(username: string, password: string): Promise<void> {
-  await api('/register', { method: 'POST', body: JSON.stringify({ username, password }) })
+export type AccountField = 'username' | 'email'
+
+/** Creates an account. On e-mail servers the account must be confirmed before signing in. */
+export async function register(login: string, password: string, field: AccountField = 'username'): Promise<{ verificationRequired: boolean; email?: string }> {
+  const resp = await api('/register', { method: 'POST', body: JSON.stringify({ [field]: login, password }) })
+  return { verificationRequired: !!resp?.data?.verificationRequired, email: resp?.data?.email }
 }
 
-export async function login(username: string, password: string): Promise<void> {
+export async function login(loginName: string, password: string, field: AccountField = 'username'): Promise<void> {
   await ensureDbOpen().catch(() => {})
-  const resp = await api('/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+  const resp = await api('/login', { method: 'POST', body: JSON.stringify({ [field]: loginName, password }) })
   const token = resp?.data?.token as string
   if (!token) throw new Error('No token')
-  setLastUsername(username)
+  await finishSignIn(token, loginName)
+}
+
+/** Confirms an e-mail address with the code from the e-mail; signs the user in. */
+export async function verifyEmail(email: string, code: string): Promise<void> {
+  await ensureDbOpen().catch(() => {})
+  const resp = await api('/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code }) })
+  const token = resp?.data?.token as string
+  if (!token) throw new Error('No token')
+  await finishSignIn(token, email)
+}
+
+export async function resendVerification(email: string): Promise<{ retryAfterSeconds: number }> {
+  const resp = await api('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) })
+  return { retryAfterSeconds: Number(resp?.data?.retryAfterSeconds) || 60 }
+}
+
+const SERVER_KV = 'serverUrl'
+
+async function finishSignIn(token: string, displayName: string) {
+  // Local data belongs to one server: never mix notes from two servers in one database.
+  try {
+    const current = getApiBase()
+    const previous = await getKV<string>(SERVER_KV)
+    if (previous && current && previous !== current) await wipeLocalData()
+    if (current) await setKV(SERVER_KV, current)
+  } catch {}
+  setLastUsername(displayName)
   setAuthTokenLS(token)
   emitAuthRequired(false)
   resetFailureState()

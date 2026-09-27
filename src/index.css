@@ -682,3 +682,35 @@ button:disabled { cursor: not-allowed; }
 .toast-close:focus-visible { opacity: 1; }
 .toast-close:hover { color: var(--text-primary); }
 @media (hover: none) { .toast-close { opacity: 1; } }
+
+/* Server choice / e-mail confirmation */
+.auth-server .link { color: rgb(var(--c-accent)); text-decoration: none; font-weight: 600; }
+.auth-server .link:hover { text-decoration: underline; }
+.auth-server-actions { display: flex; justify-content: center; gap: 20px; font-size: 14px; }
+.auth-server-actions .link { color: rgb(var(--c-accent)); text-decoration: none; font-weight: 600; }
+.auth-server-actions .link:hover { text-decoration: underline; }
+.auth-banner .link { color: inherit; font-weight: 700; }
+.auth-banner.is-info { color: var(--text-primary); background: rgb(var(--c-accent) / 0.12); }
+.auth-code {
+  height: 52px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.5em;
+  text-align: center;
+  padding-left: calc(12px + 0.5em); /* balance the trailing letter-spacing */
+  font-variant-numeric: tabular-nums;
+}
+.auth-code::placeholder { color: rgba(var(--c-text) / 0.18); }
+.auth-mail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 14px;
+  border-radius: 14px;
+  font-size: 26px;
+  color: rgb(var(--c-accent));
+  background: rgb(var(--c-accent) / 0.12);
+}
+.auth-email { display: inline-block; max-width: 100%; color: var(--text-primary); font-weight: 700; overflow-wrap: anywhere; }
