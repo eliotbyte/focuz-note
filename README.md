@@ -49,6 +49,30 @@ cd focuz-web && E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8
 - Note text is now read as Markdown (GFM checklists `- [ ] item`). Existing plain-text notes are not
   rewritten and display as before (line breaks kept, no raw HTML); a note only changes when you edit it.
 
+## Shared spaces
+
+Everyone has a personal space that only they can see. To work with others, create a shared space
+(the “+” under the spaces on the left) and invite people by username, or by e-mail on an e-mail
+server. Invitations arrive under the bell (and by e-mail if the person turned that on in Settings →
+Notifications); the answer to an invitation never reveals whether an account exists.
+
+| Role   | Can do |
+|--------|--------|
+| Owner  | Everything, including deleting the space and making admins |
+| Admin  | Invite and remove people, change roles (up to editor), rename, publish anything |
+| Editor | Write notes, edit any note, delete their own, publish their own notes |
+| Guest  | Read only |
+
+Notes in shared spaces show their author; ⋮ → Details lists who changed a note and when. Folders
+stay personal: each member organizes the same notes their own way.
+
+Public links (read-only, no sign-in, planet icon on the note): ⋮ → Share makes a note public, by
+default with all its replies (turn “Replies are public too” off to share only the note); Space menu
+→ Public links makes a whole shared space public. “Make private” stops a link for good.
+
+Upgrading: migration `000004_sharing` is additive. Members that were invited before (then called
+“guest”, but able to write) become editors; pending invitations are kept.
+
 ## Folders
 
 Saved filters are shown as folders. A folder shows the notes that match its rule (tags, excluded

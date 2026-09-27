@@ -57,6 +57,7 @@ services:
       - REGISTRATION=${REGISTRATION:-open}
       # Address users reach the API at; used for the confirmation link in e-mails
       - PUBLIC_API_URL=${PUBLIC_API_URL:-}
+      - PUBLIC_WEB_URL=${PUBLIC_WEB_URL:-}
       # Outgoing mail. Without SMTP_HOST, e-mails are only written to the API log.
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
