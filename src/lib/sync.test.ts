@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeServer } from '../test/fake-server'
-import { db, wipeLocalData } from './db'
+import { db, getKV, wipeLocalData } from './db'
+import { MEMBERS_KV } from './sync-pull'
 import { __resetSyncEngineForTests, ensureDefaultSpace, runSync, requestAttachmentPrefetch } from './sync'
 import { getAppState } from './app-state'
 import { addLocalAttachment, updateNoteLocal, deleteLocalAttachment } from './local-writes'
@@ -220,6 +221,35 @@ describe('pull', () => {
     await runSync(true)
     expect(await db.attachments.count()).toBe(0)
     expect(await db.jobs.count()).toBe(0)
+  })
+})
+
+describe('shared spaces', () => {
+  it('loads every note of a space joined later and drops a space the user was removed from', async () => {
+    server.memberships = new Map([[1, 'owner']])
+    const team = server.addSpace('Team')
+    const old = server.addNote('written before I joined', { space_id: team, user_id: 99 })
+    await ensureDefaultSpace()
+    await runSync(true)
+    expect(await db.notes.where('serverId').equals(old.id).count()).toBe(0)
+
+    // Joined: the note is older than the checkpoint but still arrives, with its author.
+    server.memberships.set(team, 'editor')
+    await runSync(true)
+    const space = (await db.spaces.where('serverId').equals(team).first())!
+    expect(space).toMatchObject({ name: 'Team', role: 'editor', memberCount: 2 })
+    const note = (await db.notes.where('serverId').equals(old.id).first())!
+    expect(note.spaceId).toBe(space.id)
+    expect(note.authorName).toBe('user99')
+    const members = await getKV<any[]>(MEMBERS_KV)
+    expect(members?.some(x => x.spaceId === team && x.username === 'anna')).toBe(true)
+
+    // Removed: the space and its notes disappear from this device.
+    server.memberships.delete(team)
+    await runSync(true)
+    expect(await db.spaces.where('serverId').equals(team).count()).toBe(0)
+    expect(await db.notes.where('serverId').equals(old.id).count()).toBe(0)
+    expect(await db.spaces.count()).toBe(1)
   })
 })
 

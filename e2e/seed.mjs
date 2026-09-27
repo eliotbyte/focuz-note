@@ -14,7 +14,7 @@ export async function seed(api, username = `demo${Date.now().toString(36)}`, ima
   await j('/register', { method: 'POST', body: JSON.stringify({ username, password }) })
   const token = (await j('/login', { method: 'POST', body: JSON.stringify({ username, password }) })).data.token
   const spaces = (await j('/spaces', { method: 'GET' }, token)).data?.data ?? []
-  const spaceId = spaces[0]?.id ?? (await j('/spaces', { method: 'POST', body: JSON.stringify({ name: 'My Space' }) }, token)).data.id
+  const spaceId = spaces[0]?.id ?? (await j('/spaces', { method: 'POST', body: JSON.stringify({ name: 'My Space', personal: true }) }, token)).data.id
   const now = Date.now()
   const iso = (minAgo) => new Date(now - minAgo * 60000).toISOString()
   const texts = [

@@ -24,9 +24,35 @@ export function setStoredTheme(theme: ThemeMode): void {
   document.documentElement.dataset.theme = theme
 }
 
+export type ThemePreference = ThemeMode | 'system'
+
+const systemQuery = () => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null)
+let systemListener: (() => void) | null = null
+
+export function getThemePreference(): ThemePreference {
+  try {
+    const v = localStorage.getItem(THEME_LS_KEY)
+    if (v === 'light' || v === 'dark' || v === 'system') return v
+  } catch {}
+  return 'dark'
+}
+
+/** Light, dark, or follow the device (and keep following it while the app is open). */
+export function setThemePreference(p: ThemePreference): void {
+  try { localStorage.setItem(THEME_LS_KEY, p) } catch {}
+  applyStoredTheme()
+}
+
 export function applyStoredTheme(): ThemeMode {
-  const stored = getStoredTheme()
-  const next: ThemeMode = stored || readTheme() || 'dark'
+  const pref = getThemePreference()
+  const q = systemQuery()
+  if (systemListener && q) { q.removeEventListener?.('change', systemListener); systemListener = null }
+  let next: ThemeMode = pref === 'system' ? (q?.matches ? 'light' : 'dark') : pref
+  if (pref === 'system' && q) {
+    systemListener = () => { document.documentElement.dataset.theme = q.matches ? 'light' : 'dark' }
+    q.addEventListener?.('change', systemListener)
+  }
+  if (!next) next = readTheme() || 'dark'
   document.documentElement.dataset.theme = next
   return next
 }

@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import type { NoteRecord, FilterRecord, SpaceRecord } from './lib/types'
+import type { NoteRecord, FilterRecord } from './lib/types'
 import { ensureDefaultSpace, getCurrentSpaceId, runSync, scheduleAutoSync, isAuthenticated, logout, deleteNote, addLocalAttachment, teardownSync, purgeAndLogout, countUnsyncedChanges } from './lib/sync'
 import { updateNoteLocal } from './lib/sync'
 import { searchNotes, ensureNoteIndexForSpace, initSearch } from './lib/search'
-import { activityTypes as activityTypesRepo, activities as activitiesRepo, filters as filtersRepo, kv, notes as notesRepo, spaces as spacesRepo } from './data'
+import { activityTypes as activityTypesRepo, activities as activitiesRepo, filters as filtersRepo, kv, notes as notesRepo } from './data'
 import { initAppState, useAppState } from './lib/app-state'
+import { db } from './lib/db'
 import { featureFlags } from './lib/feature-flags'
-import { Dialog, DialogContent, DialogTitle } from './components/ui/dialog'
 import { SystemStatusInline, SystemStatusLayer } from './components/SystemStatus'
 import { notifyUndoable } from './ui/notify'
 import { AppToaster } from './ui/toaster'
@@ -26,37 +26,45 @@ import {
   DEFAULT_QUICK, criteriaFromQuick, criteriaFromRule, mergeIntoRule, quickFromCriteria, ruleFromCriteria,
   type Criteria, type QuickState,
 } from './lib/criteria'
-import { applyStoredTheme, setStoredTheme } from './lib/theme'
+import { applyStoredTheme } from './lib/theme'
+import SettingsDialog from './components/SettingsDialog'
+import NotificationsBell from './components/NotificationsBell'
+import SpaceRail from './components/spaces/SpaceRail'
+import SpaceHeader from './components/spaces/SpaceHeader'
+import CreateSpaceDialog from './components/spaces/CreateSpaceDialog'
+import SpaceSettingsDialog, { type SpaceSettingsTab } from './components/spaces/SpaceSettingsDialog'
+import { SpaceContext, useSpaceView, type SpaceView } from './lib/space-context'
+import { useMe, useSpace, useSpaces } from './lib/useSpaces'
+import { canWrite, roleOf, ROLE_LABEL } from './lib/roles'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
-import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 
 function TopBar({
   onOpenSpaces,
   onOpenSettings,
-  onLogout,
   isThread,
   onBack,
   viewTitle,
+  onOpenSpace,
 }: {
   onOpenSpaces: () => void
   onOpenSettings: () => void
-  onLogout: () => void
   isThread?: boolean
   onBack?: () => void
   /** Current folder, shown on phones where the folder list lives in the drawer. */
   viewTitle?: string
+  onOpenSpace: (localSpaceId: number) => void
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[250px_minmax(0,1fr)_auto] xl:grid-cols-[270px_minmax(0,1fr)_auto] gap-3 md:gap-6 items-center">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[304px_minmax(0,1fr)_auto] xl:grid-cols-[324px_minmax(0,1fr)_auto] gap-3 md:gap-6 items-center">
       <div className="flex items-center gap-3 min-w-0">
         {isThread ? (
           <button className="icon-btn icon-35" onClick={onBack} type="button" aria-label="Back">
             <ArrowBackRoundedIcon fontSize="inherit" />
           </button>
         ) : (
-          <button className="icon-btn icon-35" onClick={onOpenSpaces} type="button" aria-label="Open spaces">
+          <button className="icon-btn icon-35 topbar-menu" onClick={onOpenSpaces} type="button" aria-label="Open spaces">
             <MenuRoundedIcon fontSize="inherit" />
           </button>
         )}
@@ -71,86 +79,27 @@ function TopBar({
       <div className="hidden md:block" />
       <div className="flex items-center justify-end gap-2">
         <SystemStatusInline />
+        <NotificationsBell onOpenSpace={onOpenSpace} />
         <button className="icon-btn icon-35" onClick={onOpenSettings} type="button" aria-label="Settings">
           <SettingsRoundedIcon fontSize="inherit" />
-        </button>
-        <button className="icon-btn icon-35" onClick={onLogout} type="button" aria-label="Logout">
-          <LogoutRoundedIcon fontSize="inherit" />
         </button>
       </div>
     </div>
   )
 }
 
-function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [theme, setTheme] = useState<string>(() => document.documentElement.dataset.theme || 'dark')
-  function save() {
-    setStoredTheme(theme === 'light' ? 'light' : 'dark')
-    onOpenChange(false)
-  }
+/** Phones: spaces on the left, the open space's folders on the right (like Discord). */
+function MobileDrawer({ open, onClose, rail, children }: { open: boolean; onClose: () => void; rail: ReactNode; children?: ReactNode }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden">
-        <div className="space-y-4">
-          <DialogTitle>Settings</DialogTitle>
-          <div className="flex items-center justify-between gap-6">
-            <label className="text-secondary">Theme</label>
-            <select className="input w-[180px]" value={theme} onChange={e => setTheme(e.target.value)}>
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-          </div>
-          <div className="flex justify-end gap-3">
-            <button className="button" onClick={() => onOpenChange(false)}>Cancel</button>
-            <button className="button" onClick={save}>Save</button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function SpaceDrawer({ open, onClose, currentId, onSelected, children }: { open: boolean; onClose: () => void; currentId?: number | null; onSelected?: (id: number) => void; children?: ReactNode }) {
-  const spaces = useLiveQuery(() => spacesRepo.listAll(), []) ?? []
-  async function selectSpace(id: number) {
-    await kv.set('currentSpaceId', id)
-    await runSync()
-    if (onSelected) onSelected(id)
-    else onClose()
-  }
-  return (
-    <div className={`fixed inset-0 z-[80] transition ${open ? '' : 'pointer-events-none'}`}>
+    <div className={`fixed inset-0 z-[80] transition md:hidden ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/60 ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <aside
-        className={`absolute left-0 top-0 h-full w-72 max-w-[85vw] flex flex-col ${open ? '' : '-translate-x-full'} transition-transform`}
-        style={{
-          background: 'rgb(var(--c-surface))',
-          boxShadow: 'var(--shadow-surface)',
-          borderTopRightRadius: 'var(--radius)',
-          borderBottomRightRadius: 'var(--radius)',
-        }}
+        className={`absolute left-0 top-0 h-full w-[21rem] max-w-[92vw] flex ${open ? '' : '-translate-x-full'} transition-transform`}
+        style={{ background: 'rgb(var(--c-page))', boxShadow: 'var(--shadow-surface)' }}
+        aria-label="Spaces and folders"
       >
-        <div className="p-4">
-          <h2 className="text-title text-muted mb-3">Spaces</h2>
-          <ul className="space-y-1">
-            {spaces.map((s: SpaceRecord) => (
-              <li key={s.id}>
-                <button
-                  type="button"
-                  className={[
-                    'w-full text-left px-3 py-1.5 rounded-[var(--radius-control)] transition-colors',
-                    (currentId === s.id ? 'text-primary' : 'text-secondary hover:text-primary'),
-                  ].join(' ')}
-                  style={currentId === s.id ? { background: 'rgba(var(--c-text) / 0.03)' } : undefined}
-                  onClick={() => selectSpace(s.id!)}
-                >
-                  <span className="truncate">{s.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-        {children ? <div className="md:hidden flex-1 min-h-0 px-2 pb-3">{children}</div> : null}
+        <div className="py-3 pl-2">{rail}</div>
+        <div className="flex-1 min-w-0 p-2">{children}</div>
       </aside>
     </div>
   )
@@ -546,6 +495,8 @@ function App() {
   const [headerHidden, setHeaderHidden] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [createSpaceOpen, setCreateSpaceOpen] = useState(false)
+  const [spaceSettings, setSpaceSettings] = useState<SpaceSettingsTab | null>(null)
   const [authed, setAuthed] = useState<boolean>(isAuthenticated())
   const [currentSpaceId, setCurrentSpaceId] = useState<number | null>(null)
   const [selectedFilter, setSelectedFilter] = useState<FilterRecord | null>(null)
@@ -561,6 +512,27 @@ function App() {
   const [quickFeed, setQuickFeed] = useState<QuickState>(DEFAULT_QUICK)
   const [quickThread, setQuickThread] = useState<QuickState>(DEFAULT_QUICK)
   const folderIndex = useFolderIndex(currentSpaceId, ruleDraft ? { id: ruleDraft.id, rule: ruleFromCriteria(ruleDraft.criteria) } : null)
+  const spaces = useSpaces()
+  const currentSpace = useSpace(currentSpaceId)
+  const me = useMe(authed)
+  const spaceView: SpaceView = {
+    space: currentSpace,
+    role: roleOf(currentSpace),
+    meId: me?.id,
+    meName: me?.username,
+    shared: !!currentSpace && !currentSpace.isPersonal && (currentSpace.memberCount ?? 1) > 1,
+  }
+  // The open space went away (left, removed, deleted elsewhere): go to the personal one.
+  useEffect(() => {
+    if (!currentSpaceId || spaces.length === 0 || spaces.some(x => x.id === currentSpaceId)) return
+    const id = currentSpaceId
+    void db.spaces.get(id).then(rec => {
+      if (rec && !rec.deletedAt) return
+      const next = spaces.find(x => x.isPersonal) ?? spaces[0]
+      if (next && currentSpaceIdRef.current === id) { void kv.set('currentSpaceId', next.id!); openSpace(next.id!) }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaces, currentSpaceId])
 
   useEffect(() => {
     initAppState()
@@ -939,6 +911,13 @@ function App() {
     })()
   }
 
+  /** Opens another space (rail, drawer, notifications). */
+  function switchSpace(localId: number) {
+    if (localId === currentSpaceId) return
+    void kv.set('currentSpaceId', localId)
+    openSpace(localId)
+  }
+
   function goBack() {
     if (!currentSpaceId) return
     const prev = historyTrailRef.current
@@ -994,8 +973,18 @@ function App() {
 
   if (!authed) return <AuthScreen onDone={() => setAuthed(true)} />
 
+  const rail = (
+    <SpaceRail spaces={spaces} currentId={currentSpaceId} onSelect={(id) => { switchSpace(id); setDrawerOpen(false) }} onCreate={() => { setDrawerOpen(false); setCreateSpaceOpen(true) }} />
+  )
   const tree = currentSpaceId ? (
-    <FolderTree spaceId={currentSpaceId} index={folderIndex} view={feedView} onSelect={selectView} onEditRule={startEditRule} />
+    <FolderTree
+      spaceId={currentSpaceId}
+      index={folderIndex}
+      view={feedView}
+      onSelect={selectView}
+      onEditRule={startEditRule}
+      header={currentSpace ? <SpaceHeader space={currentSpace} onOpen={(tab) => { setDrawerOpen(false); setSpaceSettings(tab) }} onCreateShared={() => { setDrawerOpen(false); setCreateSpaceOpen(true) }} /> : null}
+    />
   ) : null
   const viewTitle = feedView.kind === 'folder'
     ? (folderIndex?.nodes.get(feedView.id)?.rec.name ?? selectedFilter?.name ?? 'Folder')
@@ -1091,7 +1080,10 @@ function App() {
               onSaveAsFolder={(name) => { void saveAsFolder(name) }}
             />
           )}
-          {!editing && <NoteComposer spaceId={currentSpaceId} positiveQuickTags={newNoteTags} />}
+          {!editing && canWrite(spaceView.role) && <NoteComposer spaceId={currentSpaceId} positiveQuickTags={newNoteTags} />}
+          {!editing && !canWrite(spaceView.role) && (
+            <div className="guest-banner" role="note">You are a {ROLE_LABEL[spaceView.role].toLowerCase()} here: you can read notes, but not write or change them.</div>
+          )}
           <NoteList
             spaceId={currentSpaceId}
             filter={null}
@@ -1119,6 +1111,7 @@ function App() {
   }
 
   return (
+    <SpaceContext.Provider value={spaceView}>
     <div className="h-dvh">
       <header
         ref={topbarRef}
@@ -1141,10 +1134,10 @@ function App() {
           <TopBar
             onOpenSpaces={() => setDrawerOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
-            onLogout={() => { void handleLogout() }}
             isThread={!!currentNoteId}
             onBack={goBack}
             viewTitle={viewTitle}
+            onOpenSpace={(id) => switchSpace(id)}
           />
         </div>
       </header>
@@ -1181,7 +1174,7 @@ function App() {
         }}
       >
         <div className="mx-auto max-w-[1440px] px-4 md:px-6">
-          <div className="grid grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)] xl:grid-cols-[270px_minmax(0,1fr)] gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-[304px_minmax(0,1fr)] xl:grid-cols-[324px_minmax(0,1fr)] gap-6">
             <aside
               className="hidden md:block py-4 self-start"
               style={{
@@ -1192,7 +1185,10 @@ function App() {
                 height: 'calc(100vh - var(--topbar-effective-h, var(--topbar-h, 96px)))',
               }}
             >
-              <div className="h-full">{tree}</div>
+              <div className="h-full flex gap-2">
+                {rail}
+                <div className="flex-1 min-w-0 h-full">{tree}</div>
+              </div>
             </aside>
 
             <main className="min-w-0 py-4 w-full max-w-[880px] mx-auto">
@@ -1206,11 +1202,26 @@ function App() {
       </div>
 
       {drawerOpen && (
-        <SpaceDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} currentId={currentSpaceId} onSelected={(id) => { openSpace(id) }}>
+        <MobileDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} rail={rail}>
           {tree}
-        </SpaceDrawer>
+        </MobileDrawer>
       )}
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} onLogout={() => { setSettingsOpen(false); void handleLogout() }} />
+      {createSpaceOpen && (
+        <CreateSpaceDialog
+          onClose={() => setCreateSpaceOpen(false)}
+          onCreated={(id) => { setCreateSpaceOpen(false); switchSpace(id); setSpaceSettings('members') }}
+        />
+      )}
+      {spaceSettings && currentSpace && (
+        <SpaceSettingsDialog
+          space={currentSpace}
+          tab={spaceSettings}
+          onTabChange={setSpaceSettings}
+          onClose={() => setSpaceSettings(null)}
+          onGone={() => { setSpaceSettings(null); const p = spaces.find(x => x.isPersonal && x.id !== currentSpaceId) ?? spaces.find(x => x.id !== currentSpaceId); if (p) switchSpace(p.id!) }}
+        />
+      )}
       {authRequired && (
         <ReauthDialog
           onDone={() => { /* authRequired toggled by sync module */ }}
@@ -1219,6 +1230,7 @@ function App() {
       )}
       <AppToaster />
     </div>
+    </SpaceContext.Provider>
   )
 }
 
@@ -1284,6 +1296,7 @@ function ReplyComposer({ spaceId, parentId, positiveQuickTags = [] }: { spaceId:
 
 function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTag, toolbar }: { spaceId: number; noteId: number; onBack: () => void; onOpenThread: (nid: number) => void; quick: QuickState; onAddQuickTag?: (tag: string) => void; toolbar?: ReactNode }) {
   const mainNote = useLiveQuery(() => notesRepo.getByLocalId(noteId), [noteId]) as NoteRecord | undefined
+  const view = useSpaceView()
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState<NoteEditorValue>({ text: '', tags: [] })
 
@@ -1325,7 +1338,7 @@ function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTa
       ) : (
         <SingleNoteCard note={mainNote} onEdit={() => setEditing(true)} onDelete={removeMain} onOpenThread={onOpenThread} />
       )}
-      <ReplyComposer spaceId={spaceId} parentId={noteId} positiveQuickTags={quick.tags.filter(t => !t.startsWith('!'))} />
+      {canWrite(view.role) && <ReplyComposer spaceId={spaceId} parentId={noteId} positiveQuickTags={quick.tags.filter(t => !t.startsWith('!'))} />}
       {toolbar}
       <div className="min-w-0">
         <NoteList spaceId={spaceId} filter={null} quick={quick} parentId={noteId} onOpenThread={onOpenThread} onAddQuickTag={onAddQuickTag} />

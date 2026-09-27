@@ -502,3 +502,143 @@ test.describe('folders', () => {
     await shot(page, '28-mobile-folder')
   })
 })
+
+test.describe('shared spaces', () => {
+  async function newAccount(prefix: string) {
+    const username = `${prefix}${Date.now().toString(36)}`
+    const post = (path: string) => fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password: 'Password123' }) })
+    expect((await post('/register')).status).toBe(201)
+    const token = (await (await post('/login')).json()).data.token as string
+    return { username, token }
+  }
+
+  test('create a space, invite by name, accept from the bell, roles decide what people can do', async ({ page, browser }) => {
+    await page.goto('/')
+    const anna = await seed(API)
+    const bob = await newAccount('bob')
+    await signIn(page, anna.token)
+
+    // Create a space: the members tab opens right away to invite people.
+    await page.getByRole('button', { name: 'New space' }).click()
+    await page.getByLabel('Name').fill('Book club')
+    await page.getByRole('button', { name: 'Create', exact: true }).click()
+    const settings = page.getByRole('dialog', { name: 'Book club' })
+    await expect(settings.getByRole('tab', { name: 'Members' })).toHaveAttribute('aria-selected', 'true')
+    await settings.getByPlaceholder('Username').fill(bob.username)
+    await settings.getByRole('button', { name: 'Invite', exact: true }).click()
+    await expect(settings.getByRole('status')).toContainText(`Invitation for “${bob.username}” is sent`)
+    // An unknown name gets exactly the same answer: invitations don't reveal who has an account.
+    await settings.getByPlaceholder('Username').fill('nobody-here-42')
+    await settings.getByRole('button', { name: 'Invite', exact: true }).click()
+    await expect(settings.getByRole('status')).toContainText('Invitation for “nobody-here-42” is sent')
+    await expect(settings.getByRole('region', { name: 'Pending invitations' }).or(settings.locator('section[aria-label="Pending invitations"]'))).toContainText(bob.username)
+    await shot(page, '29-invite-members')
+    await page.keyboard.press('Escape')
+
+    await expect(page.getByRole('button', { name: /Space menu: Book club/ })).toBeVisible()
+    await page.getByRole('button', { name: 'Add note…' }).click()
+    await page.getByPlaceholder(/Add note/).fill('Next book: Dune')
+    await page.getByRole('button', { name: 'Create', exact: true }).click()
+    await expect(page.locator('li', { hasText: 'Next book: Dune' })).toBeVisible()
+
+    // Bob: the bell shows the invitation, Accept opens the space with Anna's note and her name.
+    const bobCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' })
+    const bobPage = await bobCtx.newPage()
+    await signIn(bobPage, bob.token)
+    const bell = bobPage.getByRole('button', { name: /Notifications, 1 unread/ })
+    await expect(bell).toBeVisible({ timeout: 15000 })
+    await bell.click()
+    await expect(bobPage.getByText(`${anna.username} invited you to Book club as editor`)).toBeVisible()
+    await shot(bobPage, '30-bell-invitation')
+    await bobPage.getByRole('button', { name: 'Accept' }).click()
+    await expect(bobPage.getByRole('button', { name: /Space menu: Book club/ })).toBeVisible({ timeout: 15000 })
+    const annasNote = bobPage.locator('li', { hasText: 'Next book: Dune' })
+    await expect(annasNote).toBeVisible()
+    await expect(annasNote).toContainText(anna.username)
+    await shot(bobPage, '31-shared-space')
+
+    // Editors don't delete other people's notes; Details shows who wrote it.
+    await annasNote.hover()
+    await annasNote.getByRole('button', { name: 'Open actions' }).click()
+    await expect(bobPage.getByRole('menuitem', { name: 'Edit' })).toBeVisible()
+    await expect(bobPage.getByRole('menuitem', { name: 'Delete' })).toHaveCount(0)
+    await bobPage.getByRole('menuitem', { name: 'Details' }).click()
+    const details = bobPage.getByRole('dialog', { name: 'Details' })
+    await expect(details).toContainText(anna.username)
+    await expect(details.getByRole('region', { name: 'History' }).or(details.locator('section[aria-label="History"]'))).toContainText('created it')
+    await bobPage.keyboard.press('Escape')
+
+    // Anna is told Bob joined, and makes him a guest: his composer goes away.
+    await expect(page.getByRole('button', { name: /Notifications, 1 unread/ })).toBeVisible({ timeout: 15000 })
+    await page.getByRole('button', { name: /Space menu: Book club/ }).click()
+    await page.getByRole('menuitem', { name: 'Members' }).click()
+    await page.getByLabel(`Role of ${bob.username}`).selectOption('guest')
+    await page.keyboard.press('Escape')
+    await expect(bobPage.getByText('You are a guest here')).toBeVisible({ timeout: 20000 })
+    await expect(bobPage.getByRole('button', { name: 'Add note…' })).toHaveCount(0)
+    await bobCtx.close()
+  })
+
+  test('publish a note with its replies, turn replies off, make it private again', async ({ page, browser }) => {
+    await page.goto('/')
+    const s = await seed(API)
+    await signIn(page, s.token)
+    const root = page.locator('li', { hasText: 'Ревью архитектуры синхронизации' }).filter({ hasText: '2 replies' })
+    await root.hover()
+    await root.getByRole('button', { name: 'Open actions' }).click()
+    await page.getByRole('menuitem', { name: 'Share…' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Share note' })
+    await expect(dialog.getByRole('switch', { name: /Replies are public too/ })).toBeChecked()
+    await dialog.getByRole('button', { name: 'Make public' }).click()
+    const link = dialog.getByLabel('Public link')
+    await expect(link).toHaveValue(/\/p\//)
+    const url = await link.inputValue()
+    await shot(page, '32-share-dialog')
+    await page.keyboard.press('Escape')
+
+    // The note and its replies (inherited, lighter) get the planet.
+    await expect(root.getByRole('button', { name: 'Public note: link and settings' })).toBeVisible()
+    await expect(page.locator('li', { hasText: 'Ответ: backoff' }).getByRole('button', { name: 'Public as part of a shared thread' })).toBeVisible()
+
+    // Anyone can read it without signing in.
+    const guest = await browser.newContext({ viewport: { width: 1000, height: 900 }, serviceWorkers: 'block' })
+    const pub = await guest.newPage()
+    await pub.goto(url)
+    await expect(pub.getByText('Public, read-only')).toBeVisible()
+    await expect(pub.getByText('Ревью архитектуры синхронизации')).toBeVisible()
+    await expect(pub.getByText('Ответ: backoff начинать с 2с')).toBeVisible()
+    await shot(pub, '33-public-page')
+
+    // Replies private: the page shows only the note.
+    await root.getByRole('button', { name: 'Public note: link and settings' }).click()
+    await dialog.getByRole('switch', { name: /Replies are public too/ }).click()
+    await expect(dialog.getByRole('switch', { name: /Replies are public too/ })).not.toBeChecked({ timeout: 10000 })
+    await pub.reload()
+    await expect(pub.getByText('Ревью архитектуры синхронизации')).toBeVisible()
+    await expect(pub.getByText('Ответ: backoff начинать с 2с')).toHaveCount(0)
+
+    // Private again: the link stops working, the planet goes away.
+    await dialog.getByRole('button', { name: 'Make private' }).click()
+    await expect(root.getByRole('button', { name: 'Public note: link and settings' })).toHaveCount(0, { timeout: 10000 })
+    await pub.reload()
+    await expect(pub.getByText('This page is not available')).toBeVisible()
+    await guest.close()
+  })
+
+  test('settings: account, e-mail notifications explained, theme', async ({ page }) => {
+    await page.goto('/')
+    const s = await seed(API)
+    await signIn(page, s.token)
+    await page.getByRole('button', { name: 'Settings' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Settings' })
+    await expect(dialog.getByText(s.username)).toBeVisible()
+    await shot(page, '34-settings')
+    await dialog.getByRole('tab', { name: 'Notifications' }).click()
+    await expect(dialog.getByText('This server uses usernames')).toBeVisible()
+    await dialog.getByRole('tab', { name: 'Appearance' }).click()
+    await dialog.getByRole('radio', { name: /Light/ }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await dialog.getByRole('radio', { name: /Dark/ }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  })
+})

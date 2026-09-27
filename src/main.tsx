@@ -4,6 +4,7 @@ import '@fontsource/manrope/400.css'
 import '@fontsource/manrope/700.css'
 import './index.css'
 import App from './App.tsx'
+import PublicPage from './components/PublicPage'
 import { registerSW } from 'virtual:pwa-register'
 import { notifyUpdateAvailable } from './ui/notify'
 import { applyStoredTheme } from './lib/theme'
@@ -18,8 +19,11 @@ const updateSW = registerSW({
   },
 })
 
+// Public links (/p/<token>) are read-only pages that work without signing in.
+const publicToken = location.pathname.match(/^\/p\/([^/]+)\/?$/)?.[1]
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {publicToken ? <PublicPage token={decodeURIComponent(publicToken)} /> : <App />}
   </StrictMode>,
 )

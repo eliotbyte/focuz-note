@@ -3,10 +3,17 @@ export interface MetaKV {
   value: string
 }
 
+export type SpaceRole = 'owner' | 'admin' | 'editor' | 'guest'
+
 export interface SpaceRecord {
   id?: number
   serverId?: number | null
   name: string
+  /** My role in the space (from the server; missing = owner of a local, not yet synced space). */
+  role?: SpaceRole
+  /** The private space created at sign-up; it can't be shared. */
+  isPersonal?: boolean
+  memberCount?: number
   createdAt: string
   modifiedAt: string
   deletedAt?: string | null
@@ -34,6 +41,29 @@ export interface NoteRecord {
   serverModifiedAt?: string | null
   deletedAt?: string | null
   isDirty: 0 | 1
+  /** Server user id and name of the author, and of whoever changed the note last. */
+  authorId?: number | null
+  authorName?: string | null
+  modifiedById?: number | null
+  modifiedByName?: string | null
+}
+
+/** A member of a space (by server space id). */
+export interface SpaceMember {
+  spaceId: number
+  userId: number
+  username: string
+  role: SpaceRole
+}
+
+/** An active public link; noteId null = the whole space. Ids are server ids. */
+export interface PublicShare {
+  token: string
+  spaceId: number
+  noteId: number | null
+  includeReplies: boolean
+  createdBy: number
+  createdAt: string
 }
 
 export interface NoteConflictRecord {

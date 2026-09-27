@@ -40,3 +40,8 @@ export function notifyUpdateAvailable(onApply: () => void) {
     action: { label: 'Reload', onClick: onApply },
   })
 }
+
+/** A notice with one action button (e.g. "View" on a new invitation). */
+export function notifyWithAction(message: string, action: { label: string; onClick: () => void }, opts?: { id?: string }) {
+  return toast(message, { id: opts?.id, action: { label: action.label, onClick: action.onClick } })
+}

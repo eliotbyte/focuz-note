@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import UnfoldLessRoundedIcon from '@mui/icons-material/UnfoldLessRounded'
@@ -55,12 +55,15 @@ export default function FolderTree({
   view,
   onSelect,
   onEditRule,
+  header,
 }: {
   spaceId: number
   index: FolderIndex | undefined
   view: FeedView
   onSelect: (view: FeedView) => void
   onEditRule: (folderId: number) => void
+  /** Shown above the list (the space name and menu). */
+  header?: ReactNode
 }) {
   const [expanded, setExpanded] = useExpandedState(spaceId)
   const [creating, setCreating] = useState<{ parent: number | null } | null>(null)
@@ -164,6 +167,7 @@ export default function FolderTree({
   return (
     <div className="min-w-0 h-full">
       <div className="card h-full flex flex-col !px-2 !py-3">
+        {header}
         <div className="text-[14px] space-y-0.5">
           <div
             role="button"
