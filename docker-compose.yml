@@ -52,6 +52,18 @@ services:
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_BUCKET=notes
       - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
+      # Accounts: username (default) or email (sign-up with e-mail + confirmation code)
+      - AUTH_MODE=${AUTH_MODE:-username}
+      - REGISTRATION=${REGISTRATION:-open}
+      # Address users reach the API at; used for the confirmation link in e-mails
+      - PUBLIC_API_URL=${PUBLIC_API_URL:-}
+      # Outgoing mail. Without SMTP_HOST, e-mails are only written to the API log.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURITY=${SMTP_SECURITY:-starttls}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
       # Rate limit toggles for dev
       - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-1}
       - RATE_LIMIT_RPS=${RATE_LIMIT_RPS:-5}

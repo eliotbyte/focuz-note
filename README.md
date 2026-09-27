@@ -57,3 +57,23 @@ cd focuz-web && E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8
 - If the API is not behind a reverse proxy, set `TRUSTED_PROXIES` to an empty value or to your proxy's
   address only: with the default private ranges, clients can spoof their IP via `X-Forwarded-For`
   and bypass per-IP rate limits (logins are additionally limited per account).
+
+## Accounts and e-mail
+
+Set in `.env` (see `env.example`):
+
+- `AUTH_MODE=username` (default): people sign up with a username.
+- `AUTH_MODE=email`: people sign up with an e-mail address. The server e-mails a 6-digit code (and a
+  confirmation link if `PUBLIC_API_URL` is set); the account can sign in only after confirming.
+  Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`.
+  Without `SMTP_HOST` the e-mail is printed to the API log, which is enough to try it out.
+  Existing username accounts keep working after switching.
+- `REGISTRATION=closed` turns off sign-up.
+
+## Choosing the server in the web app
+
+The web app is only the client: on the sign-in screen, "Server … · Change" lets people type the
+address of any focuz server (like Bitwarden clients with a self-hosted Vaultwarden). The sign-in
+form adapts to that server (username or e-mail, sign-up open or closed). `VITE_API_BASE_URL` is just
+the default. For a web app on another domain to connect, the server needs that origin in
+`ALLOWED_ORIGINS`, or `ALLOWED_ORIGINS=*`.
