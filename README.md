@@ -49,6 +49,18 @@ cd focuz-web && E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8
 - Note text is now read as Markdown (GFM checklists `- [ ] item`). Existing plain-text notes are not
   rewritten and display as before (line breaks kept, no raw HTML); a note only changes when you edit it.
 
+## Folders
+
+Saved filters are shown as folders. A folder shows the notes that match its rule (tags, excluded
+tags, text, open checklist items) plus everything its subfolders show; a folder without a rule is
+just a group. Notes are never stored inside a folder: a folder whose rule is only tags works like a
+classic folder, because notes written in it (or ticked via ⋮ → Folders…) get those tags. Top-level
+notes that are in no folder appear in Unsorted. Deleting a folder never deletes notes unless you
+tick the option, and then only notes that would be in no other folder.
+
+Existing saved filters keep their rules and places. One visible change: a filter with nested
+filters now also shows their notes; "Only this folder" shows just its own.
+
 ## Security checklist for a self-hosted install
 
 - Set your own secrets in `.env` (see `env.example`): `JWT_SECRET` (e.g. `openssl rand -hex 32`),
