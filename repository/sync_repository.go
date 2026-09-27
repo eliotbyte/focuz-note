@@ -3,8 +3,8 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
-	"focuz-api/globals"
 	"focuz-api/models"
+	"focuz-api/pkg/access"
 	"focuz-api/types"
 	"time"
 
@@ -22,6 +22,8 @@ type SyncRepository struct {
 	db *sql.DB
 	// q is the executor used by applyChanges (a transaction during a push).
 	q querier
+	// touched collects the spaces changed by the current push (nil outside a push).
+	touched map[int]bool
 }
 
 func NewSyncRepository(db *sql.DB) *SyncRepository { return &SyncRepository{db: db, q: db} }
@@ -59,6 +61,9 @@ func (r *SyncRepository) GetChangesSince(userID int, accessibleSpaceIDs []int, s
 	// Notes (include deleted). Include nested activities, charts and attachments (with RFC3339 timestamps) for each note.
 	noteRows, err := r.db.Query(`
         SELECT n.id, n.user_id, n.space_id, n.text, n.date, n.parent_id, n.created_at, n.modified_at, n.is_deleted,
+          COALESCE((SELECT username FROM users WHERE id = n.user_id), ''),
+          COALESCE(n.modified_by, n.user_id),
+          COALESCE((SELECT username FROM users WHERE id = COALESCE(n.modified_by, n.user_id)), ''),
           COALESCE((SELECT ARRAY_AGG(t.name ORDER BY t.name)
                    FROM note_to_tag nt JOIN tag t ON t.id = nt.tag_id
                    WHERE nt.note_id = n.id), ARRAY[]::text[]) AS tags,
@@ -125,7 +130,9 @@ func (r *SyncRepository) GetChangesSince(userID int, accessibleSpaceIDs []int, s
 		var activitiesJSON []byte
 		var chartsJSON []byte
 		var attachmentsJSON []byte
-		if err := noteRows.Scan(&id, &userIDRow, &spaceID, &text, &date, &parentID, &created, &modified, &isDeleted, pq.Array(&tags), &activitiesJSON, &chartsJSON, &attachmentsJSON); err != nil {
+		var authorName, modifiedByName string
+		var modifiedBy int
+		if err := noteRows.Scan(&id, &userIDRow, &spaceID, &text, &date, &parentID, &created, &modified, &isDeleted, &authorName, &modifiedBy, &modifiedByName, pq.Array(&tags), &activitiesJSON, &chartsJSON, &attachmentsJSON); err != nil {
 			noteRows.Close()
 			return nil, err
 		}
@@ -143,16 +150,19 @@ func (r *SyncRepository) GetChangesSince(userID int, accessibleSpaceIDs []int, s
 			parentPtr = &tmp
 		}
 		var noteChange = types.NoteChange{
-			ID:         &id,
-			SpaceID:    spaceID,
-			UserID:     userIDRow,
-			Text:       &text,
-			Tags:       tags,
-			Date:       datePtr,
-			ParentID:   parentPtr,
-			CreatedAt:  created,
-			ModifiedAt: modified,
-			DeletedAt:  deletedAt,
+			ID:             &id,
+			SpaceID:        spaceID,
+			UserID:         userIDRow,
+			AuthorName:     authorName,
+			ModifiedBy:     modifiedBy,
+			ModifiedByName: modifiedByName,
+			Text:           &text,
+			Tags:           tags,
+			Date:           datePtr,
+			ParentID:       parentPtr,
+			CreatedAt:      created,
+			ModifiedAt:     modified,
+			DeletedAt:      deletedAt,
 		}
 		if len(activitiesJSON) > 0 {
 			var acts []types.ActivityChange
@@ -202,7 +212,8 @@ func (r *SyncRepository) GetChangesSince(userID int, accessibleSpaceIDs []int, s
 		FROM filters
 		WHERE space_id = ANY($1)
 		AND modified_at > $2
-	`, pq.Array(accessibleSpaceIDs), since)
+		AND user_id = $3
+	`, pq.Array(accessibleSpaceIDs), since, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -294,13 +305,16 @@ func (r *SyncRepository) ApplyChanges(userID int, payload types.SyncPushRequest)
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	txRepo := &SyncRepository{db: r.db, q: tx}
+	txRepo := &SyncRepository{db: r.db, q: tx, touched: map[int]bool{}}
 	resp, err := txRepo.applyChanges(userID, payload)
 	if err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+	for id := range txRepo.touched {
+		resp.TouchedSpaces = append(resp.TouchedSpaces, id)
 	}
 	return resp, nil
 }
@@ -332,12 +346,12 @@ func (r *SyncRepository) validParentNote(parentID *int, spaceID int) (*int, erro
 }
 
 // validParentFilter is the filters counterpart of validParentNote.
-func (r *SyncRepository) validParentFilter(parentID *int, spaceID int) (*int, error) {
+func (r *SyncRepository) validParentFilter(parentID *int, spaceID, userID int) (*int, error) {
 	if parentID == nil {
 		return nil, nil
 	}
 	var exists bool
-	if err := r.q.QueryRow(`SELECT EXISTS(SELECT 1 FROM filters WHERE id = $1 AND space_id = $2)`, *parentID, spaceID).Scan(&exists); err != nil {
+	if err := r.q.QueryRow(`SELECT EXISTS(SELECT 1 FROM filters WHERE id = $1 AND space_id = $2 AND user_id = $3)`, *parentID, spaceID, userID).Scan(&exists); err != nil {
 		return nil, err
 	}
 	if !exists {
@@ -368,14 +382,36 @@ func (r *SyncRepository) spaceRoles(userID int) (map[int]int, error) {
 	return roles, rows.Err()
 }
 
-// canModify mirrors the REST rules: any member may add to a space, owners may change anything
-// in it, other members only what they authored.
-func canModify(roles map[int]int, spaceID, authorID, userID int) bool {
-	role := roles[spaceID]
-	if role == 0 {
-		return false
+// canModify covers things attached to notes (activities, charts): whoever may edit notes in the
+// space may change them.
+func canModify(roles map[int]int, spaceID int) bool {
+	return access.CanEditNote(roles[spaceID])
+}
+
+// logNoteEdit records who changed a note. Repeated edits by the same person within ten minutes
+// are one entry, so typing in bursts does not flood the history.
+func (r *SyncRepository) logNoteEdit(noteID, userID int, action string) error {
+	if action == "edited" {
+		res, err := r.q.Exec(`
+			UPDATE note_edits SET edited_at = NOW()
+			WHERE id = (SELECT id FROM note_edits WHERE note_id = $1 ORDER BY edited_at DESC, id DESC LIMIT 1)
+			  AND user_id = $2 AND action = 'edited' AND edited_at > NOW() - INTERVAL '10 minutes'`, noteID, userID)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			return nil
+		}
 	}
-	return role == globals.DefaultOwnerRoleID || authorID == userID
+	_, err := r.q.Exec(`INSERT INTO note_edits (note_id, user_id, action) VALUES ($1, $2, $3)`, noteID, userID, action)
+	return err
+}
+
+// touchSpace remembers that a space changed in this push, so other members can be told to sync.
+func (r *SyncRepository) touchSpace(spaceID int) {
+	if r.touched != nil {
+		r.touched[spaceID] = true
+	}
 }
 
 // activityTypeUsable reports whether an activity type may be used for notes in spaceID
@@ -407,7 +443,7 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			if n.Text == nil {
 				continue
 			}
-			if roles[n.SpaceID] == 0 {
+			if !access.CanWrite(roles[n.SpaceID]) {
 				reject(resp, "note", nil, n.ClientID, "forbidden")
 				continue
 			}
@@ -432,13 +468,17 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			var newModified time.Time
 			// Insert note
 			err = r.q.QueryRow(`
-				INSERT INTO note (user_id, text, created_at, modified_at, date, parent_id, space_id, is_deleted, client_id)
-				VALUES ($1, $2, COALESCE($3, NOW()), NOW(), COALESCE($4, NOW()), $5, $6, FALSE, $7)
+				INSERT INTO note (user_id, text, created_at, modified_at, date, parent_id, space_id, is_deleted, client_id, modified_by)
+				VALUES ($1, $2, COALESCE($3, NOW()), NOW(), COALESCE($4, NOW()), $5, $6, FALSE, $7, $1)
 				RETURNING id, modified_at
 			`, userID, *n.Text, n.CreatedAt, n.Date, parentID, n.SpaceID, n.ClientID).Scan(&newID, &newModified)
 			if err != nil {
 				return nil, err
 			}
+			if err := r.logNoteEdit(newID, userID, "created"); err != nil {
+				return nil, err
+			}
+			r.touchSpace(n.SpaceID)
 			// Replace tags
 			if err := r.replaceNoteTags(newID, n.Tags, n.SpaceID); err != nil {
 				return nil, err
@@ -528,7 +568,8 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 		// the space id sent by the client (which could point anywhere).
 		var serverModified time.Time
 		var noteSpaceID, noteAuthorID int
-		err := r.q.QueryRow(`SELECT modified_at, space_id, user_id FROM note WHERE id = $1`, *n.ID).Scan(&serverModified, &noteSpaceID, &noteAuthorID)
+		var noteDeleted bool
+		err := r.q.QueryRow(`SELECT modified_at, space_id, user_id, COALESCE(is_deleted, FALSE) FROM note WHERE id = $1`, *n.ID).Scan(&serverModified, &noteSpaceID, &noteAuthorID, &noteDeleted)
 		if err == sql.ErrNoRows {
 			// Ids are assigned by the server; an unknown id is never created implicitly.
 			reject(resp, "note", n.ID, n.ClientID, "not_found")
@@ -536,7 +577,18 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 		} else if err != nil {
 			return nil, err
 		}
-		if !canModify(roles, noteSpaceID, noteAuthorID, userID) {
+		// Deleting or restoring needs more than editing: editors may only delete their own notes.
+		action := "edited"
+		if n.DeletedAt != nil && !noteDeleted {
+			action = "deleted"
+		} else if n.DeletedAt == nil && noteDeleted {
+			action = "restored"
+		}
+		allowed := access.CanEditNote(roles[noteSpaceID])
+		if action != "edited" {
+			allowed = access.CanDeleteNote(roles[noteSpaceID], noteAuthorID, userID)
+		}
+		if !allowed {
 			reject(resp, "note", n.ID, n.ClientID, "forbidden")
 			continue
 		}
@@ -548,12 +600,16 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			}
 			var newModified time.Time
 			err = r.q.QueryRow(`
-                UPDATE note SET text = COALESCE($2, text), date = COALESCE($3, date), parent_id = $4, is_deleted = $5, modified_at = NOW() WHERE id = $1
+                UPDATE note SET text = COALESCE($2, text), date = COALESCE($3, date), parent_id = $4, is_deleted = $5, modified_at = NOW(), modified_by = $6 WHERE id = $1
                 RETURNING modified_at
-            `, *n.ID, n.Text, n.Date, parentID, n.DeletedAt != nil).Scan(&newModified)
+            `, *n.ID, n.Text, n.Date, parentID, n.DeletedAt != nil, userID).Scan(&newModified)
 			if err != nil {
 				return nil, err
 			}
+			if err := r.logNoteEdit(*n.ID, userID, action); err != nil {
+				return nil, err
+			}
+			r.touchSpace(n.SpaceID)
 			resp.Versions = append(resp.Versions, types.Version{Resource: "note", ID: *n.ID, ModifiedAt: newModified})
 			if err := r.replaceNoteTags(*n.ID, n.Tags, n.SpaceID); err != nil {
 				return nil, err
@@ -818,8 +874,8 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			} else if err != nil {
 				return nil, err
 			}
-			// Saved filters are shared by the members of a space (same as PATCH /filters/:id).
-			if roles[filterSpaceID] == 0 {
+			// Folders (saved filters) are personal: each member of a space has their own.
+			if roles[filterSpaceID] == 0 || filterAuthorID != userID {
 				reject(resp, "filter", f.ID, f.ClientID, "forbidden")
 				continue
 			}
@@ -829,7 +885,7 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			continue
 		}
 		if f.ParentID != nil {
-			pid, err := r.validParentFilter(f.ParentID, f.SpaceID)
+			pid, err := r.validParentFilter(f.ParentID, f.SpaceID, userID)
 			if err != nil {
 				return nil, err
 			}
@@ -901,7 +957,7 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 		} else if err != nil {
 			return nil, err
 		}
-		if !canModify(roles, chartSpaceID, chartAuthorID, userID) {
+		if !canModify(roles, chartSpaceID) {
 			id := ch.ID
 			reject(resp, "chart", &id, nil, "forbidden")
 			continue
@@ -931,7 +987,7 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 		}
 		allowed := actAuthorID == userID
 		if actSpaceID.Valid {
-			allowed = canModify(roles, int(actSpaceID.Int64), actAuthorID, userID)
+			allowed = canModify(roles, int(actSpaceID.Int64))
 		}
 		if !allowed {
 			id := a.ID

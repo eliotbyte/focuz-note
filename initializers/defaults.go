@@ -14,8 +14,18 @@ func InitDefaults(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	adminID, err := ensureRole(db, "admin")
+	if err != nil {
+		return err
+	}
+	editorID, err := ensureRole(db, "editor")
+	if err != nil {
+		return err
+	}
 	globals.DefaultOwnerRoleID = ownerID
 	globals.DefaultGuestRoleID = guestID
+	globals.DefaultAdminRoleID = adminID
+	globals.DefaultEditorRoleID = editorID
 
 	healthID, err := ensureCategory(db, "health")
 	if err != nil {

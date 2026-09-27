@@ -4,7 +4,11 @@ import "time"
 
 // SyncPullResponse represents all changes since a given timestamp.
 type SyncPullResponse struct {
-	Spaces        []SpaceChange        `json:"spaces"`
+	Spaces []SpaceChange `json:"spaces"`
+	// Always complete (not incremental): the spaces the user is in, their members and public links.
+	Memberships   interface{}          `json:"memberships,omitempty"`
+	Members       interface{}          `json:"members,omitempty"`
+	Shares        interface{}          `json:"shares,omitempty"`
 	Notes         []NoteChange         `json:"notes"`
 	Tags          []TagChange          `json:"tags"`
 	Filters       []FilterChange       `json:"filters"`
@@ -20,17 +24,21 @@ type SpaceChange struct {
 }
 
 type NoteChange struct {
-	ID         *int       `json:"id,omitempty"`
-	ClientID   *string    `json:"clientId,omitempty"`
-	SpaceID    int        `json:"space_id"`
-	UserID     int        `json:"user_id"`
-	Text       *string    `json:"text,omitempty"`
-	Tags       []string   `json:"tags"`
-	Date       *time.Time `json:"date,omitempty"`
-	ParentID   *int       `json:"parent_id,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	ModifiedAt time.Time  `json:"modified_at"`
-	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
+	ID       *int    `json:"id,omitempty"`
+	ClientID *string `json:"clientId,omitempty"`
+	SpaceID  int     `json:"space_id"`
+	UserID   int     `json:"user_id"`
+	// Pull only: who wrote the note and who changed it last.
+	AuthorName     string     `json:"author_name,omitempty"`
+	ModifiedBy     int        `json:"modified_by,omitempty"`
+	ModifiedByName string     `json:"modified_by_name,omitempty"`
+	Text           *string    `json:"text,omitempty"`
+	Tags           []string   `json:"tags"`
+	Date           *time.Time `json:"date,omitempty"`
+	ParentID       *int       `json:"parent_id,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	ModifiedAt     time.Time  `json:"modified_at"`
+	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
 	// BaseModifiedAt is the server modified_at the client based its edit on (push only).
 	// When present, conflicts are detected by comparing it with the current server version
 	// instead of comparing client and server clocks.
@@ -159,6 +167,8 @@ type SyncPushResponse struct {
 	Versions  []Version  `json:"versions"`
 	// Rejected lists items the server refused to apply (no access, unknown id).
 	Rejected []Rejection `json:"rejected"`
+	// Spaces changed by the push; used to tell other members to sync (not sent to clients).
+	TouchedSpaces []int `json:"-"`
 }
 
 // Rejection describes a pushed item that was not applied and will not be on retry.

@@ -156,3 +156,105 @@ func TestEmailAccounts(t *testing.T) {
 		t.Fatalf("resend: %d %d", c1, c2)
 	}
 }
+
+// Invitations on an e-mail server: by address, delivered by e-mail, and handed to an account that
+// is created (and confirmed) later.
+func TestEmailInvitations(t *testing.T) {
+	base, mailLog := os.Getenv("EMAIL_API_URL"), os.Getenv("EMAIL_MAIL_LOG")
+	if base == "" || mailLog == "" {
+		t.Skip("EMAIL_API_URL / EMAIL_MAIL_LOG not set")
+	}
+	call := func(method, path, token string, body any) (int, map[string]any) {
+		var buf bytes.Buffer
+		if body != nil {
+			_ = json.NewEncoder(&buf).Encode(body)
+		}
+		req, _ := http.NewRequest(method, base+path, &buf)
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	mails := func(to string) []string {
+		var out []string
+		data, _ := os.ReadFile(mailLog)
+		for _, line := range strings.Split(string(data), "\n") {
+			var m struct{ To, Subject, Text string }
+			if json.Unmarshal([]byte(line), &m) == nil && m.To == to {
+				out = append(out, m.Subject+"\n"+m.Text)
+			}
+		}
+		return out
+	}
+	account := func(email string) string {
+		if code, out := call("POST", "/register", "", map[string]any{"email": email, "password": "Password123"}); code != 201 {
+			t.Fatalf("register %s: %d %v", email, code, out)
+		}
+		var code string
+		for i := 0; i < 20 && code == ""; i++ {
+			for _, m := range mails(email) {
+				if c := regexp.MustCompile(`\b(\d{6})\b`).FindString(m); c != "" {
+					code = c
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if st, out := call("POST", "/auth/verify-email", "", map[string]any{"email": email, "code": code}); st != 200 {
+			t.Fatalf("verify %s: %d %v", email, st, out)
+		}
+		_, out := call("POST", "/login", "", map[string]any{"email": email, "password": "Password123"})
+		return out["data"].(map[string]any)["token"].(string)
+	}
+	n := time.Now().UnixNano()
+	owner := account(fmt.Sprintf("owner.%d@example.org", n))
+	existing := fmt.Sprintf("carol.%d@example.org", n)
+	carol := account(existing)
+	later := fmt.Sprintf("dave.%d@example.org", n)
+
+	code, out := call("POST", "/spaces", owner, map[string]any{"name": "Book club"})
+	if code != 201 {
+		t.Fatalf("space: %d %v", code, out)
+	}
+	space := int(out["data"].(map[string]any)["id"].(float64))
+	path := fmt.Sprintf("/spaces/%d/invitations", space)
+	if code, _ := call("POST", path, owner, map[string]any{"identifier": "carol", "role": "editor"}); code != 400 {
+		t.Fatalf("a username is not accepted on an e-mail server: %d", code)
+	}
+	for _, who := range []string{existing, later} {
+		if code, out := call("POST", path, owner, map[string]any{"identifier": who, "role": "editor"}); code != 200 {
+			t.Fatalf("invite %s: %d %v", who, code, out)
+		}
+	}
+
+	// Carol has an account: in-app invitation plus an e-mail (on by default).
+	var got bool
+	for i := 0; i < 30 && !got; i++ {
+		for _, m := range mails(existing) {
+			got = got || strings.Contains(m, "invited you to “Book club”")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !got {
+		t.Fatal("carol should get an invitation e-mail")
+	}
+	if _, out := call("GET", "/invitations", carol, nil); len(out["data"].([]any)) != 1 {
+		t.Fatalf("carol invitations: %v", out)
+	}
+
+	// Dave signs up later: the invitation waits for his confirmed address.
+	dave := account(later)
+	if _, out := call("GET", "/invitations", dave, nil); len(out["data"].([]any)) != 1 {
+		t.Fatalf("dave should see the invitation after confirming: %v", out)
+	}
+	if code, out := call("PATCH", "/me", dave, map[string]any{"notifyEmail": false}); code != 200 || out["data"].(map[string]any)["emailNotificationsAvailable"] != true {
+		t.Fatalf("settings: %d %v", code, out)
+	}
+}

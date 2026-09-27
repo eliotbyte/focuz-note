@@ -216,7 +216,12 @@ func (h *AttachmentsHandler) GetFileContent(c *gin.Context) {
 	if att == nil {
 		return
 	}
-	obj, err := initializers.MinioClient.GetObject(c.Request.Context(), initializers.Conf.Bucket, att.ID, minio.GetObjectOptions{})
+	serveAttachmentContent(c, att.ID, att.FileType, "private, max-age=31536000, immutable")
+}
+
+// serveAttachmentContent streams a stored file. Callers check access first.
+func serveAttachmentContent(c *gin.Context, id, fileType, cacheControl string) {
+	obj, err := initializers.MinioClient.GetObject(c.Request.Context(), initializers.Conf.Bucket, id, minio.GetObjectOptions{})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, types.NewErrorResponse(types.ErrorCodeInternal, "storage unavailable"))
 		return
@@ -233,9 +238,9 @@ func (h *AttachmentsHandler) GetFileContent(c *gin.Context) {
 	}
 	contentType := info.ContentType
 	if contentType == "" {
-		contentType = att.FileType
+		contentType = fileType
 	}
-	c.Header("Cache-Control", "private, max-age=31536000, immutable")
+	c.Header("Cache-Control", cacheControl)
 	// Served from the API origin: never let a browser render uploaded content as a page.
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Security-Policy", "sandbox; default-src 'none'")

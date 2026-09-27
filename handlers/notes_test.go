@@ -109,10 +109,10 @@ func (s *E2ETestSuite) Test26B_DeclineInvitationPreventsAccess() {
 	// Re-inviting an active member is refused (it used to silently demote them), so remove the
 	// guest first.
 	guestID := 0
-	_, members := s.call("GET", "/spaces/"+strconv.Itoa(s.createdSpaceID)+"/users", s.ownerToken, nil)
-	for _, m := range members["data"].(map[string]any)["data"].([]any) {
+	_, members := s.call("GET", "/spaces/"+strconv.Itoa(s.createdSpaceID)+"/members", s.ownerToken, nil)
+	for _, m := range members["data"].([]any) {
 		if mm := m.(map[string]any); mm["username"] == "guest" {
-			guestID = int(mm["id"].(float64))
+			guestID = int(mm["user_id"].(float64))
 		}
 	}
 	s.Require().NotZero(guestID)

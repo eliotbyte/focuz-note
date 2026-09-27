@@ -37,10 +37,18 @@ const (
 
 // AuthHandler: accounts, sign-in and e-mail confirmation.
 type AuthHandler struct {
-	users     *repository.UsersRepository
-	cfg       authcfg.Config
-	mail      mailer.Mailer
-	jwtSecret string
+	users *repository.UsersRepository
+	cfg   authcfg.Config
+	mail  mailer.Mailer
+	// onVerified runs after an e-mail address is confirmed (e.g. to deliver pending invitations).
+	onVerified func(userID int)
+	jwtSecret  string
+}
+
+// OnEmailVerified registers a hook that runs after an address is confirmed.
+func (h *AuthHandler) OnEmailVerified(f func(userID int)) *AuthHandler {
+	h.onVerified = f
+	return h
 }
 
 func NewAuthHandler(users *repository.UsersRepository, cfg authcfg.Config, m mailer.Mailer, jwtSecret string) *AuthHandler {
@@ -336,6 +344,9 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 		h.internal(c, "mark verified", err)
 		return
 	}
+	if h.onVerified != nil {
+		h.onVerified(user.ID)
+	}
 	token, err := h.issueToken(user.ID)
 	if err != nil {
 		h.internal(c, "sign token", err)
@@ -412,6 +423,9 @@ func (h *AuthHandler) VerifyEmailLink(c *gin.Context) {
 		slog.Error("mark verified failed", "err", err)
 		render(http.StatusInternalServerError, "Something went wrong", "Try the link again in a moment, or enter the code in the app.")
 		return
+	}
+	if h.onVerified != nil {
+		h.onVerified(v.UserID)
 	}
 	render(http.StatusOK, "Email confirmed", "You can close this page and sign in to focuz with your email and password.")
 }

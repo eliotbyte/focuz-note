@@ -68,15 +68,16 @@ func (r *FiltersRepository) GetByID(id int) (*models.Filter, error) {
 	return &f, nil
 }
 
-func (r *FiltersRepository) List(spaceID int, page, pageSize int) ([]*models.Filter, int, error) {
+// List returns the user's own folders in a space (folders are personal).
+func (r *FiltersRepository) List(spaceID, userID int, page, pageSize int) ([]*models.Filter, int, error) {
 	offset := (page - 1) * pageSize
 	rows, err := r.db.Query(`
 		SELECT id, user_id, space_id, parent_id, name, params, is_deleted, created_at, modified_at
 		FROM filters
-		WHERE space_id = $1 AND is_deleted = FALSE
+		WHERE space_id = $1 AND user_id = $4 AND is_deleted = FALSE
 		ORDER BY id
 		LIMIT $2 OFFSET $3
-	`, spaceID, pageSize, offset)
+	`, spaceID, pageSize, offset, userID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -97,7 +98,7 @@ func (r *FiltersRepository) List(spaceID int, page, pageSize int) ([]*models.Fil
 	}
 
 	var total int
-	err = r.db.QueryRow(`SELECT COUNT(*) FROM filters WHERE space_id = $1 AND is_deleted = FALSE`, spaceID).Scan(&total)
+	err = r.db.QueryRow(`SELECT COUNT(*) FROM filters WHERE space_id = $1 AND user_id = $2 AND is_deleted = FALSE`, spaceID, userID).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}

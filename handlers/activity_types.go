@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"fmt"
-	"focuz-api/globals"
+	"focuz-api/pkg/access"
 	"focuz-api/repository"
 	"focuz-api/types"
 	"net/http"
@@ -33,7 +33,7 @@ func (h *ActivityTypesHandler) CreateActivityType(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
-	if roleID == 0 || roleID != globals.DefaultOwnerRoleID {
+	if !access.CanManage(roleID) {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No permission"))
 		return
 	}
@@ -135,7 +135,7 @@ func (h *ActivityTypesHandler) DeleteActivityType(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
-	if roleID == 0 || roleID != globals.DefaultOwnerRoleID {
+	if !access.CanManage(roleID) {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No permission"))
 		return
 	}
@@ -180,7 +180,7 @@ func (h *ActivityTypesHandler) RestoreActivityType(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
-	if roleID == 0 || roleID != globals.DefaultOwnerRoleID {
+	if !access.CanManage(roleID) {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No permission"))
 		return
 	}
