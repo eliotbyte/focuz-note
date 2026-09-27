@@ -32,6 +32,17 @@ func main() {
 	if len(jwtSecret) < 32 {
 		log.Fatal("JWT_SECRET must be set and at least 32 characters")
 	}
+	// Secrets published in this repository (compose defaults / examples): anyone can mint tokens
+	// for any user with them. Not fatal, to avoid taking down existing installs on upgrade.
+	for _, known := range []string{
+		"dev-secret-change-me-please-0123456789abcdef",
+		"test-secret-change-me-please-0123456789abcdef",
+		"your_super_secret_jwt_key_at_least_32_chars_long",
+	} {
+		if jwtSecret == known {
+			log.Printf("SECURITY WARNING: JWT_SECRET is a publicly known default value. Anyone can forge login tokens. Set a random JWT_SECRET (e.g. `openssl rand -hex 32`); all users will need to sign in again.")
+		}
+	}
 
 	var db *sql.DB
 	var err error

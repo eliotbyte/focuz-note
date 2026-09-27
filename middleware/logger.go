@@ -34,7 +34,9 @@ func LoggerMiddleware() gin.HandlerFunc {
 			Hostname:  hostname,
 			ClientIP:  param.ClientIP,
 			Method:    param.Method,
-			Path:      param.Path,
+			// URL path only: gin's param.Path includes the query string, and /ws?token=... would
+			// put bearer tokens into the logs.
+			Path:      param.Request.URL.Path,
 			Proto:     param.Request.Proto,
 			Status:    param.StatusCode,
 			LatencyMs: latencyMs,

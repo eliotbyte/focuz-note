@@ -236,5 +236,11 @@ func (h *AttachmentsHandler) GetFileContent(c *gin.Context) {
 		contentType = att.FileType
 	}
 	c.Header("Cache-Control", "private, max-age=31536000, immutable")
+	// Served from the API origin: never let a browser render uploaded content as a page.
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Security-Policy", "sandbox; default-src 'none'")
+	if !strings.HasPrefix(contentType, "image/") {
+		c.Header("Content-Disposition", "attachment")
+	}
 	c.DataFromReader(http.StatusOK, info.Size, contentType, obj, nil)
 }

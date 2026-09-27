@@ -145,7 +145,8 @@ func (h *ActivityTypesHandler) DeleteActivityType(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
-	if activityType == nil || activityType.IsDeleted {
+	// The type must belong to the space the caller is owner of (not just any type id).
+	if activityType == nil || activityType.IsDeleted || (!activityType.IsDefault && activityType.SpaceID != spaceID) {
 		c.JSON(http.StatusNotFound, types.NewErrorResponse(types.ErrorCodeNotFound, "Activity type not found"))
 		return
 	}
@@ -188,7 +189,7 @@ func (h *ActivityTypesHandler) RestoreActivityType(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
-	if activityType == nil {
+	if activityType == nil || (!activityType.IsDefault && activityType.SpaceID != spaceID) {
 		c.JSON(http.StatusNotFound, types.NewErrorResponse(types.ErrorCodeNotFound, "Activity type not found"))
 		return
 	}

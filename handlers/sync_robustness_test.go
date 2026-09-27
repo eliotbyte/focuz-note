@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,8 +97,8 @@ func (s *E2ETestSuite) Test204_Sync_PushIsAtomic() {
 	clientID := uuid.NewString()
 	now := time.Now().UTC().Format(time.RFC3339)
 	good := map[string]any{"clientId": clientID, "space_id": s.createdSpaceID, "text": "atomic " + clientID, "tags": []string{}, "created_at": now, "modified_at": now}
-	// Forced-id create into a space that does not exist -> FK violation inside the transaction.
-	bad := map[string]any{"id": 987654321, "space_id": 987654321, "text": "bad", "tags": []string{}, "created_at": now, "modified_at": now}
+	// Second note fails inside the transaction (tag longer than the tag.name column).
+	bad := map[string]any{"clientId": uuid.NewString(), "space_id": s.createdSpaceID, "text": "bad", "tags": []string{strings.Repeat("x", 300)}, "created_at": now, "modified_at": now}
 	code, _ := s.syncPush(map[string]any{"notes": []any{good, bad}})
 	s.Equal(http.StatusInternalServerError, code)
 	for _, n := range s.pullNotes(time.Now().Add(-time.Hour)) {

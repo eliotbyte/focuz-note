@@ -79,6 +79,11 @@ func (h *ActivitiesHandler) CreateActivity(c *gin.Context) {
 		return
 	}
 
+	if !typeUsableInSpace(activityType, spaceID) {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "Activity type does not belong to this space"))
+		return
+	}
+
 	checkedValue, err := h.validateActivityValue(activityType, req.Value)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, err.Error()))
@@ -113,21 +118,8 @@ func (h *ActivitiesHandler) DeleteActivity(c *gin.Context) {
 		return
 	}
 	userID := c.GetInt("userId")
-	spaceID, perr := h.getSpaceIDForActivity(activity)
-	if perr != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, perr.Error()))
+	if !h.authorizeActivity(c, activity, userID) {
 		return
-	}
-	if spaceID > 0 {
-		roleID, rerr := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
-		if rerr != nil {
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, rerr.Error()))
-			return
-		}
-		if roleID == 0 {
-			c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to this activity"))
-			return
-		}
 	}
 	err = h.activitiesRepo.SetActivityDeleted(id, true)
 	if err != nil {
@@ -153,21 +145,8 @@ func (h *ActivitiesHandler) RestoreActivity(c *gin.Context) {
 		return
 	}
 	userID := c.GetInt("userId")
-	spaceID, perr := h.getSpaceIDForActivity(activity)
-	if perr != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, perr.Error()))
+	if !h.authorizeActivity(c, activity, userID) {
 		return
-	}
-	if spaceID > 0 {
-		roleID, rerr := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
-		if rerr != nil {
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, rerr.Error()))
-			return
-		}
-		if roleID == 0 {
-			c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to this activity"))
-			return
-		}
 	}
 	err = h.activitiesRepo.SetActivityDeleted(id, false)
 	if err != nil {
@@ -201,21 +180,8 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 		return
 	}
 	userID := c.GetInt("userId")
-	spaceID, perr := h.getSpaceIDForActivity(activity)
-	if perr != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, perr.Error()))
+	if !h.authorizeActivity(c, activity, userID) {
 		return
-	}
-	if spaceID > 0 {
-		roleID, rerr := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
-		if rerr != nil {
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, rerr.Error()))
-			return
-		}
-		if roleID == 0 {
-			c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to this activity"))
-			return
-		}
 	}
 	activityType, err := h.activityTypesRepo.GetActivityTypeByID(activity.TypeID)
 	if err != nil {
@@ -225,6 +191,23 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 	if activityType == nil || activityType.IsDeleted {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "Invalid or deleted activity type"))
 		return
+	}
+	if req.NoteID != nil {
+		// Re-attaching to another note requires access to that note's space too.
+		target, nerr := h.notesRepo.GetNoteByID(*req.NoteID)
+		if nerr != nil || target == nil || target.IsDeleted {
+			c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "Invalid note"))
+			return
+		}
+		roleID, rerr := h.spacesRepo.GetUserRoleIDInSpace(userID, target.SpaceID)
+		if rerr != nil {
+			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, rerr.Error()))
+			return
+		}
+		if roleID == 0 || !typeUsableInSpace(activityType, target.SpaceID) {
+			c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the target note"))
+			return
+		}
 	}
 	checkedValue, err := h.validateActivityValue(activityType, req.Value)
 	if err != nil {
@@ -237,6 +220,38 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Activity updated successfully"}))
+}
+
+// authorizeActivity allows access to an activity attached to a note in a space the user belongs
+// to, or to a note-less activity the user created. It writes the error response otherwise.
+func (h *ActivitiesHandler) authorizeActivity(c *gin.Context, activity *models.Activity, userID int) bool {
+	spaceID, err := h.getSpaceIDForActivity(activity)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, err.Error()))
+		return false
+	}
+	if spaceID == 0 {
+		if activity.UserID != userID {
+			c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to this activity"))
+			return false
+		}
+		return true
+	}
+	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		return false
+	}
+	if roleID == 0 {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to this activity"))
+		return false
+	}
+	return true
+}
+
+// typeUsableInSpace: built-in types everywhere, custom types only in their own space.
+func typeUsableInSpace(t *models.ActivityType, spaceID int) bool {
+	return t.IsDefault || t.SpaceID == spaceID
 }
 
 func (h *ActivitiesHandler) getSpaceIDForActivity(activity *models.Activity) (int, error) {

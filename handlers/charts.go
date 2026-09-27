@@ -78,7 +78,7 @@ func (h *ChartsHandler) CreateChart(c *gin.Context) {
 	}
 
 	activityType, err := h.activityTypesRepo.GetActivityTypeByID(req.ActivityTypeID)
-	if err != nil || activityType == nil || activityType.IsDeleted {
+	if err != nil || activityType == nil || activityType.IsDeleted || !typeUsableInSpace(activityType, req.SpaceID) {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "Invalid activity type"))
 		return
 	}
@@ -231,7 +231,7 @@ func (h *ChartsHandler) UpdateChart(c *gin.Context) {
 
 	if req.ActivityTypeID != nil {
 		activityType, err := h.activityTypesRepo.GetActivityTypeByID(*req.ActivityTypeID)
-		if err != nil || activityType == nil || activityType.IsDeleted {
+		if err != nil || activityType == nil || activityType.IsDeleted || !typeUsableInSpace(activityType, chart.SpaceID) {
 			c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "Invalid activity type"))
 			return
 		}

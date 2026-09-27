@@ -113,7 +113,8 @@ func (h *NotesHandler) Register(c *gin.Context) {
 			c.JSON(http.StatusConflict, types.NewErrorResponse(types.ErrorCodeConflict, "Username already exists"))
 			return
 		}
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, "Failed to register user: "+err.Error()))
+		slog.Error("register failed", "err", err)
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, "Failed to register user"))
 		return
 	}
 	c.JSON(http.StatusCreated, types.NewSuccessResponse(user))
@@ -130,15 +131,21 @@ func (h *NotesHandler) Login(c *gin.Context) {
 	}
 	// Convert username to lowercase for case-insensitive handling
 	req.Username = strings.ToLower(req.Username)
+	if failedLogins.Blocked(req.Username) {
+		c.JSON(http.StatusTooManyRequests, types.NewErrorResponse("RATE_LIMIT_EXCEEDED", "Too many failed attempts, try again later"))
+		return
+	}
 	user, err := h.repo.GetUserByUsername(req.Username)
-	if err != nil || user == nil {
+	hash := dummyHash
+	if err == nil && user != nil {
+		hash = []byte(user.PasswordHash)
+	}
+	if bcrypt.CompareHashAndPassword(hash, []byte(req.Password)) != nil || err != nil || user == nil {
+		failedLogins.Failed(req.Username)
 		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(types.ErrorCodeUnauthorized, "Invalid username or password"))
 		return
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(types.ErrorCodeUnauthorized, "Invalid username or password"))
-		return
-	}
+	failedLogins.Succeeded(req.Username)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"userId": user.ID,
 		"exp":    time.Now().Add(time.Hour * 24).Unix(),
@@ -175,6 +182,15 @@ func (h *NotesHandler) CreateNote(c *gin.Context) {
 	if roleID == 0 {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
 		return
+	}
+
+	if req.ParentID != nil {
+		// Replies must stay inside the space: a foreign parent would link spaces together.
+		parent, perr := h.repo.GetNoteByID(*req.ParentID)
+		if perr != nil || parent == nil || parent.SpaceID != req.SpaceID {
+			c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "Parent note must be in the same space"))
+			return
+		}
 	}
 
 	dateStr := req.Date.Format(time.RFC3339)

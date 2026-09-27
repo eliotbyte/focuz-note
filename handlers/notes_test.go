@@ -106,7 +106,24 @@ func (s *E2ETestSuite) Test25_CreateNoteAsGuest() {
 }
 
 func (s *E2ETestSuite) Test26B_DeclineInvitationPreventsAccess() {
-	// Re-invite guest
+	// Re-inviting an active member is refused (it used to silently demote them), so remove the
+	// guest first.
+	guestID := 0
+	_, members := s.call("GET", "/spaces/"+strconv.Itoa(s.createdSpaceID)+"/users", s.ownerToken, nil)
+	for _, m := range members["data"].(map[string]any)["data"].([]any) {
+		if mm := m.(map[string]any); mm["username"] == "guest" {
+			guestID = int(mm["id"].(float64))
+		}
+	}
+	s.Require().NotZero(guestID)
+	reqDel, _ := http.NewRequest("DELETE", s.baseURL+"/spaces/"+strconv.Itoa(s.createdSpaceID)+"/users/"+strconv.Itoa(guestID), nil)
+	reqDel.Header.Set("Authorization", "Bearer "+s.ownerToken)
+	respDel, errDel := (&http.Client{}).Do(reqDel)
+	s.NoError(errDel)
+	respDel.Body.Close()
+	s.Equal(http.StatusOK, respDel.StatusCode)
+
+	// Invite guest again
 	reqBody := map[string]string{"username": "guest"}
 	b, _ := json.Marshal(reqBody)
 	req, _ := http.NewRequest("POST", s.baseURL+"/spaces/"+strconv.Itoa(s.createdSpaceID)+"/invite", bytes.NewBuffer(b))

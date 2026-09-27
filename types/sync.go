@@ -157,4 +157,15 @@ type SyncPushResponse struct {
 	Conflicts []Conflict `json:"conflicts"`
 	Mappings  []Mapping  `json:"mappings"`
 	Versions  []Version  `json:"versions"`
+	// Rejected lists items the server refused to apply (no access, unknown id).
+	Rejected []Rejection `json:"rejected"`
+}
+
+// Rejection describes a pushed item that was not applied and will not be on retry.
+// Reason is "forbidden" (no access to the space/record) or "not_found" (unknown id).
+type Rejection struct {
+	Resource string  `json:"resource"`
+	ID       *int    `json:"id,omitempty"`
+	ClientID *string `json:"clientId,omitempty"`
+	Reason   string  `json:"reason"`
 }

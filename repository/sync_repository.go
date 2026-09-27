@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"focuz-api/globals"
 	"focuz-api/models"
 	"focuz-api/types"
 	"time"
@@ -345,8 +346,56 @@ func (r *SyncRepository) validParentFilter(parentID *int, spaceID int) (*int, er
 	return parentID, nil
 }
 
+// spaceRoles returns role ids of the user's active (accepted, not deleted) memberships by space id.
+func (r *SyncRepository) spaceRoles(userID int) (map[int]int, error) {
+	rows, err := r.q.Query(`
+		SELECT uts.space_id, uts.role_id
+		FROM user_to_space uts JOIN space s ON s.id = uts.space_id
+		WHERE uts.user_id = $1 AND uts.is_pending = FALSE AND s.is_deleted = FALSE
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	roles := map[int]int{}
+	for rows.Next() {
+		var spaceID, roleID int
+		if err := rows.Scan(&spaceID, &roleID); err != nil {
+			return nil, err
+		}
+		roles[spaceID] = roleID
+	}
+	return roles, rows.Err()
+}
+
+// canModify mirrors the REST rules: any member may add to a space, owners may change anything
+// in it, other members only what they authored.
+func canModify(roles map[int]int, spaceID, authorID, userID int) bool {
+	role := roles[spaceID]
+	if role == 0 {
+		return false
+	}
+	return role == globals.DefaultOwnerRoleID || authorID == userID
+}
+
+// activityTypeUsable reports whether an activity type may be used for notes in spaceID
+// (built-in default types, or types defined in that space).
+func (r *SyncRepository) activityTypeUsable(typeID, spaceID int) (bool, error) {
+	var ok bool
+	err := r.q.QueryRow(`SELECT EXISTS(SELECT 1 FROM activity_types WHERE id = $1 AND is_deleted = FALSE AND (is_default = TRUE OR space_id = $2))`, typeID, spaceID).Scan(&ok)
+	return ok, err
+}
+
+func reject(resp *types.SyncPushResponse, resource string, id *int, clientID *string, reason string) {
+	resp.Rejected = append(resp.Rejected, types.Rejection{Resource: resource, ID: id, ClientID: clientID, Reason: reason})
+}
+
 func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest) (*types.SyncPushResponse, error) {
-	resp := &types.SyncPushResponse{Applied: 0, Conflicts: []types.Conflict{}, Mappings: []types.Mapping{}, Versions: []types.Version{}}
+	resp := &types.SyncPushResponse{Applied: 0, Conflicts: []types.Conflict{}, Mappings: []types.Mapping{}, Versions: []types.Version{}, Rejected: []types.Rejection{}}
+	roles, err := r.spaceRoles(userID)
+	if err != nil {
+		return nil, err
+	}
 
 	// Notes
 	for _, n := range payload.Notes {
@@ -356,6 +405,10 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 		// Create new when no ID provided
 		if n.ID == nil {
 			if n.Text == nil {
+				continue
+			}
+			if roles[n.SpaceID] == 0 {
+				reject(resp, "note", nil, n.ClientID, "forbidden")
 				continue
 			}
 			// Idempotent create: a retried push (e.g. the response was lost) maps to the existing note.
@@ -399,6 +452,11 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 					var existingModified time.Time
 					err := r.q.QueryRow(`SELECT id, modified_at FROM activities WHERE note_id = $1 AND type_id = $2`, newID, a.TypeID).Scan(&existingID, &existingModified)
 					if err == sql.ErrNoRows {
+						if usable, err := r.activityTypeUsable(a.TypeID, n.SpaceID); err != nil {
+							return nil, err
+						} else if !usable {
+							continue
+						}
 						createdAt := a.CreatedAt
 						if createdAt.IsZero() {
 							createdAt = time.Now()
@@ -466,32 +524,23 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			resp.Versions = append(resp.Versions, types.Version{Resource: "note", ID: newID, ModifiedAt: newModified})
 			continue
 		}
-		// Update existing with LWW
+		// Update existing with LWW. Access is checked against the note as stored, never against
+		// the space id sent by the client (which could point anywhere).
 		var serverModified time.Time
-		err := r.q.QueryRow(`SELECT modified_at FROM note WHERE id = $1`, *n.ID).Scan(&serverModified)
+		var noteSpaceID, noteAuthorID int
+		err := r.q.QueryRow(`SELECT modified_at, space_id, user_id FROM note WHERE id = $1`, *n.ID).Scan(&serverModified, &noteSpaceID, &noteAuthorID)
 		if err == sql.ErrNoRows {
-			// Treat as create with forced id
-			parentID, err := r.validParentNote(n.ParentID, n.SpaceID)
-			if err != nil {
-				return nil, err
-			}
-			var newID int
-			err = r.q.QueryRow(`
-				INSERT INTO note (id, user_id, text, created_at, modified_at, date, parent_id, space_id, is_deleted)
-				VALUES ($1, $2, $3, COALESCE($4, NOW()), NOW(), COALESCE($5, NOW()), $6, $7, $8)
-				RETURNING id
-			`, *n.ID, userID, toString(n.Text), n.CreatedAt, n.Date, parentID, n.SpaceID, n.DeletedAt != nil).Scan(&newID)
-			if err != nil {
-				return nil, err
-			}
-			if err := r.replaceNoteTags(newID, n.Tags, n.SpaceID); err != nil {
-				return nil, err
-			}
-			resp.Applied++
+			// Ids are assigned by the server; an unknown id is never created implicitly.
+			reject(resp, "note", n.ID, n.ClientID, "not_found")
 			continue
 		} else if err != nil {
 			return nil, err
 		}
+		if !canModify(roles, noteSpaceID, noteAuthorID, userID) {
+			reject(resp, "note", n.ID, n.ClientID, "forbidden")
+			continue
+		}
+		n.SpaceID = noteSpaceID
 		if !serverChangedSince(serverModified, n.ModifiedAt, n.BaseModifiedAt) {
 			parentID, err := r.validParentNote(n.ParentID, n.SpaceID)
 			if err != nil {
@@ -541,6 +590,11 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 					var existingModified time.Time
 					err := r.q.QueryRow(`SELECT id, modified_at FROM activities WHERE note_id = $1 AND type_id = $2`, *n.ID, a.TypeID).Scan(&existingID, &existingModified)
 					if err == sql.ErrNoRows {
+						if usable, err := r.activityTypeUsable(a.TypeID, n.SpaceID); err != nil {
+							return nil, err
+						} else if !usable {
+							continue
+						}
 						createdAt := a.CreatedAt
 						if createdAt.IsZero() {
 							createdAt = time.Now()
@@ -686,6 +740,11 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 					var existingModified time.Time
 					err := r.q.QueryRow(`SELECT id, modified_at FROM activities WHERE note_id = $1 AND type_id = $2`, *n.ID, a.TypeID).Scan(&existingID, &existingModified)
 					if err == sql.ErrNoRows {
+						if usable, err := r.activityTypeUsable(a.TypeID, n.SpaceID); err != nil {
+							return nil, err
+						} else if !usable {
+							continue
+						}
 						createdAt := a.CreatedAt
 						if createdAt.IsZero() {
 							createdAt = time.Now()
@@ -750,6 +809,25 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 
 	// Filters (create when id is nil; otherwise LWW on name/params/parent)
 	for _, f := range payload.Filters {
+		if f.ID != nil {
+			var filterSpaceID, filterAuthorID int
+			err := r.q.QueryRow(`SELECT space_id, user_id FROM filters WHERE id = $1`, *f.ID).Scan(&filterSpaceID, &filterAuthorID)
+			if err == sql.ErrNoRows {
+				reject(resp, "filter", f.ID, f.ClientID, "not_found")
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+			// Saved filters are shared by the members of a space (same as PATCH /filters/:id).
+			if roles[filterSpaceID] == 0 {
+				reject(resp, "filter", f.ID, f.ClientID, "forbidden")
+				continue
+			}
+			f.SpaceID = filterSpaceID
+		} else if f.SpaceID != 0 && roles[f.SpaceID] == 0 {
+			reject(resp, "filter", nil, f.ClientID, "forbidden")
+			continue
+		}
 		if f.ParentID != nil {
 			pid, err := r.validParentFilter(f.ParentID, f.SpaceID)
 			if err != nil {
@@ -796,19 +874,7 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 
 		var serverModified time.Time
 		err := r.q.QueryRow(`SELECT modified_at FROM filters WHERE id = $1`, *f.ID).Scan(&serverModified)
-		if err == sql.ErrNoRows {
-			// Create with forced id to preserve client-known id
-			paramsBytes, _ := json.Marshal(f.Params)
-			_, err := r.q.Exec(`
-                INSERT INTO filters (id, user_id, space_id, parent_id, name, params, is_deleted, created_at, modified_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, NOW()), NOW())
-            `, *f.ID, f.UserID, f.SpaceID, f.ParentID, f.Name, paramsBytes, f.DeletedAt != nil, f.CreatedAt)
-			if err != nil {
-				return nil, err
-			}
-			resp.Applied++
-			continue
-		} else if err != nil {
+		if err != nil {
 			return nil, err
 		}
 		if !serverChangedSince(serverModified, f.ModifiedAt, f.BaseModifiedAt) {
@@ -825,14 +891,20 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 		}
 	}
 
-	// Charts and Activities unchanged
+	// Top-level chart / activity edits (legacy). Authorized through the space they live in.
 	for _, ch := range payload.Charts {
 		var serverModified time.Time
-		err := r.q.QueryRow(`SELECT modified_at FROM chart WHERE id = $1`, ch.ID).Scan(&serverModified)
+		var chartSpaceID, chartAuthorID int
+		err := r.q.QueryRow(`SELECT modified_at, space_id, user_id FROM chart WHERE id = $1`, ch.ID).Scan(&serverModified, &chartSpaceID, &chartAuthorID)
 		if err == sql.ErrNoRows {
 			continue
 		} else if err != nil {
 			return nil, err
+		}
+		if !canModify(roles, chartSpaceID, chartAuthorID, userID) {
+			id := ch.ID
+			reject(resp, "chart", &id, nil, "forbidden")
+			continue
 		}
 		if ch.ModifiedAt.After(serverModified) {
 			_, err := r.q.Exec(`UPDATE chart SET name = $2, description = $3, is_deleted = $4, modified_at = NOW() WHERE id = $1`, ch.ID, ch.Name, ch.Description, ch.DeletedAt != nil)
@@ -846,11 +918,25 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 	}
 	for _, a := range payload.Activities {
 		var serverModified time.Time
-		err := r.q.QueryRow(`SELECT modified_at FROM activities WHERE id = $1`, a.ID).Scan(&serverModified)
+		var actAuthorID int
+		var actSpaceID sql.NullInt64
+		err := r.q.QueryRow(`
+			SELECT a.modified_at, a.user_id, n.space_id
+			FROM activities a LEFT JOIN note n ON n.id = a.note_id
+			WHERE a.id = $1`, a.ID).Scan(&serverModified, &actAuthorID, &actSpaceID)
 		if err == sql.ErrNoRows {
 			continue
 		} else if err != nil {
 			return nil, err
+		}
+		allowed := actAuthorID == userID
+		if actSpaceID.Valid {
+			allowed = canModify(roles, int(actSpaceID.Int64), actAuthorID, userID)
+		}
+		if !allowed {
+			id := a.ID
+			reject(resp, "activity", &id, nil, "forbidden")
+			continue
 		}
 		if a.ModifiedAt.After(serverModified) {
 			val, _ := json.Marshal(a.Value)
