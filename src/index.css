@@ -31,15 +31,14 @@
   --page-bg: linear-gradient(180deg, #f4f5f7 0%, #e4e7eb 45%, #d3d7dd 100%);
   --ambient-light: 255 255 255;
   --ambient-light-a: 0.9;
-  --ambient-line: 40 60 90;
-  --ambient-line-a: 0.055;
   --ambient-a: 120 190 255;
   --ambient-b: 255 255 255;
   --ambient-c: 150 220 200;
   --ambient-orb-a: 0.55;
 
-  --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(246, 247, 249, 0.86) 100%);
-  --glass-strong: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(243, 245, 248, 0.94) 100%);
+  /* Surfaces are flat: one colour, a thin light edge and a soft shadow. */
+  --glass: rgba(255, 255, 255, 0.97);
+  --glass-strong: rgba(255, 255, 255, 0.96);
   --shadow-surface:
     inset 0 1px 0 rgba(255, 255, 255, 1),
     0 0 0 1px rgba(20, 32, 52, 0.07),
@@ -98,8 +97,7 @@ body {
 }
 
 /*
-  Ambient background (Wii U menu): a soft light from above, a fine diamond lattice on the "floor"
-  that fades out towards the top, and a few large out-of-focus lights drifting very slowly.
+  Ambient background (Wii U menu): a soft light from above, and a few large out-of-focus lights drifting very slowly.
   Only transform/opacity animate, so it stays cheap.
 */
 body::before,
@@ -111,12 +109,7 @@ body::after {
 }
 body::before {
   inset: 0;
-  background:
-    radial-gradient(70% 55% at 50% -8%, rgba(var(--ambient-light) / var(--ambient-light-a)), transparent 70%),
-    repeating-linear-gradient(45deg, rgba(var(--ambient-line) / var(--ambient-line-a)) 0 1px, transparent 1px 22px),
-    repeating-linear-gradient(-45deg, rgba(var(--ambient-line) / var(--ambient-line-a)) 0 1px, transparent 1px 22px);
-  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0.25) 35%, #000 100%);
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0.25) 35%, #000 100%);
+  background: radial-gradient(70% 55% at 50% -8%, rgba(var(--ambient-light) / var(--ambient-light-a)), transparent 70%);
 }
 body::after {
   inset: -15%;
@@ -154,15 +147,13 @@ body::after {
   --page-bg: linear-gradient(180deg, #22252a 0%, #16181c 40%, #0d0e10 75%, #08090a 100%);
   --ambient-light: 150 170 200;
   --ambient-light-a: 0.14;
-  --ambient-line: 255 255 255;
-  --ambient-line-a: 0.035;
   --ambient-a: 90 150 230;
   --ambient-b: 170 180 200;
   --ambient-c: 70 160 150;
   --ambient-orb-a: 0.1;
 
-  --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.075) 0%, rgba(255, 255, 255, 0.025) 100%), rgba(24, 26, 30, 0.78);
-  --glass-strong: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%), rgba(22, 24, 28, 0.94);
+  --glass: rgba(28, 30, 35, 0.94);
+  --glass-strong: rgba(26, 28, 33, 0.96);
   --shadow-surface:
     inset 0 1px 0 rgba(255, 255, 255, 0.085),
     inset 0 0 0 1px rgba(255, 255, 255, 0.035),
