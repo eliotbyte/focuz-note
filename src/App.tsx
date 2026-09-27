@@ -2,22 +2,30 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { NoteRecord, FilterRecord, SpaceRecord } from './lib/types'
 import { ensureDefaultSpace, getCurrentSpaceId, runSync, scheduleAutoSync, isAuthenticated, logout, deleteNote, addLocalAttachment, teardownSync, purgeAndLogout, countUnsyncedChanges } from './lib/sync'
-import { updateNoteLocal, createFilterLocal, updateFilterLocal } from './lib/sync'
+import { updateNoteLocal } from './lib/sync'
 import { searchNotes, ensureNoteIndexForSpace, initSearch } from './lib/search'
 import { activityTypes as activityTypesRepo, activities as activitiesRepo, filters as filtersRepo, kv, notes as notesRepo, spaces as spacesRepo } from './data'
 import { initAppState, useAppState } from './lib/app-state'
 import { featureFlags } from './lib/feature-flags'
 import { Dialog, DialogContent, DialogTitle } from './components/ui/dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
 import { SystemStatusInline, SystemStatusLayer } from './components/SystemStatus'
 import { notifyUndoable } from './ui/notify'
 import { AppToaster } from './ui/toaster'
 import NoteEditor, { type NoteEditorValue } from './components/NoteEditor'
 import NoteCard from './components/NoteCard'
-import TagsInput from './components/TagsInput'
-import FiltersTree from './components/FiltersTree'
+import FolderTree, { type FeedView } from './components/FolderTree'
+import FolderHeader, { type FolderScope } from './components/FolderHeader'
+import FilterBar from './components/FilterBar'
+import { NoteFoldersDialog } from './components/FolderDialogs'
 import AuthScreen, { ReauthDialog } from './components/AuthScreen'
-import ActivitiesPicker from './components/ActivitiesPicker'
+import { useFolderIndex } from './lib/useFolderIndex'
+import { directOnly, folderKind, type FolderIndex } from './lib/folders'
+import { createFolder, saveFolderRule } from './lib/folder-actions'
+import { hasOpenTasks } from './lib/note-format/render'
+import {
+  DEFAULT_QUICK, criteriaFromQuick, criteriaFromRule, mergeIntoRule, quickFromCriteria, ruleFromCriteria,
+  type Criteria, type QuickState,
+} from './lib/criteria'
 import { applyStoredTheme, setStoredTheme } from './lib/theme'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
@@ -30,16 +38,19 @@ function TopBar({
   onLogout,
   isThread,
   onBack,
+  viewTitle,
 }: {
   onOpenSpaces: () => void
   onOpenSettings: () => void
   onLogout: () => void
   isThread?: boolean
   onBack?: () => void
+  /** Current folder, shown on phones where the folder list lives in the drawer. */
+  viewTitle?: string
 }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)] lg:grid-cols-[250px_minmax(0,1fr)_270px] xl:grid-cols-[270px_minmax(0,1fr)_290px] gap-6 items-center">
-      <div className="flex items-center gap-3">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[250px_minmax(0,1fr)_auto] xl:grid-cols-[270px_minmax(0,1fr)_auto] gap-3 md:gap-6 items-center">
+      <div className="flex items-center gap-3 min-w-0">
         {isThread ? (
           <button className="icon-btn icon-35" onClick={onBack} type="button" aria-label="Back">
             <ArrowBackRoundedIcon fontSize="inherit" />
@@ -49,7 +60,13 @@ function TopBar({
             <MenuRoundedIcon fontSize="inherit" />
           </button>
         )}
-        <h1 className="text-title text-primary">focuz</h1>
+        <h1 className="text-title text-primary hidden md:block">focuz</h1>
+        {!isThread && viewTitle ? (
+          <button type="button" className="topbar-view" onClick={onOpenSpaces} aria-label={`Folders. Current: ${viewTitle}`}>
+            <span className="truncate">{viewTitle}</span>
+            <span aria-hidden className="text-secondary">▾</span>
+          </button>
+        ) : <h1 className="text-title text-primary md:hidden">focuz</h1>}
       </div>
       <div className="hidden md:block" />
       <div className="flex items-center justify-end gap-2">
@@ -141,125 +158,6 @@ function SpaceDrawer({ open, onClose, currentId, onSelected, children }: { open:
 
 type SortField = 'date' | 'createdat' | 'modifiedat'
 
-function hasActiveQuickFilters(quick: any) {
-  const q = quick || {}
-  const text = String(q.text || '').trim()
-  const tags = Array.isArray(q.tags) ? q.tags : []
-  const activities = featureFlags.quickFiltersActivities && Array.isArray(q.activities) ? q.activities : []
-  const noParents = !!q.noParents
-  return !!text || tags.length > 0 || activities.length > 0 || noParents
-}
-
-function QuickFiltersPanel({
-  value,
-  onChange,
-  hideNoParents = false,
-  spaceId,
-}: {
-  value: { text: string; tags: string[]; activities?: string[]; noParents: boolean; sort: `${SortField},ASC` | `${SortField},DESC` }
-  onChange: (v: { text: string; tags: string[]; activities?: string[]; noParents: boolean; sort: `${SortField},ASC` | `${SortField},DESC` }) => void
-  hideNoParents?: boolean
-  spaceId?: number | null
-}) {
-  const [text, setText] = useState(value.text)
-  const [tags, setTags] = useState<string[]>(Array.isArray((value as any).tags) ? (value as any).tags : [])
-  const [activities, setActivities] = useState<string[]>(featureFlags.quickFiltersActivities && Array.isArray((value as any).activities) ? (value as any).activities : [])
-  const [noParents, setNoParents] = useState(value.noParents)
-  const [sortField, setSortField] = useState<SortField>(value.sort.split(',')[0] as SortField)
-  const [sortDir, setSortDir] = useState<'ASC' | 'DESC'>(value.sort.split(',')[1] as 'ASC' | 'DESC')
-
-  useEffect(() => {
-    setText(value.text)
-    setTags(Array.isArray((value as any).tags) ? (value as any).tags : [])
-    setActivities(featureFlags.quickFiltersActivities && Array.isArray((value as any).activities) ? (value as any).activities : [])
-    setNoParents(value.noParents)
-    setSortField(value.sort.split(',')[0] as SortField)
-    setSortDir(value.sort.split(',')[1] as 'ASC' | 'DESC')
-  }, [value])
-
-  return (
-    <div className="min-w-0">
-      <div className="card h-full flex flex-col">
-        <div className="text-title text-muted">Quick filters</div>
-        {/* NOTE: padding is intentional to prevent child shadows from being clipped by the scroll container */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-3">
-          <input className="input" placeholder="Search" value={text} onChange={e => {
-            const v = e.target.value
-            setText(v)
-            onChange({ text: v, tags, activities: featureFlags.quickFiltersActivities ? activities : undefined, noParents, sort: `${sortField},${sortDir}` as `${SortField},ASC` | `${SortField},DESC` })
-          }} />
-          <div>
-            <TagsInput
-              value={tags}
-              onChange={(next) => { setTags(next); onChange({ text, tags: next, activities, noParents, sort: `${sortField},${sortDir}` as `${SortField},ASC` | `${SortField},DESC` }) }}
-              placeholder="Tags"
-              className="mt-1"
-              spaceId={spaceId ?? undefined}
-              invertible
-            />
-          </div>
-          {featureFlags.quickFiltersActivities ? (
-            <ActivitiesPicker
-              value={activities}
-              onChange={(next) => { setActivities(next); onChange({ text, tags, activities: next, noParents, sort: `${sortField},${sortDir}` as `${SortField},ASC` | `${SortField},DESC` }) }}
-              spaceId={spaceId}
-            />
-          ) : null}
-          {!hideNoParents && (
-            <label className="flex items-center gap-3 text-secondary">
-              <input type="checkbox" checked={noParents} onChange={e => { setNoParents(e.target.checked); onChange({ text, tags, noParents: e.target.checked, sort: `${sortField},${sortDir}` as `${SortField},ASC` | `${SortField},DESC` }) }} />
-              No parents
-            </label>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button type="button" className="input flex items-center justify-between">
-                  <span className="truncate">{sortField === 'modifiedat' ? 'modified_at' : sortField === 'createdat' ? 'created_at' : 'date'}</span>
-                  <span aria-hidden>▾</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={() => { const f: SortField = 'modifiedat'; setSortField(f); onChange({ text, tags, noParents, sort: `${f},${sortDir}` as `${SortField},ASC` | `${SortField},DESC` }) }}>
-                  modified_at
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => { const f: SortField = 'createdat'; setSortField(f); onChange({ text, tags, noParents, sort: `${f},${sortDir}` as `${SortField},ASC` | `${SortField},DESC` }) }}>
-                  created_at
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => { const f: SortField = 'date'; setSortField(f); onChange({ text, tags, noParents, sort: `${f},${sortDir}` as `${SortField},ASC` | `${SortField},DESC` }) }}>
-                  date
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button type="button" className="input flex items-center justify-between">
-                  <span className="truncate">{sortDir === 'DESC' ? 'desc' : 'asc'}</span>
-                  <span aria-hidden>▾</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={() => { const d: 'ASC' | 'DESC' = 'DESC'; setSortDir(d); onChange({ text, tags, noParents, sort: `${sortField},${d}` as `${SortField},ASC` | `${SortField},DESC` }) }}>
-                  desc
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => { const d: 'ASC' | 'DESC' = 'ASC'; setSortDir(d); onChange({ text, tags, noParents, sort: `${sortField},${d}` as `${SortField},ASC` | `${SortField},DESC` }) }}>
-                  asc
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          {!hideNoParents && spaceId && (
-            <div className="flex justify-between pt-2">
-              <button className="button" onClick={() => window.dispatchEvent(new CustomEvent('focuz:open-save-filter'))}>Save</button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; positiveQuickTags?: string[] }) {
   const [value, setValue] = useState<NoteEditorValue>({ text: '', tags: [] })
   const canAdd = useMemo(() => value.text.trim().length > 0, [value.text])
@@ -335,7 +233,8 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
   )
 }
 
-function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTag, onAddQuickActivity }: { spaceId: number; filter: FilterRecord | null; quick: { text: string; tags?: string[]; activities?: string[]; noParents: boolean; sort: `${SortField},ASC` | `${SortField},DESC` }; parentId?: number | null; onOpenThread?: (noteId: number) => void; onAddQuickTag?: (tag: string) => void; onAddQuickActivity?: (name: string) => void }) {
+function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTag, onAddQuickActivity, scopeIds, folderIndex, emptyText }: { spaceId: number; filter: FilterRecord | null; quick: QuickState; parentId?: number | null; onOpenThread?: (noteId: number) => void; onAddQuickTag?: (tag: string) => void; onAddQuickActivity?: (name: string) => void; /** Only these notes (the open folder), or null for all. */ scopeIds?: Set<number> | null; folderIndex?: FolderIndex; emptyText?: string }) {
+  const [foldersFor, setFoldersFor] = useState<NoteRecord | null>(null)
   const [idsBySearch, setIdsBySearch] = useState<number[] | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingValue, setEditingValue] = useState<{ text: string; tags: string[]; activities?: any[] }>({ text: '', tags: [], activities: [] })
@@ -365,7 +264,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
     setReplyingForId(null)
   }, [JSON.stringify(quick), JSON.stringify(filter?.params ?? {}), parentId ?? null])
 
-  const notes = useLiveQuery(async () => {
+  const allNotes = useLiveQuery(async () => {
     const arr = await notesRepo.listActiveBySpace(spaceId)
     let result = arr
 
@@ -425,6 +324,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
     if (filter?.params?.excludeTags?.length) {
       result = result.filter(n => !filter!.params!.excludeTags!.some(t => n.tags.includes(t)))
     }
+    if (quick.openTasks) result = result.filter(n => hasOpenTasks(n.text))
 
     const sort = quick.sort || filter?.params?.sort || 'modifiedat,DESC'
     result.sort((a, b) => {
@@ -438,6 +338,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
 
     return result
   }, [spaceId, JSON.stringify(filter?.params ?? {}), JSON.stringify(quick), JSON.stringify(idsBySearch), parentId ?? null]) ?? []
+  const notes = useMemo(() => scopeIds ? allNotes.filter(n => scopeIds.has(n.id!)) : allNotes, [allNotes, scopeIds])
 
   // Parent previews no longer preloaded here; NoteCard handles parent preview on demand
   const repliesById = useLiveQuery(async () => {
@@ -568,6 +469,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
                 onActivityClick={(name) => { if (onAddQuickActivity) onAddQuickActivity(name) }}
                 repliesCount={repliesById.get(n.id!) || 0}
                 onReplyClick={() => setReplyingForId(replyingForId === n.id ? null : n.id!)}
+                onManageFolders={folderIndex ? () => setFoldersFor(n) : undefined}
               />
             )}
           </li>
@@ -624,7 +526,8 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
         }
         return items
       })}
-      {notes.length === 0 && <li className="text-secondary">No notes</li>}
+      {notes.length === 0 && <li className="feed-empty">{emptyText ?? 'No notes'}</li>}
+      {foldersFor && <NoteFoldersDialog index={folderIndex} note={foldersFor} onClose={() => setFoldersFor(null)} />}
     </ul>
   )
 }
@@ -647,14 +550,17 @@ function App() {
   const [currentSpaceId, setCurrentSpaceId] = useState<number | null>(null)
   const [selectedFilter, setSelectedFilter] = useState<FilterRecord | null>(null)
   const [currentNoteId, setCurrentNoteId] = useState<number | null>(null)
-  const [saveOpen, setSaveOpen] = useState(false)
-  const [saveName, setSaveName] = useState('')
+  const [unsortedView, setUnsortedView] = useState(false)
+  const [scope, setScope] = useState<FolderScope>('deep')
+  // Folder rule being edited: the filter bar edits it and the feed previews it.
+  const [ruleDraft, setRuleDraft] = useState<{ id: number; criteria: Criteria } | null>(null)
   // In-memory back trail within tab. Oldest -> newest. Excludes current page. null represents feed (space root)
   const historyTrailRef = useRef<Array<number | null>>([])
   const authRequired = useAppState(s => s.authRequired)
 
-  const [quickFeed, setQuickFeed] = useState<{ text: string; tags: string[]; noParents: boolean; sort: `${SortField},ASC` | `${SortField},DESC` }>({ text: '', tags: [], noParents: false, sort: 'modifiedat,DESC' })
-  const [quickThread, setQuickThread] = useState<{ text: string; tags: string[]; noParents: boolean; sort: `${SortField},ASC` | `${SortField},DESC` }>({ text: '', tags: [], noParents: false, sort: 'modifiedat,DESC' })
+  const [quickFeed, setQuickFeed] = useState<QuickState>(DEFAULT_QUICK)
+  const [quickThread, setQuickThread] = useState<QuickState>(DEFAULT_QUICK)
+  const folderIndex = useFolderIndex(currentSpaceId, ruleDraft ? { id: ruleDraft.id, rule: ruleFromCriteria(ruleDraft.criteria) } : null)
 
   useEffect(() => {
     initAppState()
@@ -662,6 +568,10 @@ function App() {
 
   useEffect(() => { currentSpaceIdRef.current = currentSpaceId }, [currentSpaceId])
   useEffect(() => { currentNoteIdRef.current = currentNoteId }, [currentNoteId])
+  const unsortedViewRef = useRef(false)
+  const selectedFilterIdRef = useRef<number | null>(null)
+  useEffect(() => { selectedFilterIdRef.current = selectedFilter?.id ?? null }, [selectedFilter])
+  useEffect(() => { unsortedViewRef.current = unsortedView }, [unsortedView])
 
   // Ensure header is visible after auth transitions (otherwise content can be rendered with --topbar-effective-h=0).
   useEffect(() => {
@@ -705,18 +615,19 @@ function App() {
   }, [authed, headerHidden])
 
   // URL helpers
-  function parseQuery(): { space?: number; note?: number; filter?: number } {
+  function parseQuery(): { space?: number; note?: number; filter?: number; unsorted: boolean } {
     const p = new URLSearchParams(location.search)
     const space = p.get('space')
     const note = p.get('note')
     const filter = p.get('filter')
-    return { space: space ? Number(space) : undefined, note: note ? Number(note) : undefined, filter: filter ? Number(filter) : undefined }
+    return { space: space ? Number(space) : undefined, note: note ? Number(note) : undefined, filter: filter ? Number(filter) : undefined, unsorted: p.get('view') === 'unsorted' }
   }
-  function pushQuery(next: { space: number; note?: number | null; filter?: number | null }, replace = false) {
+  function pushQuery(next: { space: number; note?: number | null; filter?: number | null; unsorted?: boolean }, replace = false) {
     const params = new URLSearchParams()
     params.set('space', String(next.space))
     if (next.note != null) params.set('note', String(next.note))
     if (next.filter != null) params.set('filter', String(next.filter))
+    else if (next.unsorted ?? unsortedViewRef.current) params.set('view', 'unsorted')
     const url = `${location.pathname}?${params.toString()}`
     if (replace) history.replaceState(null, '', url)
     else history.pushState(null, '', url)
@@ -844,7 +755,8 @@ function App() {
     if (!authed) return
 
     // initial from URL
-    const { space, note, filter } = parseQuery()
+    const { space, note, filter, unsorted } = parseQuery()
+    if (unsorted && !filter) setUnsortedView(true)
     ensureDefaultSpace().then(async () => {
       const id = space || await getCurrentSpaceId()
       setCurrentSpaceId(id)
@@ -869,22 +781,25 @@ function App() {
         if (saved) {
           const normalized = (saved as any).tags ? saved : { ...(saved as any), tags: [] }
           if (!featureFlags.quickFiltersActivities && (normalized as any).activities) delete (normalized as any).activities
-          setQuickFeed(normalized as any)
+          // Opening a folder: older versions copied its rule into the quick filters; start clean instead.
+          setQuickFeed(filter ? { ...DEFAULT_QUICK, sort: (normalized as any).sort || DEFAULT_QUICK.sort } : normalized as any)
         }
       }
       await ensureNoteIndexForSpace(id)
       await runSync()
       setTimeout(() => { runSync() }, 1000)
       // normalize URL
-      pushQuery({ space: id, note: note ?? null, filter: (filter ?? null) }, true)
+      pushQuery({ space: id, note: note ?? null, filter: (filter ?? null), unsorted: unsorted && !filter }, true)
     })
 
     const onPop = () => {
       const prevSpaceId = currentSpaceIdRef.current
       const prevNoteId = currentNoteIdRef.current
-      const { space: s, note: n, filter: f } = parseQuery()
+      const { space: s, note: n, filter: f, unsorted: u } = parseQuery()
       if (s) setCurrentSpaceId(s)
       setCurrentNoteId(n ?? null)
+      setUnsortedView(u && f == null)
+      setRuleDraft(null)
       if (f == null) setSelectedFilter(null)
       else {
         void (async () => {
@@ -913,63 +828,71 @@ function App() {
     }
   }, [authed])
 
-  useEffect(() => {
-    const onOpenSave = () => setSaveOpen(true)
-    window.addEventListener('focuz:open-save-filter', onOpenSave as any)
-    return () => { window.removeEventListener('focuz:open-save-filter', onOpenSave as any) }
-  }, [])
+  const feedView: FeedView = selectedFilter?.id != null ? { kind: 'folder', id: selectedFilter.id } : unsortedView ? { kind: 'unsorted' } : { kind: 'all' }
+  const currentRule = feedView.kind === 'folder' ? folderIndex?.rules.get(feedView.id) : undefined
 
-  const currentQuick = currentNoteId ? quickThread : quickFeed
-
-  async function handleSaveOrUpdate(kind: 'save' | 'update' | 'save-as-new') {
-    if (!currentSpaceId) return
-    const params: any = {
-      textContains: (currentQuick.text || '').trim() || undefined,
-      includeTags: (currentQuick.tags || []).filter(t => !t.startsWith('!')),
-      excludeTags: (currentQuick.tags || []).filter(t => t.startsWith('!')).map(t => t.slice(1)),
-      includeActivities: featureFlags.quickFiltersActivities ? ((currentQuick as any).activities || undefined) : undefined,
-      notReply: currentQuick.noParents || undefined,
-      sort: currentQuick.sort,
-    }
-    if (kind === 'update' && selectedFilter?.id) {
-      await updateFilterLocal(selectedFilter.id, { name: (saveName.trim() ? saveName.trim() : undefined), params })
-      const rec = await filtersRepo.getByLocalId(selectedFilter.id)
-      setSelectedFilter(rec || null)
-      setSaveOpen(false)
-      setSaveName('')
-      if (currentSpaceId) pushQuery({ space: currentSpaceId, note: currentNoteId, filter: rec?.id ?? null })
-      return
-    }
-    const parentServerId = (kind === 'save-as-new' ? (selectedFilter?.serverId ?? null) : null) ?? null
-    const localId = await createFilterLocal(currentSpaceId, (saveName.trim() || (selectedFilter?.name ?? '')), params, parentServerId)
-    const rec = await filtersRepo.getByLocalId(localId)
-    setSelectedFilter(rec || null)
-    setSaveOpen(false)
-    setSaveName('')
-    if (currentSpaceId) pushQuery({ space: currentSpaceId, note: currentNoteId, filter: rec?.id ?? null })
+  function setFeedQuick(next: QuickState) {
+    setQuickFeed(next)
+    if (currentSpaceId) void kv.set(`quick:space:${currentSpaceId}`, next)
   }
 
-  // When a saved filter is selected on the feed, reflect it in Quick filters
-  useEffect(() => {
+  /** Opens All notes, Unsorted or a folder. Filters typed for the previous view are cleared; sort stays. */
+  function selectView(v: FeedView, known?: FilterRecord) {
     if (!currentSpaceId) return
-    if (currentNoteId != null) return
-    const applyFrom = async () => {
-      if (selectedFilter) {
-        const p: any = selectedFilter.params || {}
-        const include = Array.isArray(p.includeTags) ? p.includeTags : []
-        const exclude = Array.isArray(p.excludeTags) ? p.excludeTags.map((t: string) => `!${t}`) : []
-        const text = typeof p.textContains === 'string' ? p.textContains : ''
-        const noParents = !!p.notReply
-        const sort = (typeof p.sort === 'string' ? p.sort : 'modifiedat,DESC') as `${SortField},ASC` | `${SortField},DESC`
-        const next = { text, tags: [...include, ...exclude], noParents, sort }
-        setQuickFeed(next)
-        await kv.set(`quick:space:${currentSpaceId}` , next)
-      }
+    const rec = v.kind === 'folder' ? known ?? folderIndex?.nodes.get(v.id)?.rec ?? null : null
+    if (v.kind === 'folder' && !rec) {
+      // Just created: the live index has not caught up yet.
+      void filtersRepo.getByLocalId(v.id).then(r => { if (r && !r.deletedAt) selectView(v, r) })
+      return
     }
-    applyFrom().catch(() => {})
-  // Only update Quick when the selected filter changes, not on quick edits
+    setSelectedFilter(rec)
+    setUnsortedView(v.kind === 'unsorted')
+    setScope('deep')
+    setRuleDraft(null)
+    setCurrentNoteId(null)
+    const folderSort = (rec?.params as any)?.sort
+    setFeedQuick({ ...DEFAULT_QUICK, sort: folderSort || quickFeed.sort || DEFAULT_QUICK.sort })
+    pushQuery({ space: currentSpaceId, note: null, filter: rec?.id ?? null, unsorted: v.kind === 'unsorted' })
+    setDrawerOpen(false)
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
+  }
+
+  function startEditRule(folderId: number) {
+    const rule = folderIndex?.rules.get(folderId)
+    if (!rule) return
+    if (feedView.kind !== 'folder' || feedView.id !== folderId) selectView({ kind: 'folder', id: folderId })
+    setRuleDraft({ id: folderId, criteria: criteriaFromRule(rule) })
+    setDrawerOpen(false)
+  }
+
+  async function commitRule() {
+    if (!ruleDraft) return
+    await saveFolderRule(ruleDraft.id, ruleFromCriteria(ruleDraft.criteria))
+    setRuleDraft(null)
+  }
+
+  async function saveAsFolder(name: string) {
+    if (!currentSpaceId || !folderIndex) return
+    const base = currentRule && folderKind(currentRule) !== 'group' ? currentRule : null
+    const rule = mergeIntoRule(base, criteriaFromQuick(quickFeed))
+    const parent = feedView.kind === 'folder' ? feedView.id : null
+    const id = await createFolder(currentSpaceId, folderIndex, name, rule, parent, { sort: quickFeed.sort })
+    const rec = await filtersRepo.getByLocalId(id)
+    if (!rec) return
+    setSelectedFilter(rec)
+    setUnsortedView(false)
+    setScope('deep')
+    setFeedQuick({ ...DEFAULT_QUICK, sort: quickFeed.sort })
+    pushQuery({ space: currentSpaceId, note: null, filter: id })
+  }
+
+  // The open folder was deleted (here or on another device): fall back to All notes.
+  useEffect(() => {
+    if (feedView.kind !== 'folder' || !folderIndex || folderIndex.nodes.has(feedView.id)) return
+    const id = feedView.id
+    void filtersRepo.getByLocalId(id).then(r => { if ((!r || r.deletedAt) && selectedFilterIdRef.current === id) selectView({ kind: 'all' }) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFilter, currentSpaceId, currentNoteId])
+  }, [folderIndex, feedView.kind, (feedView as any).id])
 
   function openThread(noteId: number) {
     if (!currentSpaceId) return
@@ -1071,34 +994,22 @@ function App() {
 
   if (!authed) return <AuthScreen onDone={() => setAuthed(true)} />
 
-  const isNoFiltersActive = !selectedFilter && !hasActiveQuickFilters(currentQuick)
+  const tree = currentSpaceId ? (
+    <FolderTree spaceId={currentSpaceId} index={folderIndex} view={feedView} onSelect={selectView} onEditRule={startEditRule} />
+  ) : null
+  const viewTitle = feedView.kind === 'folder'
+    ? (folderIndex?.nodes.get(feedView.id)?.rec.name ?? selectedFilter?.name ?? 'Folder')
+    : feedView.kind === 'unsorted' ? 'Unsorted' : 'All notes'
 
-  async function clearAllFilters() {
-    if (!currentSpaceId) return
-    // Reset quick filter criteria, but keep current sort (sorting isn't a filter).
-    const base: any = (currentNoteId ? quickThread : quickFeed) || {}
-    const next: any = { ...base, text: '', tags: [], noParents: false, activities: [] }
-    setSelectedFilter(null)
-    setCurrentNoteId(null)
-    setQuickFeed(next)
-    await kv.set(`quick:space:${currentSpaceId}`, next)
-    pushQuery({ space: currentSpaceId, note: null, filter: null })
+  // What the open view shows before quick filters: null = everything.
+  let scopeIds: Set<number> | null = null
+  if (feedView.kind !== 'all') {
+    if (!folderIndex) scopeIds = new Set<number>()
+    else if (feedView.kind === 'unsorted') scopeIds = folderIndex.unsorted
+    else if (scope === 'here' && !ruleDraft) scopeIds = directOnly(folderIndex, feedView.id)
+    else scopeIds = folderIndex.deep.get(feedView.id) ?? new Set<number>()
   }
 
-  const left = currentSpaceId ? (
-    <FiltersTree
-      spaceId={currentSpaceId}
-      selectedId={selectedFilter?.id ?? null}
-      isNoFiltersActive={isNoFiltersActive}
-      onSelect={(f) => {
-        setSelectedFilter(f)
-        const nextNote = currentNoteId ? null : currentNoteId
-        if (currentNoteId) setCurrentNoteId(null)
-        if (currentSpaceId) pushQuery({ space: currentSpaceId, note: nextNote, filter: f?.id ?? null })
-      }}
-      onClearAll={() => { void clearAllFilters() }}
-    />
-  ) : null
   let center: ReactNode = null
   if (currentSpaceId) {
     if (currentNoteId) {
@@ -1109,6 +1020,24 @@ function App() {
           onBack={goBack}
           onOpenThread={openThread}
           quick={quickThread}
+          toolbar={
+            <FilterBar
+              spaceId={currentSpaceId}
+              mode="thread"
+              value={criteriaFromQuick(quickThread)}
+              onChange={(c) => {
+                const next = quickFromCriteria(c, quickThread)
+                setQuickThread(next)
+                if (currentNoteId) void kv.set(`quick:space:${currentSpaceId}:note:${currentNoteId}`, next)
+              }}
+              sort={quickThread.sort}
+              onSortChange={(sort) => {
+                const next = { ...quickThread, sort }
+                setQuickThread(next)
+                if (currentNoteId) void kv.set(`quick:space:${currentSpaceId}:note:${currentNoteId}`, next)
+              }}
+            />
+          }
           onAddQuickTag={(tag) => {
             const tags = quickThread.tags || []
             if (tags.includes(tag)) return
@@ -1119,29 +1048,69 @@ function App() {
         />
       )
     } else {
+      const editing = ruleDraft && feedView.kind === 'folder' && ruleDraft.id === feedView.id ? ruleDraft : null
+      // Notes created here get the folder's tags (and tags picked in the filter bar).
+      const folderTags = currentRule && folderKind(currentRule) !== 'group' ? currentRule.includeTags : []
+      const newNoteTags = Array.from(new Set([...folderTags, ...criteriaFromQuick(quickFeed).include]))
+      const feedQuick: QuickState = editing ? { ...DEFAULT_QUICK, sort: quickFeed.sort } : quickFeed
+      const emptyText = editing
+        ? 'No notes match this rule yet.'
+        : feedView.kind === 'unsorted' ? 'Everything is in a folder.'
+        : feedView.kind === 'folder' && scope === 'here' ? 'Everything here is in a subfolder.'
+        : feedView.kind === 'folder' && currentRule && folderKind(currentRule) === 'group' && !(folderIndex?.nodes.get(feedView.id)?.children.length)
+          ? 'This folder has no rule yet. Add one with “Edit rule”, or create subfolders.'
+        : 'No notes here yet.'
       center = (
         <div className="min-w-0 space-y-3">
-          <NoteComposer spaceId={currentSpaceId} positiveQuickTags={(quickFeed.tags || []).filter(t => !t.startsWith('!'))} />
+          <FolderHeader
+            index={folderIndex}
+            view={feedView}
+            scope={scope}
+            onScopeChange={setScope}
+            editingRule={editing ? ruleFromCriteria(editing.criteria) : null}
+            onEditRule={() => { if (feedView.kind === 'folder') startEditRule(feedView.id) }}
+            onSaveRule={() => { void commitRule() }}
+            onCancelRule={() => setRuleDraft(null)}
+            newNoteTags={folderTags}
+          />
+          {editing ? (
+            <FilterBar
+              spaceId={currentSpaceId}
+              mode="rule"
+              value={editing.criteria}
+              onChange={(c) => setRuleDraft({ id: editing.id, criteria: c })}
+            />
+          ) : (
+            <FilterBar
+              spaceId={currentSpaceId}
+              value={criteriaFromQuick(quickFeed)}
+              onChange={(c) => setFeedQuick(quickFromCriteria(c, quickFeed))}
+              sort={quickFeed.sort}
+              onSortChange={(sort) => setFeedQuick({ ...quickFeed, sort })}
+              saveTarget={feedView.kind === 'folder' ? viewTitle : null}
+              onSaveAsFolder={(name) => { void saveAsFolder(name) }}
+            />
+          )}
+          {!editing && <NoteComposer spaceId={currentSpaceId} positiveQuickTags={newNoteTags} />}
           <NoteList
             spaceId={currentSpaceId}
             filter={null}
-            quick={quickFeed}
+            quick={feedQuick}
+            scopeIds={scopeIds}
+            folderIndex={folderIndex}
+            emptyText={emptyText}
             onOpenThread={openThread}
             onAddQuickTag={(tag) => {
-              if (!currentSpaceId) return
+              if (editing) return
               const tags = quickFeed.tags || []
               if (tags.includes(tag)) return
-              const next = { ...quickFeed, tags: [...tags, tag] }
-              setQuickFeed(next)
-              kv.set(`quick:space:${currentSpaceId}`, next)
+              setFeedQuick({ ...quickFeed, tags: [...tags, tag] })
             }}
             onAddQuickActivity={featureFlags.quickFiltersActivities ? ((name) => {
-              if (!currentSpaceId) return
-              const acts = (quickFeed as any).activities || []
+              if (editing) return
+              const acts = quickFeed.activities || []
               if (acts.includes(name)) return
-              const next = { ...quickFeed, activities: [...acts, name] }
-              setQuickFeed(next as any)
-              kv.set(`quick:space:${currentSpaceId}`, next)
+              setFeedQuick({ ...quickFeed, activities: [...acts, name] })
             }) : undefined}
           />
         </div>
@@ -1175,6 +1144,7 @@ function App() {
             onLogout={() => { void handleLogout() }}
             isThread={!!currentNoteId}
             onBack={goBack}
+            viewTitle={viewTitle}
           />
         </div>
       </header>
@@ -1211,7 +1181,7 @@ function App() {
         }}
       >
         <div className="mx-auto max-w-[1440px] px-4 md:px-6">
-          <div className="grid grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)] lg:grid-cols-[250px_minmax(0,1fr)_270px] xl:grid-cols-[270px_minmax(0,1fr)_290px] gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)] xl:grid-cols-[270px_minmax(0,1fr)] gap-6">
             <aside
               className="hidden md:block py-4 self-start"
               style={{
@@ -1222,66 +1192,22 @@ function App() {
                 height: 'calc(100vh - var(--topbar-effective-h, var(--topbar-h, 96px)))',
               }}
             >
-              <div className="h-full">{left}</div>
+              <div className="h-full">{tree}</div>
             </aside>
 
-            <main className="min-w-0 py-4">
+            <main className="min-w-0 py-4 w-full max-w-[880px] mx-auto">
               {center}
               {/* Spacer below feed equals topbar height */}
               <div style={{ height: 'var(--topbar-h, 96px)' }} />
             </main>
 
-            <aside
-              className="hidden lg:block py-4 self-start"
-              style={{
-                position: 'sticky',
-                top: 0,
-                height: 'calc(100vh - var(--topbar-effective-h, var(--topbar-h, 96px)))',
-              }}
-            >
-              <div className="h-full">
-                {currentNoteId
-                  ? <QuickFiltersPanel
-                      value={quickThread}
-                      onChange={(v) => { setQuickThread(v); if (currentSpaceId && currentNoteId) kv.set(`quick:space:${currentSpaceId}:note:${currentNoteId}`, v) }}
-                      hideNoParents
-                      spaceId={currentSpaceId}
-                    />
-                  : <QuickFiltersPanel
-                      value={quickFeed}
-                      onChange={(v) => {
-                        setQuickFeed(v)
-                        if (currentSpaceId) kv.set(`quick:space:${currentSpaceId}` , v)
-                        if (selectedFilter) {
-                          setSelectedFilter(null)
-                          pushQuery({ space: currentSpaceId!, note: null, filter: null })
-                        }
-                      }}
-                      spaceId={currentSpaceId}
-                    />
-                }
-              </div>
-            </aside>
           </div>
         </div>
       </div>
 
       {drawerOpen && (
         <SpaceDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} currentId={currentSpaceId} onSelected={(id) => { openSpace(id) }}>
-          {currentSpaceId ? (
-            <FiltersTree
-              spaceId={currentSpaceId}
-              selectedId={selectedFilter?.id ?? null}
-              isNoFiltersActive={isNoFiltersActive}
-              onSelect={(f) => {
-                setSelectedFilter(f)
-                if (currentNoteId) setCurrentNoteId(null)
-                pushQuery({ space: currentSpaceId, note: null, filter: f?.id ?? null })
-                setDrawerOpen(false)
-              }}
-              onClearAll={() => { void clearAllFilters(); setDrawerOpen(false) }}
-            />
-          ) : null}
+          {tree}
         </SpaceDrawer>
       )}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
@@ -1290,29 +1216,6 @@ function App() {
           onDone={() => { /* authRequired toggled by sync module */ }}
           onLogout={() => { void handleLogout() }}
         />
-      )}
-      {saveOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-[110]">
-          <div className="w-full sm:max-w-md surface space-y-4">
-            <h2 className="text-title text-muted">Save filter</h2>
-            <input
-              className="input"
-              placeholder={selectedFilter ? (selectedFilter.name || 'enter filter name') : 'enter filter name'}
-              value={saveName}
-              onChange={e => setSaveName(e.target.value)}
-            />
-            <div className="flex justify-between">
-              {selectedFilter?.id
-                ? <button className="button" onClick={() => handleSaveOrUpdate('save-as-new')}>Create</button>
-                : <div />
-              }
-              <div className="flex gap-2">
-                <button className="button" onClick={() => { setSaveOpen(false); setSaveName('') }}>Cancel</button>
-                <button className="button" onClick={() => handleSaveOrUpdate((selectedFilter?.id ? 'update' : 'save'))}>{selectedFilter?.id ? 'Update' : 'Save'}</button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
       <AppToaster />
     </div>
@@ -1379,7 +1282,7 @@ function ReplyComposer({ spaceId, parentId, positiveQuickTags = [] }: { spaceId:
   )
 }
 
-function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTag }: { spaceId: number; noteId: number; onBack: () => void; onOpenThread: (nid: number) => void; quick: { text: string; tags: string[]; noParents: boolean; sort: `${SortField},ASC` | `${SortField},DESC` }; onAddQuickTag?: (tag: string) => void }) {
+function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTag, toolbar }: { spaceId: number; noteId: number; onBack: () => void; onOpenThread: (nid: number) => void; quick: QuickState; onAddQuickTag?: (tag: string) => void; toolbar?: ReactNode }) {
   const mainNote = useLiveQuery(() => notesRepo.getByLocalId(noteId), [noteId]) as NoteRecord | undefined
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState<NoteEditorValue>({ text: '', tags: [] })
@@ -1423,6 +1326,7 @@ function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTa
         <SingleNoteCard note={mainNote} onEdit={() => setEditing(true)} onDelete={removeMain} onOpenThread={onOpenThread} />
       )}
       <ReplyComposer spaceId={spaceId} parentId={noteId} positiveQuickTags={quick.tags.filter(t => !t.startsWith('!'))} />
+      {toolbar}
       <div className="min-w-0">
         <NoteList spaceId={spaceId} filter={null} quick={quick} parentId={noteId} onOpenThread={onOpenThread} onAddQuickTag={onAddQuickTag} />
       </div>

@@ -27,6 +27,7 @@ export default function NoteCard({
   hiddenTags,
   repliesCount = 0,
   onReplyClick,
+  onManageFolders,
 }: {
   note: NoteRecord
   onEdit?: () => void
@@ -38,6 +39,7 @@ export default function NoteCard({
   hiddenTags?: Set<string>
   repliesCount?: number
   onReplyClick?: () => void
+  onManageFolders?: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const syncing = useAppState(s => s.syncing)
@@ -190,6 +192,7 @@ export default function NoteCard({
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                 {onReplyClick && <DropdownMenuItem onSelect={() => onReplyClick()}>Reply</DropdownMenuItem>}
                 {onEdit && <DropdownMenuItem onSelect={() => onEdit()}>Edit</DropdownMenuItem>}
+                {onManageFolders && <DropdownMenuItem onSelect={() => onManageFolders()}>Folders…</DropdownMenuItem>}
                 {onDelete && <DropdownMenuItem onSelect={() => onDelete()}>Delete</DropdownMenuItem>}
               </DropdownMenuContent>
             </DropdownMenu>

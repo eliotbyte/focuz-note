@@ -56,7 +56,7 @@ test('feed, compact layout and sync status', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await shot(page, '05-mobile')
   await page.getByRole('button', { name: 'Open spaces' }).click()
-  await expect(page.getByRole('tree', { name: 'Saved filters' }).last()).toBeVisible()
+  await expect(page.getByRole('tree', { name: 'Folders' }).last()).toBeVisible()
   await shot(page, '06-mobile-drawer')
 })
 
@@ -65,7 +65,7 @@ test('filter tree: collapsed by default, remembers expanded branches, scrolls', 
   const s = await seed(API)
   await page.setViewportSize({ width: 1440, height: 640 })
   await signIn(page, s.token)
-  const tree = page.getByRole('tree', { name: 'Saved filters' })
+  const tree = page.getByRole('tree', { name: 'Folders' })
   // Only roots are visible by default.
   await expect(tree.getByRole('treeitem', { name: 'Работа' })).toBeVisible()
   await expect(tree.getByRole('treeitem', { name: 'Проекты' })).toHaveCount(0)
@@ -366,5 +366,139 @@ test.describe('full-screen editor', () => {
     await page.keyboard.press('Escape')
     await expect(page.getByRole('textbox', { name: 'Note text' })).toHaveCount(0)
     await expect(page.locator('textarea').first()).toHaveValue('Купить: молоко, хлеб, кофе в зёрнах, батарейки AA.')
+  })
+})
+
+test.describe('folders', () => {
+  async function serverNote(token: string, text: string) {
+    const data = await apiGet(token, '/sync?since=1970-01-01T00:00:00Z')
+    return (data.notes ?? []).find((x: any) => x.text === text)
+  }
+  async function serverFilters(token: string) {
+    const data = await apiGet(token, '/sync?since=1970-01-01T00:00:00Z')
+    return (data.filters ?? []).filter((f: any) => !f.is_deleted && !f.deleted_at)
+  }
+  const tree = (page: Page) => page.getByRole('tree', { name: 'Folders' }).first()
+
+  test('create a folder, write a note in it, sort an unsorted note into a folder', async ({ page }) => {
+    await page.goto('/')
+    const s = await seed(API)
+    await signIn(page, s.token)
+
+    // New folder: the name suggests its tag, Enter creates and opens it.
+    await page.getByRole('button', { name: 'New folder' }).click()
+    await page.getByLabel('New folder name').fill('Ремонт кухни')
+    await expect(page.getByRole('radio', { name: /Notes tagged #ремонт-кухни/ })).toHaveAttribute('aria-checked', 'true')
+    await shot(page, '24-new-folder')
+    await page.getByLabel('New folder name').press('Enter')
+    await expect(page.getByRole('heading', { name: 'Ремонт кухни' })).toBeVisible()
+    await expect(page.getByText('Notes tagged #ремонт-кухни')).toBeVisible()
+    await expect(page.getByText('No notes here yet.')).toBeVisible()
+
+    // A note written inside gets the folder's tag.
+    await page.getByRole('button', { name: 'Add note…' }).click()
+    await page.getByPlaceholder(/Add note/).fill('Выбрать плитку для фартука')
+    await page.getByRole('button', { name: 'Create' }).click()
+    await expect(page.locator('li', { hasText: 'Выбрать плитку' })).toBeVisible()
+    await expect(tree(page).getByRole('treeitem', { name: 'Ремонт кухни' })).toContainText('1')
+    await expect.poll(async () => (await serverNote(s.token, 'Выбрать плитку для фартука'))?.tags ?? [], { timeout: 20000 }).toEqual(['ремонт-кухни'])
+
+    // A note without tags written in All notes lands in Unsorted.
+    await page.getByRole('button', { name: 'All notes' }).click()
+    await page.getByRole('button', { name: 'Add note…' }).click()
+    await page.getByPlaceholder(/Add note/).fill('Позвонить в сервис')
+    await page.getByRole('button', { name: 'Create' }).click()
+    await page.getByRole('button', { name: 'Unsorted' }).click()
+    await expect(page.getByRole('heading', { name: 'Unsorted' })).toBeVisible()
+    const card = page.locator('li', { hasText: 'Позвонить в сервис' })
+    await expect(card).toBeVisible()
+    await expect(page.locator('li', { hasText: 'Выбрать плитку' })).toHaveCount(0)
+
+    // ⋮ → Folders…: tick "Дом", the note gets #home and leaves Unsorted.
+    await card.hover()
+    await card.getByRole('button', { name: 'Open actions' }).click()
+    await page.getByRole('menuitem', { name: 'Folders…' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Folders' })
+    await dialog.getByRole('checkbox', { name: /^Дом/ }).check()
+    await shot(page, '25-note-folders')
+    await dialog.getByRole('button', { name: 'Done' }).click()
+    await expect(card).toHaveCount(0)
+    await expect(page.getByText('Everything is in a folder.')).toBeVisible()
+    await expect.poll(async () => (await serverNote(s.token, 'Позвонить в сервис'))?.tags ?? [], { timeout: 20000 }).toEqual(['home'])
+  })
+
+  test('save a search as a smart folder, edit its rule, delete the parent keeping subfolders', async ({ page }) => {
+    await page.goto('/')
+    const s = await seed(API)
+    await signIn(page, s.token)
+    await tree(page).getByRole('treeitem', { name: 'Работа' }).click()
+    await expect(page.getByRole('heading', { name: 'Работа' })).toBeVisible()
+
+    // Subfolders are included by default; "Only this folder" leaves out what they already show.
+    await tree(page).getByRole('treeitem', { name: 'Работа' }).getByRole('button', { name: 'Expand' }).click()
+    await expect(page.locator('li', { hasText: 'Созвон с командой' })).toBeVisible() // #work #meetings
+    await page.getByRole('button', { name: 'Only this folder' }).click()
+    await expect(page.locator('li', { hasText: 'Созвон с командой' })).toHaveCount(0)
+    await expect(page.locator('li', { hasText: 'Ответ: backoff' })).toBeVisible()
+    await page.getByRole('button', { name: 'With subfolders' }).click()
+
+    // Search + exclude a tag, then save it as a folder inside Работа.
+    await page.getByRole('textbox', { name: 'Search', exact: true }).fill('backoff')
+    await page.getByRole('button', { name: 'Add filter' }).click()
+    await page.getByRole('button', { name: 'Hide notes tagged sync' }).click()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Remove filter not #sync' })).toBeVisible()
+    await expect(page.locator('li', { hasText: 'Ответ: backoff' })).toBeVisible()
+    await expect(page.locator('li', { hasText: 'Ревью архитектуры' }).filter({ hasNotText: 'Ответ' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Save as folder' }).click()
+    await page.getByLabel(/New folder inside/).fill('Backoff')
+    await page.getByLabel(/New folder inside/).press('Enter')
+    await expect(page.getByRole('heading', { name: 'Backoff' })).toBeVisible()
+    await expect(page.getByText('Notes tagged #work, without #sync, containing “backoff”')).toBeVisible()
+    await expect(page.locator('li', { hasText: 'Ответ: backoff' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Remove filter not #sync' })).toHaveCount(0) // filters were saved into the folder
+    await shot(page, '26-smart-folder')
+
+    // Edit the rule: drop the exclusion, the list previews the change, Save keeps it.
+    await page.getByRole('button', { name: 'Edit rule' }).click()
+    await expect(page.getByRole('region', { name: 'Editing folder rule' })).toBeVisible()
+    await page.getByRole('button', { name: 'Remove filter not #sync' }).click()
+    await expect(page.locator('li', { hasText: 'Ревью архитектуры' }).filter({ hasNotText: 'Ответ' })).toBeVisible()
+    await page.getByRole('button', { name: 'Save rule' }).click()
+    await expect(page.getByText('Notes tagged #work, containing “backoff”')).toBeVisible()
+    await expect.poll(async () => (await serverFilters(s.token)).find((f: any) => f.name === 'Backoff')?.params?.excludeTags ?? null, { timeout: 20000 }).toEqual([])
+
+    // Delete Работа but keep its subfolders: they move up, notes stay.
+    await tree(page).getByRole('treeitem', { name: 'Работа' }).hover()
+    await page.getByRole('button', { name: 'Folder actions: Работа' }).click()
+    await page.getByRole('menuitem', { name: 'Delete…' }).click()
+    const dialog = page.getByRole('dialog', { name: /Delete “Работа”/ })
+    await expect(dialog.getByRole('radio', { name: /Keep subfolders/ })).toBeChecked()
+    await expect(dialog.getByRole('checkbox', { name: /Also delete/ })).not.toBeChecked()
+    await shot(page, '27-delete-folder')
+    await dialog.getByRole('button', { name: 'Delete' }).click()
+    await expect(tree(page).getByRole('treeitem', { name: 'Работа' })).toHaveCount(0)
+    await expect(tree(page).getByRole('treeitem', { name: 'Backoff' })).toHaveAttribute('aria-level', '1')
+    await expect(page.locator('[data-sonner-toast]')).toContainText('Folder deleted. Notes are kept')
+    await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+    await expect(tree(page).getByRole('treeitem', { name: 'Работа' })).toBeVisible()
+    await expect(tree(page).getByRole('treeitem', { name: 'Backoff' })).toHaveAttribute('aria-level', '2')
+  })
+
+  test('phone: the top bar names the folder and opens the folder list', async ({ page }) => {
+    await page.goto('/')
+    const s = await seed(API)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await signIn(page, s.token)
+    await page.getByRole('button', { name: /Folders. Current: All notes/ }).click()
+    await page.getByRole('tree', { name: 'Folders' }).last().getByRole('treeitem', { name: 'Дом' }).click()
+    await expect(page.getByRole('button', { name: /Folders. Current: Дом/ })).toBeVisible()
+    await expect(page.locator('li', { hasText: 'Купить: молоко' })).toBeVisible()
+    await expect(page.locator('li', { hasText: 'Тренировка' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Add filter' }).click()
+    await page.getByRole('button', { name: 'Only notes tagged shopping' }).click()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('li', { hasText: 'Список подарков' })).toHaveCount(0)
+    await shot(page, '28-mobile-folder')
   })
 })

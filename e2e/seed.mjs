@@ -43,10 +43,17 @@ export async function seed(api, username = `demo${Date.now().toString(36)}`, ima
     ['Личное', ['Здоровье', ['Бег', 'Сон']], ['Чтение', ['Технические', 'Художественные']], ['Идеи'], ['Путешествия'], ['Фото']],
     ['Архив'], ['Входящие'],
   ]
+  // Folder rules: most folders are "notes tagged X"; the rest are plain groups.
+  const rules = {
+    'Работа': { includeTags: ['work'] }, 'Focuz': { includeTags: ['focuz'] }, 'Синхронизация': { includeTags: ['sync'] },
+    'Встречи': { includeTags: ['meetings'] }, 'Дом': { includeTags: ['home'] }, 'Покупки': { includeTags: ['shopping'] },
+    'Здоровье': { includeTags: ['health'] }, 'Бег': { includeTags: ['running'] }, 'Чтение': { includeTags: ['reading'] },
+    'Идеи': { includeTags: ['ideas'] },
+  }
   let order = 0
   async function createFilter(name, parentId) {
     order += 10
-    const f = { id: null, clientId: crypto.randomUUID(), space_id: spaceId, parent_id: parentId ?? null, name, params: { includeTags: [], _order: order }, created_at: iso(1000), modified_at: iso(1000) }
+    const f = { id: null, clientId: crypto.randomUUID(), space_id: spaceId, parent_id: parentId ?? null, name, params: { includeTags: [], ...(rules[name] || {}), _order: order }, created_at: iso(1000), modified_at: iso(1000) }
     const r = await j('/sync', { method: 'POST', body: JSON.stringify({ notes: [], filters: [f], tags: [], charts: [] }) }, token)
     return r.data.mappings.find(m => m.resource === 'filter').serverId
   }

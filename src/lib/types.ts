@@ -115,6 +115,8 @@ export interface FilterParams {
   excludeTags?: string[]
   includeActivities?: string[]
   notReply?: boolean
+  /** Only notes with at least one unticked checklist item. */
+  hasOpenTasks?: boolean
   sort?:
     | 'date,ASC' | 'date,DESC'
     | 'createdat,ASC' | 'createdat,DESC'

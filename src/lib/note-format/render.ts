@@ -64,6 +64,19 @@ export function toggleTask(text: string, taskIndex: number): string {
   return text
 }
 
+/** True when the note has at least one unticked checklist item (outside fenced code). */
+export function hasOpenTasks(text: string): boolean {
+  if (!text || !text.includes('[ ]')) return false
+  let inFence = false
+  for (const line of text.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue }
+    if (inFence) continue
+    const m = TASK_RE.exec(line)
+    if (m && m[2] === ' ') return true
+  }
+  return false
+}
+
 /** Short plain-text preview (for reply pills etc.). */
 export function notePreviewText(text: string): string {
   return (text ?? '')
