@@ -11,6 +11,10 @@ export interface PushResult {
   /** New server ids assigned in this round (a deferred child may now be sendable). */
   mapped: number
   conflicts: number
+  /** Items the server does not know any more; reset to be created again in the next round. */
+  requeued: number
+  /** Items the server refused (no access). They stay on this device only. */
+  rejected: number
 }
 
 export const CONFLICT_TAG = 'conflict'
@@ -86,7 +90,7 @@ function sameTags(a: string[] | undefined, b: string[] | undefined): boolean {
 }
 
 export async function pushDirty(): Promise<PushResult> {
-  const result: PushResult = { applied: 0, deferred: 0, mapped: 0, conflicts: 0 }
+  const result: PushResult = { applied: 0, deferred: 0, mapped: 0, conflicts: 0, requeued: 0, rejected: 0 }
 
   const dirtyNotes = await db.notes.where('isDirty').equals(1).toArray()
   const filters = await db.filters.where('isDirty').equals(1).toArray()
@@ -162,6 +166,7 @@ export async function pushDirty(): Promise<PushResult> {
   const mappings: Array<{ resource: string; clientId: string; serverId: number }> = data.mappings ?? []
   const conflicts: Array<{ resource?: string; id?: number; reason?: string; server?: any }> = data.conflicts ?? []
   const versions: Array<{ resource: string; id: number; modified_at: string }> = data.versions ?? []
+  const rejections: Array<{ resource: string; id?: number; clientId?: string; reason: string }> = data.rejected ?? []
   result.applied = Number(data.applied ?? 0)
   result.conflicts = conflicts.length
 
@@ -184,6 +189,9 @@ export async function pushDirty(): Promise<PushResult> {
     if (isRes(v.resource, 'note')) noteVersion.set(v.id, v.modified_at)
     else if (isRes(v.resource, 'filter')) filterVersion.set(v.id, v.modified_at)
   }
+  // Rejections by server id (updates) or client id (creates).
+  const rejectionFor = (resource: string, serverId: number | null | undefined, clientId: string | null | undefined) =>
+    rejections.find(r => isRes(r.resource, resource) && ((serverId != null && r.id === serverId) || (!!clientId && r.clientId === clientId)))
   const noteMapping = new Map<string, number>()
   const filterMapping = new Map<string, number>()
   for (const m of mappings) {
@@ -203,6 +211,21 @@ export async function pushDirty(): Promise<PushResult> {
         await resolveNoteConflict(current, conflict)
         continue
       }
+      const rejection = rejectionFor('note', sent.serverId, sent.clientId)
+      if (rejection) {
+        conflictedNoteLocalIds.add(sent.id!)
+        if (rejection.reason === 'not_found' && sent.serverId != null) {
+          // The server lost this note (e.g. restored from an older backup): create it again.
+          await db.notes.update(sent.id!, { serverId: null, serverModifiedAt: null, clientId: current.clientId || crypto.randomUUID(), isDirty: 1 })
+          result.requeued++
+        } else {
+          // No access (removed from the space, ...): keep the local copy, stop retrying.
+          console.warn('Sync: note rejected by server', sent.id, rejection.reason)
+          await db.notes.update(sent.id!, { isDirty: 0, serverModifiedAt: null })
+          result.rejected++
+        }
+        continue
+      }
       const changes: Partial<NoteRecord> = {}
       if (serverId != null && current.serverId !== serverId) { changes.serverId = serverId; result.mapped++ }
       const version = serverId != null ? noteVersion.get(serverId) : undefined
@@ -218,6 +241,18 @@ export async function pushDirty(): Promise<PushResult> {
     for (const f of filters) {
       const current = await db.filters.get(f.id!)
       if (!current) continue
+      const rejection = rejectionFor('filter', f.serverId, f.clientId)
+      if (rejection) {
+        if (rejection.reason === 'not_found' && f.serverId != null) {
+          await db.filters.update(f.id!, { serverId: null, serverModifiedAt: null, clientId: current.clientId || crypto.randomUUID(), isDirty: 1 })
+          result.requeued++
+        } else {
+          console.warn('Sync: filter rejected by server', f.id, rejection.reason)
+          await db.filters.update(f.id!, { isDirty: 0, serverModifiedAt: null })
+          result.rejected++
+        }
+        continue
+      }
       const serverId = f.serverId ?? (f.clientId ? filterMapping.get(f.clientId) : undefined) ?? null
       const changes: Partial<FilterRecord> = {}
       if (serverId != null && current.serverId !== serverId) { changes.serverId = serverId; result.mapped++ }

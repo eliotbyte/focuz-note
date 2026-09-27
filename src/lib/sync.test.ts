@@ -141,6 +141,32 @@ describe('push', () => {
   })
 })
 
+describe('server rejections', () => {
+  it('recreates a note the server no longer knows', async () => {
+    const space = await ensureDefaultSpace()
+    const id = await localNote(space, 'survives a server restore')
+    await runSync(true)
+    const oldSid = (await db.notes.get(id))!.serverId!
+    server.notes.delete(oldSid) // server restored from an older backup
+    await updateNoteLocal(id, { text: 'edited after restore' })
+    await runSync(true)
+    const local = (await db.notes.get(id))!
+    expect(local.isDirty).toBe(0)
+    expect(local.serverId).not.toBe(oldSid)
+    expect(server.notes.get(local.serverId!)!.text).toBe('edited after restore')
+  })
+
+  it('stops retrying a note it has no access to', async () => {
+    const space = await ensureDefaultSpace()
+    const foreign = server.addNote('not yours', { user_id: 99 })
+    const id = await localNote(space, 'local edit', { serverId: foreign.id, isDirty: 1 })
+    await runSync(true)
+    expect((await db.notes.get(id))!.isDirty).toBe(0)
+    expect(server.notes.get(foreign.id)!.text).toBe('not yours')
+    expect(getAppState().syncError).toBeNull()
+  })
+})
+
 describe('pull', () => {
   it('maps server parent ids to local ids on a fresh device', async () => {
     server.addNote('other user', { user_id: 99 })

@@ -211,7 +211,7 @@ export async function runSync(force: boolean | RunSyncOptions = false): Promise<
         // Another round when replies waited for their parent's server id (now mapped)
         // or when a conflict produced a conflict copy that should be uploaded too.
         const parentsMapped = r.deferred > 0 && r.mapped > 0
-        if (!parentsMapped && r.conflicts === 0) break
+        if (!parentsMapped && r.conflicts === 0 && r.requeued === 0) break
       }
       const pulled = await pullSince()
       const okAt = new Date().toISOString()

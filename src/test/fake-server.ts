@@ -106,7 +106,7 @@ export class FakeServer {
   }
 
   private push(body: any) {
-    const resp: any = { applied: 0, conflicts: [], mappings: [], versions: [] }
+    const resp: any = { applied: 0, conflicts: [], mappings: [], versions: [], rejected: [] }
     for (const n of body.notes ?? []) {
       if (!n.space_id) continue
       if (n.id == null) {
@@ -125,7 +125,8 @@ export class FakeServer {
         continue
       }
       const cur = this.notes.get(n.id)
-      if (!cur) continue
+      if (!cur) { resp.rejected.push({ resource: 'note', id: n.id, clientId: n.clientId ?? undefined, reason: 'not_found' }); continue }
+      if (cur.user_id !== this.userId) { resp.rejected.push({ resource: 'note', id: n.id, reason: 'forbidden' }); continue }
       const serverChanged = n.base_modified_at != null ? Date.parse(cur.modified_at) > Date.parse(n.base_modified_at) : !(Date.parse(n.modified_at) > Date.parse(cur.modified_at))
       if (serverChanged) {
         resp.conflicts.push({ resource: 'note', id: cur.id, reason: 'server-newer', server: { id: cur.id, space_id: cur.space_id, text: cur.text, tags: [...cur.tags], date: cur.date, created_at: cur.created_at, modified_at: cur.modified_at, deleted_at: cur.is_deleted ? cur.modified_at : undefined } })
