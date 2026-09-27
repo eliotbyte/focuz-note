@@ -181,7 +181,7 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
   )
 }
 
-function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTag, onAddQuickActivity, scopeIds, folderIndex, emptyText }: { spaceId: number; filter: FilterRecord | null; quick: QuickState; parentId?: number | null; onOpenThread?: (noteId: number) => void; onAddQuickTag?: (tag: string) => void; onAddQuickActivity?: (name: string) => void; /** Only these notes (the open folder), or null for all. */ scopeIds?: Set<number> | null; folderIndex?: FolderIndex; emptyText?: string }) {
+function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTag, onAddQuickActivity, scopeIds, folderIndex, emptyText, hiddenTags = [] }: { spaceId: number; filter: FilterRecord | null; quick: QuickState; parentId?: number | null; onOpenThread?: (noteId: number) => void; onAddQuickTag?: (tag: string) => void; onAddQuickActivity?: (name: string) => void; /** Only these notes (the open folder), or null for all. */ scopeIds?: Set<number> | null; folderIndex?: FolderIndex; emptyText?: string; /** Tags every note here has anyway (the open folder's), not repeated on each card. */ hiddenTags?: string[] }) {
   const [foldersFor, setFoldersFor] = useState<NoteRecord | null>(null)
   const [idsBySearch, setIdsBySearch] = useState<number[] | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -388,7 +388,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
       {notes.flatMap((n: NoteRecord) => {
         const items: ReactNode[] = []
         const positiveQuickTags = ((quick as any).tags || []).filter((t: string) => !t.startsWith('!')) as string[]
-        const hiddenTagsSet = new Set(positiveQuickTags)
+        const hiddenTagsSet = new Set([...positiveQuickTags, ...hiddenTags])
         // Note item (either editor replacing the note, or the note card)
         items.push(
           <li key={n.id} id={`feed-note-${n.id}`} data-feed-note-id={n.id}>
@@ -1089,6 +1089,7 @@ function App() {
             quick={feedQuick}
             scopeIds={scopeIds}
             folderIndex={folderIndex}
+            hiddenTags={editing ? [] : folderTags}
             emptyText={emptyText}
             onOpenThread={openThread}
             onAddQuickTag={(tag) => {

@@ -406,9 +406,12 @@ test.describe('folders', () => {
     await expect(page.locator('li', { hasText: 'Выбрать плитку' })).toBeVisible()
     await expect(tree(page).getByRole('treeitem', { name: 'Ремонт кухни' })).toContainText('1')
     await expect.poll(async () => (await serverNote(s.token, 'Выбрать плитку для фартука'))?.tags ?? [], { timeout: 20000 }).toEqual(['ремонт-кухни'])
+    // Inside the folder its tag isn't repeated on every card; outside it is shown.
+    await expect(page.locator('li', { hasText: 'Выбрать плитку' })).not.toContainText('ремонт-кухни')
 
     // A note without tags written in All notes lands in Unsorted.
     await page.getByRole('button', { name: 'All notes' }).click()
+    await expect(page.locator('li', { hasText: 'Выбрать плитку' })).toContainText('ремонт-кухни')
     await page.getByRole('button', { name: 'Add note…' }).click()
     await page.getByPlaceholder(/Add note/).fill('Позвонить в сервис')
     await page.getByRole('button', { name: 'Create' }).click()
