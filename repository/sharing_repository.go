@@ -55,13 +55,16 @@ type Membership struct {
 	Role        string `json:"role"`
 	IsPersonal  bool   `json:"is_personal"`
 	MemberCount int    `json:"member_count"`
+	// IconVersion changes whenever the space picture changes (0 = none).
+	IconVersion int64 `json:"icon_version"`
 }
 
 // Memberships lists the spaces the user is an active member of.
 func (r *SharingRepository) Memberships(userID int) ([]Membership, error) {
 	rows, err := r.db.Query(`
 		SELECT s.id, s.name, u.role_id, s.is_personal,
-		       (SELECT COUNT(*) FROM user_to_space x WHERE x.space_id = s.id AND x.is_pending = FALSE)
+		       (SELECT COUNT(*) FROM user_to_space x WHERE x.space_id = s.id AND x.is_pending = FALSE),
+		       COALESCE((EXTRACT(EPOCH FROM s.icon_updated_at) * 1000)::BIGINT, 0)
 		FROM user_to_space u JOIN space s ON s.id = u.space_id
 		WHERE u.user_id = $1 AND u.is_pending = FALSE AND s.is_deleted = FALSE
 		ORDER BY s.is_personal DESC, s.id`, userID)
@@ -72,7 +75,7 @@ func (r *SharingRepository) Memberships(userID int) ([]Membership, error) {
 	out := []Membership{}
 	for rows.Next() {
 		var m Membership
-		if err := rows.Scan(&m.SpaceID, &m.Name, &m.RoleID, &m.IsPersonal, &m.MemberCount); err != nil {
+		if err := rows.Scan(&m.SpaceID, &m.Name, &m.RoleID, &m.IsPersonal, &m.MemberCount, &m.IconVersion); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -86,12 +89,14 @@ type Member struct {
 	Username string `json:"username"`
 	RoleID   int    `json:"-"`
 	Role     string `json:"role"`
+	// AvatarVersion changes whenever the person's picture changes (0 = none).
+	AvatarVersion int64 `json:"avatar_version"`
 }
 
 // Members lists the members of the given spaces (usernames only, never e-mail addresses).
 func (r *SharingRepository) Members(spaceIDs []int) ([]Member, error) {
 	rows, err := r.db.Query(`
-		SELECT u.space_id, us.id, us.username, u.role_id
+		SELECT u.space_id, us.id, us.username, u.role_id, COALESCE((EXTRACT(EPOCH FROM us.avatar_updated_at) * 1000)::BIGINT, 0)
 		FROM user_to_space u JOIN users us ON us.id = u.user_id
 		WHERE u.space_id = ANY($1) AND u.is_pending = FALSE
 		ORDER BY u.space_id, u.role_id = (SELECT id FROM role WHERE name = 'owner') DESC, LOWER(us.username)`, pq.Array(spaceIDs))
@@ -102,7 +107,7 @@ func (r *SharingRepository) Members(spaceIDs []int) ([]Member, error) {
 	out := []Member{}
 	for rows.Next() {
 		var m Member
-		if err := rows.Scan(&m.SpaceID, &m.UserID, &m.Username, &m.RoleID); err != nil {
+		if err := rows.Scan(&m.SpaceID, &m.UserID, &m.Username, &m.RoleID, &m.AvatarVersion); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -588,4 +593,72 @@ func (r *SharingRepository) DeleteSpace(spaceID int) error {
 	}
 	_, err := r.db.Exec(`UPDATE public_links SET revoked_at = NOW() WHERE space_id = $1 AND revoked_at IS NULL`, spaceID)
 	return err
+}
+
+// ---- pictures (space icons, avatars) ----
+
+type Picture struct {
+	Data      []byte
+	Type      string
+	UpdatedAt time.Time
+}
+
+func (r *SharingRepository) scanPicture(row *sql.Row) (*Picture, error) {
+	var p Picture
+	var t sql.NullString
+	var at sql.NullTime
+	if err := row.Scan(&p.Data, &t, &at); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if len(p.Data) == 0 {
+		return nil, ErrNotFound
+	}
+	p.Type, p.UpdatedAt = t.String, at.Time
+	return &p, nil
+}
+
+func (r *SharingRepository) SpaceIcon(spaceID int) (*Picture, error) {
+	return r.scanPicture(r.db.QueryRow(`SELECT icon, icon_type, icon_updated_at FROM space WHERE id = $1`, spaceID))
+}
+
+// SetSpaceIcon stores (or with nil data removes) the picture; modified_at moves so members pull it.
+func (r *SharingRepository) SetSpaceIcon(spaceID int, data []byte, contentType string) error {
+	if data == nil {
+		_, err := r.db.Exec(`UPDATE space SET icon = NULL, icon_type = NULL, icon_updated_at = NULL, modified_at = NOW() WHERE id = $1`, spaceID)
+		return err
+	}
+	_, err := r.db.Exec(`UPDATE space SET icon = $2, icon_type = $3, icon_updated_at = NOW(), modified_at = NOW() WHERE id = $1`, spaceID, data, contentType)
+	return err
+}
+
+func (r *SharingRepository) Avatar(userID int) (*Picture, error) {
+	return r.scanPicture(r.db.QueryRow(`SELECT avatar, avatar_type, avatar_updated_at FROM users WHERE id = $1`, userID))
+}
+
+func (r *SharingRepository) SetAvatar(userID int, data []byte, contentType string) error {
+	if data == nil {
+		_, err := r.db.Exec(`UPDATE users SET avatar = NULL, avatar_type = NULL, avatar_updated_at = NULL WHERE id = $1`, userID)
+		return err
+	}
+	_, err := r.db.Exec(`UPDATE users SET avatar = $2, avatar_type = $3, avatar_updated_at = NOW() WHERE id = $1`, userID, data, contentType)
+	return err
+}
+
+func (r *SharingRepository) AvatarVersion(userID int) int64 {
+	var v int64
+	_ = r.db.QueryRow(`SELECT COALESCE((EXTRACT(EPOCH FROM avatar_updated_at) * 1000)::BIGINT, 0) FROM users WHERE id = $1`, userID).Scan(&v)
+	return v
+}
+
+// ShareASpace reports whether two people are members of at least one common space.
+func (r *SharingRepository) ShareASpace(a, b int) (bool, error) {
+	var ok bool
+	err := r.db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM user_to_space x JOIN user_to_space y ON x.space_id = y.space_id JOIN space s ON s.id = x.space_id
+			WHERE x.user_id = $1 AND y.user_id = $2 AND x.is_pending = FALSE AND y.is_pending = FALSE AND s.is_deleted = FALSE)`, a, b).Scan(&ok)
+	return ok, err
 }

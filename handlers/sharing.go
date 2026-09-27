@@ -189,6 +189,7 @@ func (h *SharingHandler) meJSON(u *repository.UserInfo) gin.H {
 		// E-mail notifications need an e-mail server mode and a confirmed address.
 		"emailNotificationsAvailable": h.cfg.Mode == authcfg.ModeEmail && u.Email != nil && u.EmailVerified,
 		"authMode":                    h.cfg.Mode,
+		"avatarVersion":               h.repo.AvatarVersion(u.ID),
 	}
 }
 

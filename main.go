@@ -219,6 +219,12 @@ func main() {
 		auth.GET("/me", sharingHandler.GetMe)
 		auth.PATCH("/me", sharingHandler.UpdateMe)
 		auth.POST("/me/password", sharingHandler.ChangePassword)
+		auth.PUT("/me/avatar", sharingHandler.SetAvatar)
+		auth.DELETE("/me/avatar", sharingHandler.SetAvatar)
+		auth.GET("/users/:userId/avatar", sharingHandler.UserAvatar)
+		auth.GET("/spaces/:spaceId/icon", sharingHandler.SpaceIcon)
+		auth.PUT("/spaces/:spaceId/icon", sharingHandler.SetSpaceIcon)
+		auth.DELETE("/spaces/:spaceId/icon", sharingHandler.SetSpaceIcon)
 
 		// notes (legacy, kept for backward compatibility during migration)
 		auth.POST("/notes", notesHandler.CreateNote)
