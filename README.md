@@ -77,3 +77,7 @@ address of any focuz server (like Bitwarden clients with a self-hosted Vaultward
 form adapts to that server (username or e-mail, sign-up open or closed). `VITE_API_BASE_URL` is just
 the default. For a web app on another domain to connect, the server needs that origin in
 `ALLOWED_ORIGINS`, or `ALLOWED_ORIGINS=*`.
+
+To lock the web app to your own server, build it with `VITE_ALLOW_CUSTOM_SERVER=false` (in `.env`,
+then `docker compose up -d --build web`): the "Change" link disappears and a server chosen earlier
+in a browser is ignored.
