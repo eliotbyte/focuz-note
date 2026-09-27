@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"focuz-api/models"
+	"strings"
 	"time"
 )
 
@@ -21,7 +22,9 @@ func NewSpacesRepository(db *sql.DB) *SpacesRepository {
 	return &SpacesRepository{db: db}
 }
 
-func (r *SpacesRepository) CreateSpace(name string, ownerID int) (*models.Space, error) {
+// CreateSpace creates a space owned by ownerID. personal marks the owner's private space (at most
+// one per user; it can't be shared).
+func (r *SpacesRepository) CreateSpace(name string, ownerID int, personal bool) (*models.Space, error) {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return nil, err
@@ -30,10 +33,10 @@ func (r *SpacesRepository) CreateSpace(name string, ownerID int) (*models.Space,
 
 	var spaceID int
 	err = tx.QueryRow(`
-		INSERT INTO space (name, owner_id, created_at, modified_at, is_deleted)
-		VALUES ($1, $2, NOW(), NOW(), FALSE)
+		INSERT INTO space (name, owner_id, created_at, modified_at, is_deleted, is_personal)
+		VALUES ($1, $2, NOW(), NOW(), FALSE, $3 AND NOT EXISTS (SELECT 1 FROM space WHERE owner_id = $2 AND is_personal AND is_deleted = FALSE))
 		RETURNING id
-	`, name, ownerID).Scan(&spaceID)
+	`, name, ownerID, personal).Scan(&spaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -302,8 +305,10 @@ func (r *SpacesRepository) GetUserByUsername(username string) (*models.User, err
 	err := r.db.QueryRow(`
 		SELECT id, username, password_hash, created_at
 		FROM users
-		WHERE username = $1
-	`, username).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt)
+		WHERE username = LOWER($1) OR (LOWER(email) = LOWER($1) AND email_verified_at IS NOT NULL)
+		ORDER BY (username = LOWER($1)) DESC
+		LIMIT 1
+	`, strings.TrimSpace(username)).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

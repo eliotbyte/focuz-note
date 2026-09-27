@@ -56,7 +56,8 @@ func (s *E2ETestSuite) Test10_GuestCannotEditSpace() {
 	resp, err := client.Do(req)
 	s.NoError(err)
 	defer resp.Body.Close()
-	s.Equal(http.StatusForbidden, resp.StatusCode)
+	// The invitation is not accepted yet: to them the space does not exist.
+	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
 func (s *E2ETestSuite) Test11_GetAccessibleSpaces() {
@@ -122,7 +123,7 @@ func (s *E2ETestSuite) Test13_RemoveUser_GuestCantRemove() {
 	resp, err := client.Do(req)
 	s.NoError(err)
 	defer resp.Body.Close()
-	s.Equal(http.StatusForbidden, resp.StatusCode)
+	s.Equal(http.StatusNotFound, resp.StatusCode) // not a member (invitation pending)
 }
 
 func (s *E2ETestSuite) Test14_RemoveUser_ParticipantNotFound() {
@@ -150,7 +151,8 @@ func (s *E2ETestSuite) Test15_RemoveUser_CannotRemoveOwner() {
 	resp, err := client.Do(req)
 	s.NoError(err)
 	defer resp.Body.Close()
-	s.Equal(http.StatusForbidden, resp.StatusCode)
+	// User 1 is the owner themself: the owner can't leave (delete the space instead).
+	s.Equal(http.StatusBadRequest, resp.StatusCode)
 }
 
 func (s *E2ETestSuite) Test16_RemoveUser_Success() {
@@ -193,18 +195,17 @@ func (s *E2ETestSuite) Test17_GetUsersInSpace_Success() {
 	json.NewDecoder(resp.Body).Decode(&response)
 	s.True(response["success"].(bool))
 
-	// Handle paginated response structure
-	data := response["data"].(map[string]interface{})
-	users := data["data"].([]interface{})
+	users := response["data"].([]interface{})
 	s.True(len(users) >= 1)
 
 	found := false
 	for _, u := range users {
 		user := u.(map[string]interface{})
-		if int(user["id"].(float64)) == 1 { // owner
+		if int(user["user_id"].(float64)) == 1 { // owner
 			found = true
 			s.Contains(user, "username")
-			s.Contains(user, "roleId")
+			s.Equal("owner", user["role"])
+			s.NotContains(user, "email")
 			break
 		}
 	}
@@ -218,5 +219,5 @@ func (s *E2ETestSuite) Test18_GetUsersInSpace_ForbiddenForNonMember() {
 	resp, err := client.Do(req)
 	s.NoError(err)
 	defer resp.Body.Close()
-	s.Equal(http.StatusForbidden, resp.StatusCode)
+	s.Equal(http.StatusNotFound, resp.StatusCode) // removed in Test16: no longer a member
 }

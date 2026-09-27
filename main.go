@@ -6,6 +6,8 @@ import (
 	"focuz-api/initializers"
 	"focuz-api/middleware"
 	"focuz-api/pkg/appenv"
+	"focuz-api/pkg/authcfg"
+	"focuz-api/pkg/mailer"
 	"focuz-api/pkg/notify"
 	"focuz-api/repository"
 	"focuz-api/websocket"
@@ -144,8 +146,10 @@ func main() {
 	chartsHandler := handlers.NewChartsHandler(chartsRepo, spacesRepo, activityTypesRepo, notesRepo)
 	notificationsHandler := handlers.NewNotificationsHandler(notificationsRepo)
 	filtersHandler := handlers.NewFiltersHandler(filtersRepo, spacesRepo)
+	sharingRepo := repository.NewSharingRepository(db)
 	syncHandler := handlers.NewSyncHandler(syncRepo, spacesRepo, tagsRepo, filtersRepo).
 		WithNotifier(notifier).
+		WithSharing(sharingRepo).
 		WithLimits(
 			parseInt64Env("SYNC_MAX_BODY_BYTES", 25*1024*1024),
 			parseIntEnv("SYNC_MAX_BATCH_ITEMS", 10000),
@@ -156,26 +160,71 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	authConfig, err := authcfg.FromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	mail, err := mailer.FromEnv()
+	if err != nil {
+		log.Fatal("Mail configuration: ", err)
+	}
+	log.Printf("Accounts: mode=%s registration=%v mail=%s", authConfig.Mode, authConfig.RegistrationOpen, mail.Describe())
+	if authConfig.Mode == authcfg.ModeEmail && authConfig.PublicAPIURL == "" {
+		log.Printf("PUBLIC_API_URL is not set: confirmation emails will contain the code only, without a link")
+	}
+	usersRepo := repository.NewUsersRepository(db)
+	sharingHandler := handlers.NewSharingHandler(sharingRepo, usersRepo, notificationsRepo, notifier, mail, authConfig)
+	authHandler := handlers.NewAuthHandler(usersRepo, authConfig, mail, jwtSecret).OnEmailVerified(sharingHandler.OnEmailVerified)
+
+	r.GET("/auth/config", authHandler.Config)
 	// Public endpoints with stricter auth rate limit
 	authPublic := r.Group("/", middleware.RateLimitAuthMiddleware())
-	authPublic.POST("/register", notesHandler.Register)
-	authPublic.POST("/login", func(c *gin.Context) {
-		c.Set("jwtSecret", jwtSecret)
-		notesHandler.Login(c)
-	})
+	authPublic.POST("/register", authHandler.Register)
+	authPublic.POST("/login", authHandler.Login)
+	authPublic.POST("/auth/verify-email", authHandler.VerifyEmail)
+	authPublic.POST("/auth/resend-verification", authHandler.ResendVerification)
+	authPublic.GET("/auth/verify", authHandler.VerifyEmailLink)
+
+	// Public read-only links (no sign-in); unguessable tokens, rate-limited like everything else.
+	r.GET("/public/:token", sharingHandler.PublicView)
+	r.GET("/public/:token/files/:fileId", sharingHandler.PublicFile)
 
 	auth := r.Group("/", handlers.AuthMiddleware(jwtSecret))
 	{
 		auth.GET("/spaces", spacesHandler.GetAccessibleSpaces)
-		auth.DELETE("/spaces/:spaceId/users/:userId", spacesHandler.RemoveUser)
-		auth.GET("/spaces/:spaceId/users", spacesHandler.GetUsersInSpace)
 		auth.POST("/spaces", spacesHandler.CreateSpace)
-		auth.PATCH("/spaces/:spaceId", spacesHandler.UpdateSpace)
-		auth.PATCH("/spaces/:spaceId/delete", spacesHandler.DeleteSpace)
+		auth.PATCH("/spaces/:spaceId", sharingHandler.RenameSpace)
+		auth.PATCH("/spaces/:spaceId/delete", sharingHandler.DeleteSpace)
 		auth.PATCH("/spaces/:spaceId/restore", spacesHandler.RestoreSpace)
-		auth.POST("/spaces/:spaceId/invite", spacesHandler.InviteUser)
-		auth.POST("/spaces/:spaceId/invitations/accept", spacesHandler.AcceptInvitation)
-		auth.POST("/spaces/:spaceId/invitations/decline", spacesHandler.DeclineInvitation)
+		auth.GET("/spaces/:spaceId/members", sharingHandler.ListMembers)
+		auth.GET("/spaces/:spaceId/users", sharingHandler.ListMembers)
+		auth.PATCH("/spaces/:spaceId/members/:userId", sharingHandler.SetMemberRole)
+		auth.DELETE("/spaces/:spaceId/members/:userId", sharingHandler.RemoveMember)
+		auth.DELETE("/spaces/:spaceId/users/:userId", sharingHandler.RemoveMember)
+		auth.POST("/spaces/:spaceId/invitations", sharingHandler.Invite)
+		auth.POST("/spaces/:spaceId/invite", sharingHandler.Invite)
+		auth.GET("/spaces/:spaceId/invitations", sharingHandler.SpaceInvitations)
+		auth.DELETE("/spaces/:spaceId/invitations/:invitationId", sharingHandler.CancelInvitation)
+		auth.POST("/spaces/:spaceId/invitations/accept", sharingHandler.AcceptInvitationBySpace)
+		auth.POST("/spaces/:spaceId/invitations/decline", sharingHandler.DeclineInvitationBySpace)
+		auth.GET("/invitations", sharingHandler.MyInvitations)
+		auth.POST("/invitations/:invitationId/accept", sharingHandler.AcceptInvitation)
+		auth.POST("/invitations/:invitationId/decline", sharingHandler.DeclineInvitation)
+		auth.POST("/spaces/:spaceId/shares", sharingHandler.CreateShare)
+		auth.PATCH("/shares/:token", sharingHandler.UpdateShare)
+		auth.DELETE("/shares/:token", sharingHandler.DeleteShare)
+		auth.GET("/notes/:id/history", sharingHandler.NoteHistory)
+		auth.GET("/notifications", sharingHandler.ListNotifications)
+		auth.POST("/notifications/read", sharingHandler.ReadNotifications)
+		auth.GET("/me", sharingHandler.GetMe)
+		auth.PATCH("/me", sharingHandler.UpdateMe)
+		auth.POST("/me/password", sharingHandler.ChangePassword)
+		auth.PUT("/me/avatar", sharingHandler.SetAvatar)
+		auth.DELETE("/me/avatar", sharingHandler.SetAvatar)
+		auth.GET("/users/:userId/avatar", sharingHandler.UserAvatar)
+		auth.GET("/spaces/:spaceId/icon", sharingHandler.SpaceIcon)
+		auth.PUT("/spaces/:spaceId/icon", sharingHandler.SetSpaceIcon)
+		auth.DELETE("/spaces/:spaceId/icon", sharingHandler.SetSpaceIcon)
 
 		// notes (legacy, kept for backward compatibility during migration)
 		auth.POST("/notes", notesHandler.CreateNote)
@@ -227,7 +276,11 @@ func main() {
 		auth.GET("/spaces/:spaceId/filters", syncHandler.GetFiltersBySpace)
 	}
 
-	r.Run(":8080")
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "8080"
+	}
+	r.Run(":" + port)
 }
 
 func parseIntEnv(name string, def int) int {

@@ -169,40 +169,63 @@ func (s *E2ETestSuite) Test209_Security_SyncCannotTouchOtherUsersFilters() {
 	s.Equal(http.StatusBadRequest, code)
 }
 
-func (s *E2ETestSuite) Test210_Security_GuestCanOnlyEditOwnNotes() {
+func (s *E2ETestSuite) Test210_Security_RolesDecideWhoWritesAndDeletes() {
 	ownerTok, _ := s.newUser("owner")
+	editorTok, _ := s.newUser("editorx")
 	guestTok, _ := s.newUser("guestx")
 	space := s.createSpace(ownerTok, "Shared")
-	guestName := s.usernameOf(guestTok)
-	code, _ := s.call("POST", "/spaces/"+strconv.Itoa(space)+"/invite", ownerTok, map[string]any{"username": guestName})
+	sp := strconv.Itoa(space)
+	editorName, guestName := s.usernameOf(editorTok), s.usernameOf(guestTok)
+	code, _ := s.call("POST", "/spaces/"+sp+"/invitations", ownerTok, map[string]any{"identifier": editorName, "role": "editor"})
 	s.Require().Equal(http.StatusOK, code)
-	code, _ = s.call("POST", "/spaces/"+strconv.Itoa(space)+"/invitations/accept", guestTok, nil)
+	code, _ = s.call("POST", "/spaces/"+sp+"/invitations", ownerTok, map[string]any{"identifier": guestName, "role": "guest"})
+	s.Require().Equal(http.StatusOK, code)
+	code, _ = s.call("POST", "/spaces/"+sp+"/invitations/accept", editorTok, nil)
+	s.Require().Equal(http.StatusOK, code)
+	code, _ = s.call("POST", "/spaces/"+sp+"/invitations/accept", guestTok, nil)
 	s.Require().Equal(http.StatusOK, code)
 
 	_, d := s.pushAs(ownerTok, map[string]any{"notes": []any{noteChange(nil, space, "owner note")}})
 	ownerNote := int(d["versions"].([]any)[0].(map[string]any)["id"].(float64))
-	_, d = s.pushAs(guestTok, map[string]any{"notes": []any{noteChange(nil, space, "guest note")}})
+	_, d = s.pushAs(editorTok, map[string]any{"notes": []any{noteChange(nil, space, "editor note")}})
 	s.Empty(rejectedReasons(d))
-	guestNote := int(d["versions"].([]any)[0].(map[string]any)["id"].(float64))
+	editorNote := int(d["versions"].([]any)[0].(map[string]any)["id"].(float64))
 
+	// Editors edit any note, but delete only their own.
+	_, d = s.pushAs(editorTok, map[string]any{"notes": []any{noteChange(&ownerNote, space, "edited by editor")}})
+	s.Empty(rejectedReasons(d))
+	del := noteChange(&ownerNote, space, "edited by editor")
+	del["deleted_at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	_, d = s.pushAs(editorTok, map[string]any{"notes": []any{del}})
+	s.Equal([]string{"forbidden"}, rejectedReasons(d))
+	delOwn := noteChange(&editorNote, space, "editor note")
+	delOwn["deleted_at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	_, d = s.pushAs(editorTok, map[string]any{"notes": []any{delOwn}})
+	s.Empty(rejectedReasons(d))
+
+	// Guests only read: no new notes, no edits.
+	_, d = s.pushAs(guestTok, map[string]any{"notes": []any{noteChange(nil, space, "guest note")}})
+	s.Equal([]string{"forbidden"}, rejectedReasons(d))
 	_, d = s.pushAs(guestTok, map[string]any{"notes": []any{noteChange(&ownerNote, space, "guest overwrote")}})
 	s.Equal([]string{"forbidden"}, rejectedReasons(d))
-	_, d = s.pushAs(guestTok, map[string]any{"notes": []any{noteChange(&guestNote, space, "guest edited own")}})
-	s.Empty(rejectedReasons(d))
-	_, d = s.pushAs(ownerTok, map[string]any{"notes": []any{noteChange(&guestNote, space, "owner moderated")}})
-	s.Empty(rejectedReasons(d))
+	text, _ := s.serverNoteText(guestTok, space, ownerNote)
+	s.Equal("edited by editor", text)
 
-	text, _ := s.serverNoteText(ownerTok, space, ownerNote)
-	s.Equal("owner note", text)
-	text, _ = s.serverNoteText(ownerTok, space, guestNote)
-	s.Equal("owner moderated", text)
+	// Who changed it is recorded.
+	code, out := s.call("GET", "/notes/"+strconv.Itoa(ownerNote)+"/history", guestTok, nil)
+	s.Require().Equal(http.StatusOK, code)
+	h := out["data"].(map[string]any)
+	s.Equal(s.usernameOf(ownerTok), h["createdBy"])
+	s.Equal(editorName, h["modifiedBy"])
 
-	// Re-inviting an existing member must not demote/lock them out; inviting yourself is refused.
-	code, _ = s.call("POST", "/spaces/"+strconv.Itoa(space)+"/invite", ownerTok, map[string]any{"username": guestName})
+	// Re-inviting an existing member is refused; inviting yourself too. Guests can't rename.
+	code, _ = s.call("POST", "/spaces/"+sp+"/invitations", ownerTok, map[string]any{"identifier": editorName})
 	s.Equal(http.StatusConflict, code)
-	code, _ = s.call("POST", "/spaces/"+strconv.Itoa(space)+"/invite", ownerTok, map[string]any{"username": s.usernameOf(ownerTok)})
+	code, _ = s.call("POST", "/spaces/"+sp+"/invitations", ownerTok, map[string]any{"identifier": s.usernameOf(ownerTok)})
 	s.Equal(http.StatusBadRequest, code)
-	code, _ = s.call("PATCH", "/spaces/"+strconv.Itoa(space), ownerTok, map[string]any{"name": "still mine"})
+	code, _ = s.call("PATCH", "/spaces/"+sp, guestTok, map[string]any{"name": "mine now"})
+	s.Equal(http.StatusForbidden, code)
+	code, _ = s.call("PATCH", "/spaces/"+sp, ownerTok, map[string]any{"name": "still mine"})
 	s.Equal(http.StatusOK, code)
 }
 

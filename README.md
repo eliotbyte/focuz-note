@@ -44,14 +44,32 @@ docker-compose up -d
 - `POST /login` - user login
 
 ### Workspaces (Spaces)
-- `GET /spaces` - get available workspaces
-- `POST /spaces` - create a workspace
-- `PATCH /spaces/{id}` - update a workspace
-- `PATCH /spaces/{id}/delete` - soft delete a workspace
-- `PATCH /spaces/{id}/restore` - restore a workspace
-- `GET /spaces/{id}/users` - get users in a workspace
-- `POST /spaces/{id}/invite` - invite a user
-- `DELETE /spaces/{id}/users/{userId}` - remove a user from a workspace
+Roles: **owner** (creator; everything, incl. deleting the space), **admin** (members, invitations,
+renaming, publishing), **editor** (writes notes, edits any note, deletes own), **guest** (read-only).
+A space created with `"personal": true` is the user's private space (one per user): it can't be
+shared, made public as a whole or deleted. Folders (saved filters) are personal to each member.
+
+- `GET /spaces` - spaces I am in; `POST /spaces` `{name, personal?}` - create
+- `PATCH /spaces/{id}` `{name}` (admin) · `PATCH /spaces/{id}/delete` (owner) · `PATCH /spaces/{id}/restore`
+- `GET /spaces/{id}/members` - members (usernames and roles, never e-mails)
+- `PATCH /spaces/{id}/members/{userId}` `{role}` - change a role (only the owner makes admins)
+- `DELETE /spaces/{id}/members/{userId}` - remove someone, or leave when it is yourself
+- `POST /spaces/{id}/invitations` `{identifier, role}` - invite by username (or e-mail on an e-mail
+  server). The answer is identical whether or not the account exists; 20 invitations per hour per
+  person. Invitations to an unknown address reach the account that confirms that address later.
+- `GET /spaces/{id}/invitations` · `DELETE /spaces/{id}/invitations/{invitationId}` - pending ones (admin)
+- `GET /invitations` · `POST /invitations/{id}/accept` · `POST /invitations/{id}/decline` - mine
+- `POST /spaces/{id}/shares` `{noteId?, includeReplies}` - public read-only link to the space or a
+  note (with its replies, all levels); `PATCH /shares/{token}` `{includeReplies}`; `DELETE /shares/{token}`
+- `GET /public/{token}`, `GET /public/{token}/files/{fileId}` - no sign-in; only what the link covers
+
+### Account & notifications
+- `GET /me`, `PATCH /me` `{notifyEmail}`, `POST /me/password` `{currentPassword, newPassword}`
+- `GET /notifications` (latest 50 + unread count), `POST /notifications/read` `{ids}` or `{all: true}`.
+  Kinds: `space_invitation`, `invitation_accepted`, `role_changed`, `removed_from_space`, `space_deleted`.
+  Open apps get a WebSocket ping; on e-mail servers they are also e-mailed when `notifyEmail` is on
+  (link to the web app when `PUBLIC_WEB_URL` is set).
+- `GET /notes/{id}/history` - author, last editor and the edit log (who and when)
 
 ### Notes
 - `GET /notes` - get notes

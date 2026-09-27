@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"focuz-api/globals"
+	"focuz-api/pkg/access"
 	"focuz-api/pkg/appenv"
 	"focuz-api/repository"
 	"focuz-api/types"
@@ -16,9 +16,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
-
-	"github.com/lib/pq"
 )
 
 type NotesHandler struct {
@@ -86,80 +83,6 @@ func AuthMiddleware(secret string) gin.HandlerFunc {
 	}
 }
 
-func (h *NotesHandler) Register(c *gin.Context) {
-	var req struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, err.Error()))
-		return
-	}
-	// Convert username to lowercase for case-insensitive handling
-	req.Username = strings.ToLower(req.Username)
-	if len(req.Username) < 3 || len(req.Username) > 50 {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "Username must be between 3 and 50 characters"))
-		return
-	}
-	// Enforce basic password policy: minimum length 8 characters
-	if len(req.Password) < 8 {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "Password must be at least 8 characters"))
-		return
-	}
-	user, err := h.repo.CreateUser(req.Username, req.Password)
-	if err != nil {
-		// Map unique violation to 409 Conflict for duplicate usernames
-		if pgErr, ok := err.(*pq.Error); ok && string(pgErr.Code) == "23505" {
-			c.JSON(http.StatusConflict, types.NewErrorResponse(types.ErrorCodeConflict, "Username already exists"))
-			return
-		}
-		slog.Error("register failed", "err", err)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, "Failed to register user"))
-		return
-	}
-	c.JSON(http.StatusCreated, types.NewSuccessResponse(user))
-}
-
-func (h *NotesHandler) Login(c *gin.Context) {
-	var req struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, err.Error()))
-		return
-	}
-	// Convert username to lowercase for case-insensitive handling
-	req.Username = strings.ToLower(req.Username)
-	if failedLogins.Blocked(req.Username) {
-		c.JSON(http.StatusTooManyRequests, types.NewErrorResponse("RATE_LIMIT_EXCEEDED", "Too many failed attempts, try again later"))
-		return
-	}
-	user, err := h.repo.GetUserByUsername(req.Username)
-	hash := dummyHash
-	if err == nil && user != nil {
-		hash = []byte(user.PasswordHash)
-	}
-	if bcrypt.CompareHashAndPassword(hash, []byte(req.Password)) != nil || err != nil || user == nil {
-		failedLogins.Failed(req.Username)
-		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(types.ErrorCodeUnauthorized, "Invalid username or password"))
-		return
-	}
-	failedLogins.Succeeded(req.Username)
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"userId": user.ID,
-		"exp":    time.Now().Add(time.Hour * 24).Unix(),
-		"iss":    "focuz-api",
-		"aud":    "focuz-fe",
-	})
-	tokenString, err := token.SignedString([]byte(c.MustGet("jwtSecret").(string)))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, "Failed to generate token"))
-		return
-	}
-	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"token": tokenString}))
-}
-
 func (h *NotesHandler) CreateNote(c *gin.Context) {
 	var req struct {
 		Text     string    `json:"text" binding:"required"`
@@ -179,8 +102,8 @@ func (h *NotesHandler) CreateNote(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
-	if roleID == 0 {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
+	if !access.CanWrite(roleID) {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "You can only read this space"))
 		return
 	}
 
@@ -228,8 +151,8 @@ func (h *NotesHandler) DeleteNote(c *gin.Context) {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
 		return
 	}
-	if roleID != globals.DefaultOwnerRoleID {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "Guests cannot delete notes"))
+	if !access.CanDeleteNote(roleID, note.UserID, userID) {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "You can delete only your own notes here"))
 		return
 	}
 	if err := h.repo.UpdateNoteDeleted(id, true); err != nil {
@@ -264,8 +187,8 @@ func (h *NotesHandler) RestoreNote(c *gin.Context) {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
 		return
 	}
-	if roleID != globals.DefaultOwnerRoleID {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "Guests cannot restore notes"))
+	if !access.CanDeleteNote(roleID, note.UserID, userID) {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "You can restore only your own notes here"))
 		return
 	}
 	if err := h.repo.UpdateNoteDeleted(id, false); err != nil {
@@ -298,10 +221,6 @@ func (h *NotesHandler) GetNote(c *gin.Context) {
 	}
 	if roleID == 0 {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
-		return
-	}
-	if roleID != globals.DefaultOwnerRoleID && note.UserID != userID {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the note"))
 		return
 	}
 
@@ -391,15 +310,15 @@ func (h *NotesHandler) GetNotes(c *gin.Context) {
 	}
 
 	filters := models.NoteFilters{
-		Tags:        tags,
-		NotReply:    notReply,
-		Page:        pagination.Page,
-		PageSize:    pagination.PageSize,
-		ParentID:    parentID,
-		SortField:   sortField,
-		SortOrder:   sortOrder,
-		DateFrom:    dateFrom,
-		DateTo:      dateTo,
+		Tags:      tags,
+		NotReply:  notReply,
+		Page:      pagination.Page,
+		PageSize:  pagination.PageSize,
+		ParentID:  parentID,
+		SortField: sortField,
+		SortOrder: sortOrder,
+		DateFrom:  dateFrom,
+		DateTo:    dateTo,
 	}
 	notes, total, err := h.repo.GetNotes(userID, spaceID, filters)
 	if err != nil {

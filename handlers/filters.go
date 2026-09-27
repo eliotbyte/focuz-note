@@ -80,7 +80,8 @@ func (h *FiltersHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
-	if roleID == 0 {
+	// Folders are personal: only their author sees and changes them.
+	if roleID == 0 || existing.UserID != userID {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
 		return
 	}
@@ -131,7 +132,8 @@ func (h *FiltersHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
-	if roleID == 0 {
+	// Folders are personal: only their author sees and changes them.
+	if roleID == 0 || existing.UserID != userID {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
 		return
 	}
@@ -159,7 +161,8 @@ func (h *FiltersHandler) Restore(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
-	if roleID == 0 {
+	// Folders are personal: only their author sees and changes them.
+	if roleID == 0 || existing.UserID != userID {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
 		return
 	}
@@ -194,7 +197,7 @@ func (h *FiltersHandler) List(c *gin.Context) {
 	}
 
 	pagination := types.ParsePaginationParams(c)
-	items, total, err := h.repo.List(spaceID, pagination.Page, pagination.PageSize)
+	items, total, err := h.repo.List(spaceID, userID, pagination.Page, pagination.PageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"focuz-api/pkg/access"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ type SyncHandler struct {
 	tagsRepo    *repository.TagsRepository
 	filtersRepo *repository.FiltersRepository
 	notifier    notify.Notifier
+	sharing     *repository.SharingRepository
 
 	// Limits are intentionally large by default, but still enforced as a contract
 	// to avoid unbounded memory/CPU on the server.
@@ -42,6 +44,13 @@ func NewSyncHandler(syncRepo *repository.SyncRepository, spacesRepo *repository.
 
 func (h *SyncHandler) WithNotifier(n notify.Notifier) *SyncHandler {
 	h.notifier = n
+	return h
+}
+
+// WithSharing adds memberships, members and public links to every pull and lets pushes wake
+// the other members of a shared space.
+func (h *SyncHandler) WithSharing(r *repository.SharingRepository) *SyncHandler {
+	h.sharing = r
 	return h
 }
 
@@ -101,6 +110,12 @@ func (h *SyncHandler) Pull(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
 	}
+	if h.sharing != nil {
+		if err := h.addSpaceState(userID, changes); err != nil {
+			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+			return
+		}
+	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(changes))
 }
 
@@ -147,8 +162,45 @@ func (h *SyncHandler) Push(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(res))
 	if h.notifier != nil && res.Applied > 0 {
+		notified := map[int]bool{userID: true}
 		h.notifier.NotifyUser(userID, events.SyncPushed{Type: "SyncPushed"})
+		if h.sharing != nil && len(res.TouchedSpaces) > 0 {
+			if ids, err := h.sharing.MemberIDs(res.TouchedSpaces); err == nil {
+				for _, id := range ids {
+					if !notified[id] {
+						notified[id] = true
+						h.notifier.NotifyUser(id, events.SyncPushed{Type: "SyncPushed"})
+					}
+				}
+			}
+		}
 	}
+}
+
+// addSpaceState fills the parts of a pull that are always sent in full.
+func (h *SyncHandler) addSpaceState(userID int, resp *types.SyncPullResponse) error {
+	memberships, err := h.sharing.Memberships(userID)
+	if err != nil {
+		return err
+	}
+	ids := make([]int, 0, len(memberships))
+	for i := range memberships {
+		memberships[i].Role = access.Name(memberships[i].RoleID)
+		ids = append(ids, memberships[i].SpaceID)
+	}
+	members, err := h.sharing.Members(ids)
+	if err != nil {
+		return err
+	}
+	for i := range members {
+		members[i].Role = access.Name(members[i].RoleID)
+	}
+	shares, err := h.sharing.Shares(ids)
+	if err != nil {
+		return err
+	}
+	resp.Memberships, resp.Members, resp.Shares = memberships, members, shares
+	return nil
 }
 
 func countSyncPushItems(req types.SyncPushRequest) (int, map[string]int) {
@@ -222,7 +274,7 @@ func (h *SyncHandler) GetFiltersBySpace(c *gin.Context) {
 		return
 	}
 	// Reuse filters repo list with default pagination
-	items, total, err := h.filtersRepo.List(spaceID, 1, 1000)
+	items, total, err := h.filtersRepo.List(spaceID, userID, 1, 1000)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
