@@ -7,8 +7,10 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-focuz_db}
     volumes:
       - db-data:/var/lib/postgresql/data
+    # Localhost only: the API reaches the DB over the compose network. Exposing Postgres with the
+    # default password to the LAN/internet is an easy way to lose all notes.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-focuz_user} -d ${POSTGRES_DB:-focuz_db}"]
       interval: 2s
@@ -26,8 +28,10 @@ services:
     volumes:
       - minio-data:/data
     ports:
+      # 9000 (S3 API) stays reachable for presigned URLs from older clients; the web app now
+      # downloads files through the API. The admin console is localhost only.
       - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9001:9001"
     networks:
       - focuz-network
 
@@ -48,6 +52,19 @@ services:
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_BUCKET=notes
       - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
+      # Accounts: username (default) or email (sign-up with e-mail + confirmation code)
+      - AUTH_MODE=${AUTH_MODE:-username}
+      - REGISTRATION=${REGISTRATION:-open}
+      # Address users reach the API at; used for the confirmation link in e-mails
+      - PUBLIC_API_URL=${PUBLIC_API_URL:-}
+      - PUBLIC_WEB_URL=${PUBLIC_WEB_URL:-}
+      # Outgoing mail. Without SMTP_HOST, e-mails are only written to the API log.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURITY=${SMTP_SECURITY:-starttls}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
       # Rate limit toggles for dev
       - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-1}
       - RATE_LIMIT_RPS=${RATE_LIMIT_RPS:-5}
@@ -87,6 +104,8 @@ services:
         VITE_SYNC_DEBOUNCE_MS: ${VITE_SYNC_DEBOUNCE_MS:-2000}
         VITE_SYNC_WS_COOLDOWN_MS: ${VITE_SYNC_WS_COOLDOWN_MS:-3000}
         VITE_SYNC_BACKOFF_MS: ${VITE_SYNC_BACKOFF_MS:-15000}
+        # false: the sign-in screen has no "Change server" (the app only talks to VITE_API_BASE_URL)
+        VITE_ALLOW_CUSTOM_SERVER: ${VITE_ALLOW_CUSTOM_SERVER:-true}
     ports:
       - "8081:80"
     depends_on:
