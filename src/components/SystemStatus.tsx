@@ -130,80 +130,27 @@ export function SystemStatusInline() {
   )
 }
 
-// Centralized UI layer for system statuses.
-// Important: this module does NOT run sync logic. It reacts to app-state only.
+// Toasts for sync events. Connection state (offline, server unreachable, sync errors, failed
+// image transfers, session expired) is deliberately NOT toasted: the status chip in the top bar
+// shows it continuously, and the session-expired dialog handles sign-in. Toasting it as well
+// produced a stream of popups on every network hiccup.
+// The one event worth interrupting for: a conflict, because a new note appeared in the feed.
 export function SystemStatusLayer() {
-  const online = useAppState(s => s.online)
-  const authRequired = useAppState(s => s.authRequired)
-  const syncError = useAppState(s => s.syncError)
-  const serverReachable = useAppState(s => s.serverReachable)
   const lastConflictAt = useAppState(s => s.lastConflictAt)
   const lastConflictCount = useAppState(s => s.lastConflictCount)
-  const lastJobFailureAt = useAppState(s => s.lastJobFailureAt)
-  const lastJobFailureKind = useAppState(s => s.lastJobFailureKind)
-  const lastJobFailureMessage = useAppState(s => s.lastJobFailureMessage)
-
-  const prevOnlineRef = useRef<boolean | null>(null)
-  const prevReachableRef = useRef<boolean>(true)
-  const lastErrorShownRef = useRef<string | null>(null)
-  const lastConflictShownAtRef = useRef<string | null>(null)
-  const lastAuthToastAtMsRef = useRef<number>(0)
-  const lastJobToastAtRef = useRef<string | null>(null)
+  const shownRef = useRef<string | null>(null)
 
   useEffect(() => {
-    const prev = prevOnlineRef.current
-    prevOnlineRef.current = online
-    if (prev == null) return
-    if (!online) notify('You are offline. Changes are saved on this device.', 'warning', { durationMs: 4000, id: 'sys-offline' })
-    if (online && prev === false) notify('Back online', 'success', { durationMs: 2500, id: 'sys-online' })
-  }, [online])
-
-  // One toast when the server goes away and one when it comes back — not one per retry.
-  useEffect(() => {
-    const prev = prevReachableRef.current
-    prevReachableRef.current = serverReachable
-    if (!online) return
-    if (prev && !serverReachable) notify('Cannot reach the server. Changes are kept on this device and will sync automatically.', 'warning', { durationMs: 6000, id: 'sys-server' })
-    if (!prev && serverReachable) notify('Connection to the server restored', 'success', { durationMs: 2500, id: 'sys-server' })
-  }, [serverReachable, online])
-
-  useEffect(() => {
-    if (!syncError || !serverReachable) { if (!syncError) lastErrorShownRef.current = null; return }
-    if (syncError === 'Session expired') return
-    if (lastErrorShownRef.current === syncError) return
-    lastErrorShownRef.current = syncError
-    notify(`Sync failed: ${syncError}`, 'error', { durationMs: 6000, id: 'sys-sync-error' })
-  }, [syncError, serverReachable])
-
-  useEffect(() => {
-    if (!lastConflictAt) return
-    if (lastConflictShownAtRef.current === lastConflictAt) return
-    lastConflictShownAtRef.current = lastConflictAt
+    if (!lastConflictAt || shownRef.current === lastConflictAt) return
+    shownRef.current = lastConflictAt
     notify(
       lastConflictCount > 1
-        ? `${lastConflictCount} notes were changed on another device. Your versions were kept as notes tagged “conflict”.`
-        : 'This note was changed on another device. Your version was kept as a note tagged “conflict”.',
+        ? `${lastConflictCount} notes were also changed on another device`
+        : 'This note was also changed on another device',
       'warning',
-      { durationMs: 8000 },
+      { id: 'sys-conflict', durationMs: 10000, description: 'Your version was kept as a separate note tagged “conflict”.' },
     )
   }, [lastConflictAt, lastConflictCount])
-
-  useEffect(() => {
-    if (!authRequired) return
-    const now = Date.now()
-    if (now - lastAuthToastAtMsRef.current < 30000) return
-    lastAuthToastAtMsRef.current = now
-    notify('Session expired — please sign in again', 'warning', { durationMs: 8000, id: 'sys-auth-required' })
-  }, [authRequired])
-
-  useEffect(() => {
-    if (!lastJobFailureAt) return
-    if (lastJobToastAtRef.current === lastJobFailureAt) return
-    lastJobToastAtRef.current = lastJobFailureAt
-    const label = lastJobFailureKind === 'attachment-download' ? 'Image download failed' : 'Image upload failed'
-    const extra = lastJobFailureMessage ? `: ${lastJobFailureMessage}` : ''
-    notify(`${label}${extra}. You can retry from the sync status menu.`, 'error', { durationMs: 8000, id: 'sys-job-failed' })
-  }, [lastJobFailureAt, lastJobFailureKind, lastJobFailureMessage])
 
   return null
 }

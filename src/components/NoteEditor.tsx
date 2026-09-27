@@ -111,14 +111,14 @@ export default function NoteEditor({
     let added = 0
     for (const f of images) {
       if (attachmentsCountRef.current + added >= MAX_ATTACHMENTS) {
-        notify(`Up to ${MAX_ATTACHMENTS} images per note`, 'warning', { id: 'editor-max-images' })
+        notify('Image not added', 'warning', { id: 'editor-max-images', description: `A note can have up to ${MAX_ATTACHMENTS} images.` })
         break
       }
       try {
         const dim = await getImageDimensions(f)
         const check = validateImageGeometry(dim)
         if (!check.ok) {
-          notify(`${f.name || 'Image'}: ${check.reason || 'invalid image'}`, 'warning')
+          notify('Image not added', 'warning', { description: `${f.name || 'Image'} (${dim.width}×${dim.height}): ${check.reason || 'unsupported size'}.` })
           continue
         }
         const res = await compressToWebP(f)
@@ -126,7 +126,7 @@ export default function NoteEditor({
         added++
         setAttachments(prev => prev.length >= MAX_ATTACHMENTS ? prev : [...prev, out])
       } catch {
-        notify(`Could not read ${f.name || 'the image'}`, 'error')
+        notify('Image not added', 'error', { description: `${f.name || 'The file'} could not be read as an image.` })
       }
     }
   }

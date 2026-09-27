@@ -10,12 +10,11 @@ import { applyStoredTheme } from './lib/theme'
 
 applyStoredTheme()
 
+// A new build waits until the user reloads (reloading on its own could drop text being typed).
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
     notifyUpdateAvailable(() => { void updateSW(true) })
-    // Auto-apply updates so UI changes are not stuck behind SW cache during dev in Docker.
-    setTimeout(() => { void updateSW(true) }, 400)
   },
 })
 
