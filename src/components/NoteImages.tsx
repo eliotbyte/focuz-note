@@ -228,12 +228,8 @@ function Cell({ span, att, refEl, onOpen }: { span?: { col?: number; row?: numbe
   return (
     <div
       ref={ref}
-      className={['relative rounded-[var(--radius)] overflow-hidden', (att.data ? 'cursor-pointer hover:opacity-95' : '')].join(' ')}
-      style={{
-        ...style,
-        background: 'rgb(var(--c-surface))',
-        boxShadow: 'var(--shadow-waterdrop)',
-      }}
+      className={['relative rounded-[var(--radius)] overflow-hidden media-frame', (att.data ? 'cursor-pointer hover:opacity-95' : '')].join(' ')}
+      style={style}
       onClick={() => { if (att.data && onOpen) onOpen() }}
       role={att.data ? 'button' : undefined}
       aria-label={att.data ? 'Open image' : undefined}

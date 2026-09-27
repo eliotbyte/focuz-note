@@ -319,7 +319,7 @@ export default function NoteEditor({
         <div className="flex-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button type="button" className="button">Add</button>
+              <button type="button" className="button button-secondary">Add</button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
               <DropdownMenuItem
@@ -345,7 +345,7 @@ export default function NoteEditor({
           </DropdownMenu>
         </div>
         {onCancel && (
-          <button className="button" onClick={() => { onCancel(); setAttachments([]); collapseIfNeeded() }}>Cancel</button>
+          <button className="button button-secondary" onClick={() => { onCancel(); setAttachments([]); collapseIfNeeded() }}>Cancel</button>
         )}
         <button className="button" onClick={submit} disabled={!canSubmit}>{submitLabel}</button>
       </div>

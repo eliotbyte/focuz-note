@@ -117,7 +117,7 @@ export function SystemStatusInline() {
         )}
         <div className="mt-4 flex justify-end gap-2">
           {pending.failed > 0 && (
-            <button type="button" className="button !bg-transparent !text-[var(--text-primary)] ring-1 ring-[rgba(var(--c-text)/0.15)]" onClick={() => { void retryFailedAttachments() }}>
+            <button type="button" className="button button-secondary" onClick={() => { void retryFailedAttachments() }}>
               Retry images
             </button>
           )}

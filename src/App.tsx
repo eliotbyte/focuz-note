@@ -95,7 +95,7 @@ function MobileDrawer({ open, onClose, rail, children }: { open: boolean; onClos
       <div className={`absolute inset-0 bg-black/60 ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <aside
         className={`absolute left-0 top-0 h-full w-[21rem] max-w-[92vw] flex ${open ? '' : '-translate-x-full'} transition-transform`}
-        style={{ background: 'rgb(var(--c-page))', boxShadow: 'var(--shadow-surface)' }}
+        style={{ background: 'var(--glass-strong)', boxShadow: 'var(--shadow-surface)', backdropFilter: 'blur(18px)' }}
         aria-label="Spaces and folders"
       >
         <div className="py-3 pl-2">{rail}</div>
@@ -1127,7 +1127,7 @@ function App() {
           className="absolute left-0 right-0 top-0 pointer-events-none"
           style={{
             height: 'var(--topbar-h, 64px)',
-            background: 'linear-gradient(to bottom, rgb(var(--c-page)) 0%, rgb(var(--c-page)) 65%, rgb(var(--c-page) / 0) 100%)',
+            background: 'linear-gradient(to bottom, rgb(var(--c-page-top)) 0%, rgb(var(--c-page-top) / 0.92) 55%, rgb(var(--c-page-top) / 0) 100%)',
           }}
         />
         <div className="relative mx-auto max-w-[1440px] px-4 md:px-6 py-3">
@@ -1325,7 +1325,7 @@ function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTa
       <div className="space-y-5">
         <div className="card p-4">
           <div className="mb-3">Note not found</div>
-          <button className="button" onClick={onBack}>Back</button>
+          <button className="button button-secondary" onClick={onBack}>Back</button>
         </div>
       </div>
     )

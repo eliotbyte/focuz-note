@@ -14,7 +14,7 @@ export const DialogOverlay = React.forwardRef<
   return (
     <DialogPrimitive.Overlay
       ref={ref}
-      className={cn('fixed inset-0 z-[90] bg-black/60', className)}
+      className={cn('fixed inset-0 z-[90] bg-black/55 backdrop-blur-[3px]', className)}
       {...props}
     />
   )
@@ -32,7 +32,7 @@ export const DialogContent = React.forwardRef<
         className={cn(
           'fixed left-1/2 top-1/2 z-[100] w-[min(92vw,32rem)] -translate-x-1/2 -translate-y-1/2',
           'rounded-[var(--radius)] p-0',
-          'surface',
+          'surface glass-float',
           className,
         )}
         {...props}

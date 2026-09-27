@@ -149,7 +149,7 @@ test('replies stay attached to their parent on another device', async ({ page, b
   const s = await seed(API)
   await signIn(page, s.token)
   // Reply to a note on device A.
-  await page.locator('li', { hasText: 'Купить: молоко' }).getByRole('button', { name: 'Open note' }).click({ force: true })
+  await page.locator('li', { hasText: 'Купить: молоко' }).filter({ hasNot: page.locator('.pill-reply-preview') }).getByRole('button', { name: 'Open note' }).click({ force: true })
   await page.getByRole('button', { name: 'Reply…' }).click()
   await page.getByPlaceholder('Reply…').fill('И ещё сыр')
   await page.getByRole('button', { name: 'Reply', exact: true }).click()
@@ -159,7 +159,8 @@ test('replies stay attached to their parent on another device', async ({ page, b
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } })
   const b = await ctx.newPage()
   await signIn(b, s.token)
-  await b.locator('li', { hasText: 'Купить: молоко' }).getByRole('button', { name: 'Open note' }).click({ force: true })
+  // The reply shows its parent's text in a preview; open the note itself.
+  await b.locator('li', { hasText: 'Купить: молоко' }).filter({ hasNot: b.locator('.pill-reply-preview') }).getByRole('button', { name: 'Open note' }).click({ force: true })
   await expect(b.getByText('И ещё сыр')).toBeVisible()
   await ctx.close()
 })
@@ -323,6 +324,9 @@ test.describe('full-screen editor', () => {
     await page.getByRole('button', { name: 'Text style' }).click()
     await page.getByRole('menuitem', { name: /Heading/ }).hover()
     await page.getByRole('menuitem', { name: /Heading 2/ }).click()
+    // The menu hands focus back to the editor a frame after it closes.
+    await expect(page.getByRole('menu')).toHaveCount(0)
+    await expect(editor).toBeFocused()
     await page.keyboard.type('Weekend trip')
     await page.keyboard.press('Enter')
     await page.keyboard.type('[ ] ')

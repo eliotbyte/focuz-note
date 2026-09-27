@@ -9,7 +9,7 @@ export function Avatar({ name, size = 28, shape = 'round', className, title }: {
       aria-hidden
       title={title}
       className={cn('avatar', shape === 'square' ? 'avatar-square' : 'avatar-round', className)}
-      style={{ width: size, height: size, fontSize: Math.max(10, Math.round(size * 0.38)), background: `hsl(${h} 55% 42%)` }}
+      style={{ width: size, height: size, fontSize: Math.max(10, Math.round(size * 0.38)), ['--h' as string]: h }}
     >
       {initials(name)}
     </span>

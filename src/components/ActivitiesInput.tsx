@@ -344,7 +344,7 @@ export default function ActivitiesInput({
       {!hideAddButton && activityTypes.length > 0 && (
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
-            <button type="button" className="button" data-actmenu="1">Activity ▾</button>
+            <button type="button" className="button button-secondary" data-actmenu="1">Activity ▾</button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" data-actmenu="1" align="start">
             <div className="max-h-60 overflow-auto">

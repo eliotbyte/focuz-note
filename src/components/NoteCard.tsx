@@ -205,11 +205,7 @@ export default function NoteCard({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="flex items-center justify-center w-8 h-8 rounded-full"
-                  style={{
-                    background: 'rgb(var(--c-surface))',
-                    boxShadow: '0 0 8px 8px rgb(var(--c-surface) / 0.85)',
-                  }}
+                  className="drop-btn"
                   aria-label="Open actions"
                   onClick={(e) => e.stopPropagation()}
                 >
