@@ -27,7 +27,8 @@ async function serverSpaceId(localSpaceId: number, cache: Map<number, number>): 
   if (!s) throw new Error(`Space ${localSpaceId} not found`)
   let sid = s.serverId ?? 0
   if (!sid) {
-    const resp = await api('/spaces', { method: 'POST', body: JSON.stringify({ name: s.name }) })
+    // Only the default space is ever created offline: it is the personal one.
+    const resp = await api('/spaces', { method: 'POST', body: JSON.stringify({ name: s.name, personal: s.isPersonal !== false }) })
     sid = Number(resp?.data?.id) || 0
     if (!sid) throw new Error('Server did not return a space id')
     await db.spaces.update(localSpaceId, { serverId: sid, isDirty: 0 })

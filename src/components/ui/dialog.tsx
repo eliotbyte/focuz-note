@@ -14,7 +14,7 @@ export const DialogOverlay = React.forwardRef<
   return (
     <DialogPrimitive.Overlay
       ref={ref}
-      className={cn('fixed inset-0 z-[90] bg-black/60', className)}
+      className={cn('fixed inset-0 bg-black/55 backdrop-blur-[3px]', /z-\[/.test(className ?? '') ? '' : 'z-[90]', className)}
       {...props}
     />
   )
@@ -22,17 +22,18 @@ export const DialogOverlay = React.forwardRef<
 
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(function DialogContent({ className, ...props }, ref) {
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { /** Opened from another dialog: goes above it, dimming it. */ stacked?: boolean }
+>(function DialogContent({ className, stacked, ...props }, ref) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={stacked ? 'z-[110]' : undefined} />
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          'fixed left-1/2 top-1/2 z-[100] w-[min(92vw,32rem)] -translate-x-1/2 -translate-y-1/2',
+          'fixed left-1/2 top-1/2 w-[min(92vw,32rem)] -translate-x-1/2 -translate-y-1/2',
+          stacked ? 'z-[120]' : 'z-[100]',
           'rounded-[var(--radius)] p-0',
-          'surface',
+          'surface glass-float',
           className,
         )}
         {...props}

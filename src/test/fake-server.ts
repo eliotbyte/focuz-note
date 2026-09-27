@@ -31,6 +31,9 @@ export class FakeServer {
   /** Called when a request is received, before it is handled. */
   onRequest: ((method: string, path: string) => void | Promise<void>) | null = null
   log: string[] = []
+  /** When set, the server behaves like a multi-user one: pulls cover the spaces the user is a
+   *  member of (with this role) and carry the full membership list. */
+  memberships: Map<number, string> | null = null
 
   constructor() {
     this.addSpace('My Space')
@@ -88,7 +91,7 @@ export class FakeServer {
       return ok({ id: this.addSpace(body.name) })
     }
     if (method === 'POST' && path === '/sync') return ok(this.push(JSON.parse(init.body)))
-    if (method === 'GET' && path === '/sync') return ok(this.pull(url.searchParams.get('since')!))
+    if (method === 'GET' && path === '/sync') return ok(this.pull(url.searchParams.get('since')!, Number(url.searchParams.get('spaceId')) || undefined))
     if (method === 'POST' && path === '/upload') return this.upload(init.body as FormData)
     const content = path.match(/^\/files\/([^/]+)\/content$/)
     if (method === 'GET' && content) {
@@ -167,15 +170,17 @@ export class FakeServer {
     return resp
   }
 
-  private pull(since: string) {
+  private pull(since: string, spaceId?: number) {
     const s = Date.parse(since)
     const after = (iso: string) => Date.parse(iso) > s
+    const m = this.memberships
+    const visible = (n: Note) => m ? (m.has(n.space_id) && (!spaceId || n.space_id === spaceId)) : n.user_id === this.userId
     const notes = [...this.notes.values()]
-      .filter(n => n.user_id === this.userId)
+      .filter(visible)
       .filter(n => after(n.modified_at) || [...this.attachments.values()].some(a => a.note_id === n.id && after(a.modified_at)))
       .sort((a, b) => a.id - b.id)
       .map(n => ({
-        id: n.id, space_id: n.space_id, user_id: n.user_id, text: n.text, tags: n.tags, date: n.date, parent_id: n.parent_id ?? undefined,
+        id: n.id, space_id: n.space_id, user_id: n.user_id, author_name: `user${n.user_id}`, text: n.text, tags: n.tags, date: n.date, parent_id: n.parent_id ?? undefined,
         created_at: n.created_at, modified_at: n.modified_at, deleted_at: n.is_deleted ? n.modified_at : undefined,
         activities: [], charts: [],
         attachments: [...this.attachments.values()].filter(a => a.note_id === n.id).map(a => ({ id: a.id, file_name: a.file_name, file_type: a.file_type, file_size: a.file_size, created_at: a.created_at, modified_at: a.modified_at })),
@@ -186,6 +191,11 @@ export class FakeServer {
       tags: [],
       filters: [...this.filters.values()].filter(f => after(f.modified_at)).map(f => ({ id: f.id, space_id: f.space_id, parent_id: f.parent_id ?? undefined, name: f.name, params: f.params, created_at: f.created_at, modified_at: f.modified_at, deleted_at: f.is_deleted ? f.modified_at : undefined })),
       activityTypes: [],
+      ...(m ? {
+        memberships: [...m.entries()].map(([id, role]) => ({ space_id: id, name: this.spaces.get(id)?.name ?? `Space ${id}`, role, is_personal: id === 1, member_count: 2 })),
+        members: [...m.keys()].flatMap(id => [{ space_id: id, user_id: this.userId, username: 'me', role: m.get(id) }, { space_id: id, user_id: 99, username: 'anna', role: 'owner' }]),
+        shares: [],
+      } : {}),
     }
   }
 

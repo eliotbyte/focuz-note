@@ -70,8 +70,8 @@ async function fileToDataURL(file: File): Promise<string> {
 export function validateImageGeometry(dim: { width: number; height: number }): { ok: boolean; reason?: string } {
   const minSide = Math.min(dim.width, dim.height)
   const maxSide = Math.max(dim.width, dim.height)
-  if (minSide < 256) return { ok: false, reason: 'Minimum side must be at least 256px' }
-  if (maxSide / minSide > 2) return { ok: false, reason: 'Aspect ratio must not exceed 1:2' }
+  if (minSide < 256) return { ok: false, reason: 'each side must be at least 256 px' }
+  if (maxSide / minSide > 2) return { ok: false, reason: 'the long side can be at most twice the short side' }
   return { ok: true }
 }
 

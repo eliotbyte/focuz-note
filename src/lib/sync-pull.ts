@@ -2,7 +2,7 @@
 import { db, getKV, setKV } from './db'
 import { api } from './api'
 import { fromServerActivityValue } from './activity-values'
-import type { ActivityRecord, ActivityTypeRecord, AttachmentRecord, FilterRecord, JobRecord, NoteRecord, SpaceRecord, TagRecord } from './types'
+import type { ActivityRecord, ActivityTypeRecord, AttachmentRecord, FilterRecord, JobRecord, NoteRecord, PublicShare, SpaceMember, SpaceRecord, SpaceRole, TagRecord } from './types'
 
 export const LAST_SYNC_KV = 'lastSyncAt'
 /** Priority of background image downloads (viewport prefetch uses 1, lower runs first). */
@@ -61,6 +61,10 @@ async function upsertNote(n: any): Promise<void> {
     parentServerId,
     deletedAt: n.deleted_at ?? null,
     isDirty: 0,
+    authorId: typeof n.user_id === 'number' ? n.user_id : null,
+    authorName: n.author_name || null,
+    modifiedById: typeof n.modified_by === 'number' ? n.modified_by : null,
+    modifiedByName: n.modified_by_name || null,
   }
   if (existing) await db.notes.put(rec)
   else await db.notes.add(rec)
@@ -158,118 +162,193 @@ async function linkPendingParents(): Promise<void> {
   }
 }
 
-export async function pullSince(): Promise<PullResult> {
-  const since = (await getKV<string>(LAST_SYNC_KV, '1970-01-01T00:00:00Z'))!
-  let maxSyncAt = since
-  const updateMax = (iso?: string) => { if (iso && iso > maxSyncAt) maxSyncAt = iso }
+export const MEMBERS_KV = 'space:members'
+export const SHARES_KV = 'space:shares'
 
-  let pulled = 0
-  let sawNotes = false
+interface PageState { pulled: number; sawNotes: boolean; maxSyncAt: string }
+
+async function applyPage(data: any, st: PageState): Promise<void> {
+  const updateMax = (iso?: string) => { if (iso && iso > st.maxSyncAt) st.maxSyncAt = iso }
+  for (const s of (data.spaces ?? [])) updateMax(s.modified_at)
+  for (const t of (data.tags ?? [])) updateMax(t.modified_at ?? t.created_at)
+  for (const f of (data.filters ?? [])) updateMax(f.modified_at)
+  for (const at of (data.activityTypes ?? [])) updateMax(at.modified_at)
+  for (const n of (data.notes ?? [])) {
+    updateMax(n.modified_at)
+    for (const a of (n.attachments ?? [])) updateMax(a.modified_at ?? a.created_at)
+    for (const a of (n.activities ?? [])) updateMax(a.modified_at)
+  }
+  await db.transaction('rw', [db.spaces, db.notes, db.tags, db.filters, db.attachments, db.activities, db.activityTypes, db.jobs], async () => {
+    for (const s of (data.spaces ?? [])) {
+      st.pulled++
+      const existing = await db.spaces.where('serverId').equals(s.id).first()
+      // Keep role / member count (they come with the memberships).
+      const rec: SpaceRecord = { ...(existing ?? {}), id: existing?.id, serverId: s.id, name: s.name, createdAt: s.created_at, modifiedAt: s.modified_at, deletedAt: s.deleted_at ?? null, isDirty: 0 }
+      if (existing) await db.spaces.put(rec)
+      else await db.spaces.add(rec)
+    }
+
+    for (const n of (data.notes ?? [])) {
+      st.pulled++
+      st.sawNotes = true
+      await upsertNote(n)
+    }
+
+    for (const t of (data.tags ?? [])) {
+      st.pulled++
+      const existing = await db.tags.where('serverId').equals(t.id).first()
+      const spaceId = await localSpaceId(t.space_id)
+      if (spaceId == null) continue
+      const rec: TagRecord = { id: existing?.id, serverId: t.id, spaceId, name: t.name, createdAt: t.created_at, modifiedAt: t.modified_at, deletedAt: t.deleted_at ?? null, isDirty: 0 }
+      if (existing) await db.tags.put(rec)
+      else await db.tags.add(rec)
+    }
+
+    for (const f of (data.filters ?? [])) {
+      st.pulled++
+      const existing = await db.filters.where('serverId').equals(f.id).first()
+      if (existing?.isDirty) continue
+      const spaceId = await localSpaceId(f.space_id)
+      if (spaceId == null) continue
+      const rec: FilterRecord = {
+        id: existing?.id,
+        serverId: f.id,
+        clientId: existing?.clientId ?? null,
+        spaceId,
+        parentId: f.parent_id ?? null,
+        name: f.name,
+        params: (f.params ?? {}) as any,
+        createdAt: f.created_at,
+        modifiedAt: f.modified_at,
+        serverModifiedAt: f.modified_at,
+        deletedAt: f.deleted_at ?? null,
+        isDirty: 0,
+      }
+      if (existing) await db.filters.put(rec)
+      else await db.filters.add(rec)
+    }
+
+    for (const t of (data.activityTypes ?? [])) {
+      st.pulled++
+      const existing = await db.activityTypes.where('serverId').equals(t.id).first()
+      const spaceLocalId = typeof t.space_id === 'number' ? ((await localSpaceId(t.space_id)) ?? 0) : 0
+      const rec: ActivityTypeRecord = {
+        id: existing?.id,
+        serverId: t.id,
+        spaceId: spaceLocalId,
+        name: t.name,
+        valueType: (t.value_type || t.valueType) as any,
+        minValue: typeof t.min_value === 'number' ? t.min_value : (typeof t.minValue === 'number' ? t.minValue : null),
+        maxValue: typeof t.max_value === 'number' ? t.max_value : (typeof t.maxValue === 'number' ? t.maxValue : null),
+        aggregation: t.aggregation ?? null,
+        unit: t.unit ?? null,
+        categoryId: t.category_id ?? t.categoryId ?? null,
+        createdAt: t.created_at,
+        modifiedAt: t.modified_at,
+        deletedAt: t.deleted_at ?? null,
+      }
+      if (existing) await db.activityTypes.put(rec)
+      else await db.activityTypes.add(rec)
+    }
+
+    for (const n of (data.notes ?? [])) {
+      const noteLocalId = await localNoteIdByServer(n.id)
+      if (!noteLocalId) continue
+      st.pulled += (n.attachments ?? []).length
+      await mergeNoteAttachments(n, noteLocalId)
+      st.pulled += await mergeNoteActivities(n, noteLocalId)
+    }
+  })
+
+}
+
+/** Everything a pull can bring, page by page. spaceId limits it to one space. */
+async function pullPages(since: string, st: PageState, spaceId?: number): Promise<any> {
   let cursor: string | null = null
+  let first: any = null
   for (let page = 0; page < 50; page++) {
     const qs = new URLSearchParams({ since })
+    if (spaceId) qs.set('spaceId', String(spaceId))
     if (cursor) qs.set('cursor', cursor)
     const resp = await api(`/sync?${qs.toString()}`)
     const data = resp?.data || {}
-
-    for (const s of (data.spaces ?? [])) updateMax(s.modified_at)
-    for (const t of (data.tags ?? [])) updateMax(t.modified_at ?? t.created_at)
-    for (const f of (data.filters ?? [])) updateMax(f.modified_at)
-    for (const at of (data.activityTypes ?? [])) updateMax(at.modified_at)
-    for (const n of (data.notes ?? [])) {
-      updateMax(n.modified_at)
-      for (const a of (n.attachments ?? [])) updateMax(a.modified_at ?? a.created_at)
-      for (const a of (n.activities ?? [])) updateMax(a.modified_at)
-    }
-
-    await db.transaction('rw', [db.spaces, db.notes, db.tags, db.filters, db.attachments, db.activities, db.activityTypes, db.jobs], async () => {
-      for (const s of (data.spaces ?? [])) {
-        pulled++
-        const existing = await db.spaces.where('serverId').equals(s.id).first()
-        const rec: SpaceRecord = { id: existing?.id, serverId: s.id, name: s.name, createdAt: s.created_at, modifiedAt: s.modified_at, deletedAt: s.deleted_at ?? null, isDirty: 0 }
-        if (existing) await db.spaces.put(rec)
-        else await db.spaces.add(rec)
-      }
-
-      for (const n of (data.notes ?? [])) {
-        pulled++
-        sawNotes = true
-        await upsertNote(n)
-      }
-
-      for (const t of (data.tags ?? [])) {
-        pulled++
-        const existing = await db.tags.where('serverId').equals(t.id).first()
-        const spaceId = await localSpaceId(t.space_id)
-        if (spaceId == null) continue
-        const rec: TagRecord = { id: existing?.id, serverId: t.id, spaceId, name: t.name, createdAt: t.created_at, modifiedAt: t.modified_at, deletedAt: t.deleted_at ?? null, isDirty: 0 }
-        if (existing) await db.tags.put(rec)
-        else await db.tags.add(rec)
-      }
-
-      for (const f of (data.filters ?? [])) {
-        pulled++
-        const existing = await db.filters.where('serverId').equals(f.id).first()
-        if (existing?.isDirty) continue
-        const spaceId = await localSpaceId(f.space_id)
-        if (spaceId == null) continue
-        const rec: FilterRecord = {
-          id: existing?.id,
-          serverId: f.id,
-          clientId: existing?.clientId ?? null,
-          spaceId,
-          parentId: f.parent_id ?? null,
-          name: f.name,
-          params: (f.params ?? {}) as any,
-          createdAt: f.created_at,
-          modifiedAt: f.modified_at,
-          serverModifiedAt: f.modified_at,
-          deletedAt: f.deleted_at ?? null,
-          isDirty: 0,
-        }
-        if (existing) await db.filters.put(rec)
-        else await db.filters.add(rec)
-      }
-
-      for (const t of (data.activityTypes ?? [])) {
-        pulled++
-        const existing = await db.activityTypes.where('serverId').equals(t.id).first()
-        const spaceLocalId = typeof t.space_id === 'number' ? ((await localSpaceId(t.space_id)) ?? 0) : 0
-        const rec: ActivityTypeRecord = {
-          id: existing?.id,
-          serverId: t.id,
-          spaceId: spaceLocalId,
-          name: t.name,
-          valueType: (t.value_type || t.valueType) as any,
-          minValue: typeof t.min_value === 'number' ? t.min_value : (typeof t.minValue === 'number' ? t.minValue : null),
-          maxValue: typeof t.max_value === 'number' ? t.max_value : (typeof t.maxValue === 'number' ? t.maxValue : null),
-          aggregation: t.aggregation ?? null,
-          unit: t.unit ?? null,
-          categoryId: t.category_id ?? t.categoryId ?? null,
-          createdAt: t.created_at,
-          modifiedAt: t.modified_at,
-          deletedAt: t.deleted_at ?? null,
-        }
-        if (existing) await db.activityTypes.put(rec)
-        else await db.activityTypes.add(rec)
-      }
-
-      for (const n of (data.notes ?? [])) {
-        const noteLocalId = await localNoteIdByServer(n.id)
-        if (!noteLocalId) continue
-        pulled += (n.attachments ?? []).length
-        await mergeNoteAttachments(n, noteLocalId)
-        pulled += await mergeNoteActivities(n, noteLocalId)
-      }
-    })
-
+    if (!first) first = data
+    await applyPage(data, st)
     const hasMore = !!data.hasMore
     const nextCursor = (typeof data.nextCursor === 'string' && data.nextCursor) ? data.nextCursor : null
     if (!hasMore || !nextCursor) break
     cursor = nextCursor
   }
+  return first
+}
 
-  if (sawNotes) await db.transaction('rw', db.notes, linkPendingParents)
-  await setKV(LAST_SYNC_KV, maxSyncAt)
-  return { pulled }
+export async function pullSince(): Promise<PullResult> {
+  const since = (await getKV<string>(LAST_SYNC_KV, '1970-01-01T00:00:00Z'))!
+  const st: PageState = { pulled: 0, sawNotes: false, maxSyncAt: since }
+  const first = await pullPages(since, st)
+  // Memberships come in full with every pull: spaces joined since then are loaded completely
+  // (their notes are older than our checkpoint), spaces we were removed from are dropped.
+  if (first && Array.isArray(first.memberships)) {
+    const joined = await applyMemberships(first)
+    for (const serverSpaceId of joined) {
+      const inner: PageState = { pulled: 0, sawNotes: false, maxSyncAt: st.maxSyncAt }
+      await pullPages('1970-01-01T00:00:00Z', inner, serverSpaceId)
+      st.pulled += inner.pulled
+      st.sawNotes = st.sawNotes || inner.sawNotes
+    }
+  }
+  if (st.sawNotes) await db.transaction('rw', db.notes, linkPendingParents)
+  await setKV(LAST_SYNC_KV, st.maxSyncAt)
+  return { pulled: st.pulled }
+}
+
+/** Updates spaces from the membership list. Returns server ids of spaces new on this device. */
+async function applyMemberships(data: any): Promise<number[]> {
+  const joined: number[] = []
+  const serverIds = new Set<number>()
+  await db.transaction('rw', db.spaces, async () => {
+    for (const m of data.memberships as any[]) {
+      serverIds.add(m.space_id)
+      const existing = await db.spaces.where('serverId').equals(m.space_id).first()
+      const patch = { name: m.name, role: m.role as SpaceRole, isPersonal: !!m.is_personal, memberCount: Number(m.member_count) || 1, iconVersion: Number(m.icon_version) || 0 }
+      if (existing) {
+        if (existing.deletedAt) joined.push(m.space_id)
+        await db.spaces.update(existing.id!, { ...patch, deletedAt: null })
+      } else {
+        const now = new Date().toISOString()
+        await db.spaces.add({ serverId: m.space_id, ...patch, createdAt: now, modifiedAt: now, deletedAt: null, isDirty: 0 } as SpaceRecord)
+        joined.push(m.space_id)
+      }
+    }
+  })
+  const lost = (await db.spaces.toArray()).filter(s => s.serverId != null && !serverIds.has(s.serverId) && !s.deletedAt)
+  for (const s of lost) await dropSpaceLocally(s.id!)
+
+  const members: SpaceMember[] = (data.members ?? []).map((m: any) => ({ spaceId: m.space_id, userId: m.user_id, username: m.username, role: m.role, avatarVersion: Number(m.avatar_version) || 0 }))
+  const shares: PublicShare[] = (data.shares ?? []).map((x: any) => ({
+    token: x.token, spaceId: x.space_id, noteId: x.note_id ?? null, includeReplies: !!x.include_replies, createdBy: x.created_by, createdAt: x.created_at,
+  }))
+  await setKV(MEMBERS_KV, members)
+  await setKV(SHARES_KV, shares)
+  return joined
+}
+
+/** Removes a space and everything in it from this device (after leaving or being removed). */
+export async function dropSpaceLocally(localSpaceId: number): Promise<void> {
+  await db.transaction('rw', [db.spaces, db.notes, db.tags, db.filters, db.attachments, db.activities, db.jobs, db.noteConflicts], async () => {
+    const notes = await db.notes.where('spaceId').equals(localSpaceId).toArray()
+    const noteIds = notes.map(n => n.id!)
+    if (noteIds.length) {
+      const atts = await db.attachments.where('noteId').anyOf(noteIds).toArray()
+      const attIds = atts.map(a => a.id!)
+      if (attIds.length) await db.jobs.where('attachmentId').anyOf(attIds).delete()
+      await db.attachments.where('noteId').anyOf(noteIds).delete()
+      await db.activities.where('noteId').anyOf(noteIds).delete()
+      await db.noteConflicts.where('noteLocalId').anyOf(noteIds).delete()
+      await db.notes.bulkDelete(noteIds)
+    }
+    await db.tags.where('spaceId').equals(localSpaceId).delete()
+    await db.filters.where('spaceId').equals(localSpaceId).delete()
+    await db.spaces.delete(localSpaceId)
+  })
 }

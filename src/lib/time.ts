@@ -127,3 +127,8 @@ export function formatDurationShort(msInput: number): string {
 	if (seconds <= 0) return '0s'
 	return `${Math.max(5, seconds)}s`
 }
+/** "just now", "5m ago", "3d ago". */
+export function formatAgo(input: string | Date, nowDate: Date = new Date()): string {
+	const r = formatRelativeShort(input, nowDate)
+	return r === 'just now' ? r : `${r} ago`
+}

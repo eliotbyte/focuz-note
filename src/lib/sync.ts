@@ -34,16 +34,47 @@ try { syncBC = new BroadcastChannel('focuz-sync') } catch {}
 // ---------------------------------------------------------------------------
 // Auth
 
-export async function register(username: string, password: string): Promise<void> {
-  await api('/register', { method: 'POST', body: JSON.stringify({ username, password }) })
+export type AccountField = 'username' | 'email'
+
+/** Creates an account. On e-mail servers the account must be confirmed before signing in. */
+export async function register(login: string, password: string, field: AccountField = 'username'): Promise<{ verificationRequired: boolean; email?: string }> {
+  const resp = await api('/register', { method: 'POST', body: JSON.stringify({ [field]: login, password }) })
+  return { verificationRequired: !!resp?.data?.verificationRequired, email: resp?.data?.email }
 }
 
-export async function login(username: string, password: string): Promise<void> {
+export async function login(loginName: string, password: string, field: AccountField = 'username'): Promise<void> {
   await ensureDbOpen().catch(() => {})
-  const resp = await api('/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+  const resp = await api('/login', { method: 'POST', body: JSON.stringify({ [field]: loginName, password }) })
   const token = resp?.data?.token as string
   if (!token) throw new Error('No token')
-  setLastUsername(username)
+  await finishSignIn(token, loginName)
+}
+
+/** Confirms an e-mail address with the code from the e-mail; signs the user in. */
+export async function verifyEmail(email: string, code: string): Promise<void> {
+  await ensureDbOpen().catch(() => {})
+  const resp = await api('/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code }) })
+  const token = resp?.data?.token as string
+  if (!token) throw new Error('No token')
+  await finishSignIn(token, email)
+}
+
+export async function resendVerification(email: string): Promise<{ retryAfterSeconds: number }> {
+  const resp = await api('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) })
+  return { retryAfterSeconds: Number(resp?.data?.retryAfterSeconds) || 60 }
+}
+
+const SERVER_KV = 'serverUrl'
+
+async function finishSignIn(token: string, displayName: string) {
+  // Local data belongs to one server: never mix notes from two servers in one database.
+  try {
+    const current = getApiBase()
+    const previous = await getKV<string>(SERVER_KV)
+    if (previous && current && previous !== current) await wipeLocalData()
+    if (current) await setKV(SERVER_KV, current)
+  } catch {}
+  setLastUsername(displayName)
   setAuthTokenLS(token)
   emitAuthRequired(false)
   resetFailureState()
@@ -107,12 +138,12 @@ export async function ensureDefaultSpace(): Promise<number> {
     if (getApiBase() && getAuthToken()) {
       const spaces = await listSpaces()
       if (spaces.length > 0) { serverId = spaces[0].id; name = spaces[0].name }
-      else serverId = (await api('/spaces', { method: 'POST', body: JSON.stringify({ name }) }))?.data?.id ?? null
+      else serverId = (await api('/spaces', { method: 'POST', body: JSON.stringify({ name, personal: true }) }))?.data?.id ?? null
     }
   } catch {
     // offline: a local space is created and pushed later
   }
-  const id = await db.spaces.add({ serverId, name, createdAt: now, modifiedAt: now, deletedAt: null, isDirty: serverId ? 0 : 1 } as SpaceRecord)
+  const id = await db.spaces.add({ serverId, name, role: 'owner', isPersonal: true, memberCount: 1, createdAt: now, modifiedAt: now, deletedAt: null, isDirty: serverId ? 0 : 1 } as SpaceRecord)
   await setKV(CURRENT_SPACE_KV, id)
   return id
 }
@@ -285,6 +316,7 @@ export async function retryFailedAttachments(): Promise<void> {
 // Scheduling
 
 let lastWSTriggerMs = 0
+let wsDeferred: ReturnType<typeof setTimeout> | null = null
 let localKickTimer: ReturnType<typeof setTimeout> | null = null
 
 function requestLeaderSync() {
@@ -331,6 +363,7 @@ export function scheduleAutoSync(): { kick: () => void; cleanup: () => void } {
     else if (data.type === 'sync-request' && role === 'leader') void runSync(true)
     else if (data.type === 'jobs-kick' && role === 'leader') kickJobs()
     else if (data.type === 'jobs-retry' && role === 'leader') void retryFailedAttachments()
+    else if (data.type === 'server-event') window.dispatchEvent(new CustomEvent('focuz:server-event', { detail: data.detail }))
   }
   if (syncBC) { syncBC.addEventListener('message', onMessage); disposers.push(() => syncBC?.removeEventListener('message', onMessage)) }
 
@@ -351,9 +384,23 @@ export function scheduleAutoSync(): { kick: () => void; cleanup: () => void } {
         // The server is back: do not wait for the backoff timer.
         if (failures > 0) void runSync(true)
       }
-      ws.onmessage = () => {
+      ws.onmessage = (ev) => {
+        // Notifications and membership changes: let the UI refresh them (other tabs via BroadcastChannel).
+        try {
+          const msg = JSON.parse(String(ev.data))
+          if (msg?.type === 'Notification' || msg?.type === 'SpacesChanged') {
+            window.dispatchEvent(new CustomEvent('focuz:server-event', { detail: msg }))
+            syncBC?.postMessage({ type: 'server-event', detail: msg, tabId: TAB_ID })
+          }
+        } catch {}
+        // Pings in a burst become one sync; a ping inside the cool-down is deferred, never dropped
+        // (it may be the one that carries the change).
         const now = Date.now()
-        if (now - lastWSTriggerMs < WS_COOLDOWN_MS) return
+        const wait = lastWSTriggerMs + WS_COOLDOWN_MS - now
+        if (wait > 0) {
+          if (!wsDeferred) wsDeferred = setTimeout(() => { wsDeferred = null; lastWSTriggerMs = Date.now(); void runSync(true) }, wait)
+          return
+        }
         lastWSTriggerMs = now
         void runSync(true)
       }
@@ -401,6 +448,7 @@ export function scheduleAutoSync(): { kick: () => void; cleanup: () => void } {
     if (jobTimer) { clearTimeout(jobTimer); jobTimer = null }
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
     if (wsRetryId) { clearTimeout(wsRetryId); wsRetryId = null }
+    if (wsDeferred) { clearTimeout(wsDeferred); wsDeferred = null }
     if (ws) { try { ws.close(1000, 'logout') } catch {}; ws = null }
     if (releaseLeaderLock) { releaseLeaderLock(); releaseLeaderLock = null }
     role = 'standalone'

@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { NoteRecord } from '../lib/types'
 import { activities as activitiesRepo, notes as notesRepo } from '../data'
-import { getLastUsername } from '../lib/sync'
 import { useAppState } from '../lib/app-state'
 // import HighlightedText from './HighlightedText'
-import ParagraphText from './ParagraphText'
+import NoteBody from './NoteBody'
+import { notePreviewText } from '../lib/note-format/render'
 import NoteImages from './NoteImages'
 import { formatExactDateTime, formatRelativeShort, formatDurationShort, parseDurationToMs } from '../lib/time'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
@@ -14,6 +14,13 @@ import { SurfaceNoPad } from './ui/surface'
 import SubdirectoryArrowRightRoundedIcon from '@mui/icons-material/SubdirectoryArrowRightRounded'
 import DoneRoundedIcon from '@mui/icons-material/DoneRounded'
 import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded'
+import PublicRoundedIcon from '@mui/icons-material/PublicRounded'
+import { useSpaceView } from '../lib/space-context'
+import { canDeleteNote, canEditNotes, canWrite } from '../lib/roles'
+import { useNotePublicState } from '../lib/useSpaces'
+import NoteShareDialog from './NoteShareDialog'
+import NoteDetailsDialog from './NoteDetailsDialog'
+import { PersonAvatar } from './ui/avatar'
 
 export default function NoteCard({
   note,
@@ -26,6 +33,7 @@ export default function NoteCard({
   hiddenTags,
   repliesCount = 0,
   onReplyClick,
+  onManageFolders,
 }: {
   note: NoteRecord
   onEdit?: () => void
@@ -37,8 +45,15 @@ export default function NoteCard({
   hiddenTags?: Set<string>
   repliesCount?: number
   onReplyClick?: () => void
+  onManageFolders?: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [dialog, setDialog] = useState<'share' | 'details' | null>(null)
+  const view = useSpaceView()
+  const pub = useNotePublicState(note)
+  const mayWrite = canWrite(view.role)
+  const mayEdit = canEditNotes(view.role)
+  const mayDelete = canDeleteNote(view.role, note.authorId, view.meId)
   const syncing = useAppState(s => s.syncing)
   const parentNote = useLiveQuery(
     () => (showParentPreview && note.parentId ? notesRepo.getByLocalId(note.parentId) : Promise.resolve(undefined)),
@@ -49,7 +64,9 @@ export default function NoteCard({
     [note.id],
   ) as Array<{ valueRaw: string; _name: string; _valueType: string; id?: number; serverId?: number | null }>) || []
 
-  const author = getLastUsername() || 'me'
+  // Authors matter only when other people write here too.
+  const author = view.shared ? (note.authorName ?? view.meName ?? 'you') : null
+  const editedBy = view.shared && note.modifiedByName && note.modifiedById != null && note.modifiedById !== note.authorId ? note.modifiedByName : null
   const hasReplies = Number.isFinite(repliesCount) && repliesCount > 0
   // Sync status rules:
   // - Done: created/edited locally but not yet synced (no serverId or isDirty=1)
@@ -59,16 +76,29 @@ export default function NoteCard({
 
   return (
     <SurfaceNoPad className="relative group">
-      <div className="p-[var(--pad-surface)] min-w-0 space-y-3">
+      {(pub.direct || pub.inherited) && (
+        <div className="absolute right-2.5 top-2.5 z-20">
+          <button
+            type="button"
+            className={`note-planet ${pub.direct ? '' : 'is-inherited'}`}
+            aria-label={pub.direct ? 'Public note: link and settings' : 'Public as part of a shared thread'}
+            title={pub.direct ? 'Public' : 'Public as a reply to a shared note'}
+            onClick={(e) => { e.stopPropagation(); setDialog('share') }}
+          >
+            <PublicRoundedIcon fontSize="inherit" />
+          </button>
+        </div>
+      )}
+      <div className={`p-[var(--pad-surface)] min-w-0 space-y-3 ${pub.direct || pub.inherited ? 'pr-11' : ''}`}>
         {/* Reply preview (pill) */}
         {showParentPreview && note.parentId != null && parentNote && !parentNote.deletedAt && (
           <div className="min-w-0 max-w-full">
             <Pill
               className="w-full justify-start overflow-hidden text-left pill-reply-preview"
               onClick={() => onOpenThread && onOpenThread(parentNote.id!)}
-              title={parentNote.text}
+              title={notePreviewText(parentNote.text)}
             >
-              <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{parentNote.text}</span>
+              <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{notePreviewText(parentNote.text)}</span>
             </Pill>
           </div>
         )}
@@ -77,7 +107,7 @@ export default function NoteCard({
         <NoteImages noteId={note.id!} />
 
         {/* Text */}
-        <ParagraphText className="text-primary" text={note.text} />
+        <NoteBody className="text-primary" noteId={note.id} text={note.text} readOnly={!mayEdit} />
 
         {/* Activities (pills) */}
         {activities.length > 0 && (
@@ -130,10 +160,11 @@ export default function NoteCard({
             )}
           </div>
 
-          <div className="note-footer flex items-baseline gap-2 text-secondary" title={formatExactDateTime(note.createdAt)}>
-            <span className="truncate">{author}</span>
-            <span aria-hidden style={{ fontWeight: 700 }}>·</span>
+          <div className="note-footer flex items-baseline gap-2 text-secondary min-w-0" title={formatExactDateTime(note.createdAt) + (editedBy ? ` · edited by ${editedBy}` : '')}>
+            {author && <span className="inline-flex items-center gap-1.5 min-w-0 self-center"><PersonAvatar userId={note.authorId ?? view.meId} name={author} size={16} /><span className="truncate">{author}</span></span>}
+            {author && <span aria-hidden style={{ fontWeight: 700 }}>·</span>}
             <span>{formatRelativeShort(note.createdAt)}</span>
+            {editedBy && <span className="truncate hidden sm:inline">· edited by {editedBy}</span>}
             <span aria-label={syncStage === 'pending' ? 'Not synced yet' : syncStage === 'syncing' ? 'Syncing' : 'Synced'}>
               {syncStage === 'pending'
                 ? <DoneRoundedIcon fontSize="inherit" className="icon-sm text-secondary" />
@@ -175,11 +206,7 @@ export default function NoteCard({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="flex items-center justify-center w-8 h-8 rounded-full"
-                  style={{
-                    background: 'rgb(var(--c-surface))',
-                    boxShadow: '0 0 8px 8px rgb(var(--c-surface) / 0.85)',
-                  }}
+                  className="drop-btn"
                   aria-label="Open actions"
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -187,15 +214,20 @@ export default function NoteCard({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                {onReplyClick && <DropdownMenuItem onSelect={() => onReplyClick()}>Reply</DropdownMenuItem>}
-                {onEdit && <DropdownMenuItem onSelect={() => onEdit()}>Edit</DropdownMenuItem>}
-                {onDelete && <DropdownMenuItem onSelect={() => onDelete()}>Delete</DropdownMenuItem>}
+                {onReplyClick && mayWrite && <DropdownMenuItem onSelect={() => onReplyClick()}>Reply</DropdownMenuItem>}
+                {onEdit && mayEdit && <DropdownMenuItem onSelect={() => onEdit()}>Edit</DropdownMenuItem>}
+                {onManageFolders && mayEdit && <DropdownMenuItem onSelect={() => onManageFolders()}>Folders…</DropdownMenuItem>}
+                <DropdownMenuItem onSelect={() => setDialog('share')}>Share…</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setDialog('details')}>Details</DropdownMenuItem>
+                {onDelete && mayDelete && <DropdownMenuItem onSelect={() => onDelete()}>Delete</DropdownMenuItem>}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
       )}
 
+      {dialog === 'share' && <NoteShareDialog note={note} onClose={() => setDialog(null)} onOpenNote={onOpenThread} />}
+      {dialog === 'details' && <NoteDetailsDialog note={note} onClose={() => setDialog(null)} />}
     </SurfaceNoPad>
   )
 }
