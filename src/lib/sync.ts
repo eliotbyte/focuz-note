@@ -1,145 +1,91 @@
+// Sync engine: decides *when* to sync (local writes, focus, websocket nudges, retries) and
+// reports status through app-state. The actual work lives in sync-push / sync-pull / jobs-worker.
+//
+// Only one tab (the leader, elected with the Web Locks API) talks to the server. Other tabs
+// forward their sync requests over a BroadcastChannel and mirror the leader's status.
 import { db, getKV, setKV, wipeLocalData, deleteDatabase, deleteDatabaseWithRetry, ensureDbOpen } from './db'
-import { parseDurationToMs } from './time'
-import type { FilterRecord, NoteRecord, SpaceRecord, TagRecord, AttachmentRecord, JobRecord, ActivityRecord, ActivityTypeRecord } from './types'
-import { markConflictsDetected, markJobFailed, setSyncError, setSyncing } from './app-state'
+import type { SpaceRecord } from './types'
+import { LAST_SYNC_OK_KV, markConflictsDetected, markJobFailed, patchSyncState, type SyncStatePatch } from './app-state'
+import { api, getApiBase, isNetworkError, isTransientError } from './api'
+import { authBC, clearAuthToken, emitAuthRequired, getAuthToken, isAuthRequired, setAuthTokenLS, setLastUsername } from './auth'
+import { pushDirty, recoverLegacyConflicts } from './sync-push'
+import { pullSince } from './sync-pull'
+import { ensureDownloadJob, processNextJob, releaseStaleRunningJobs, retryFailedJobs } from './jobs-worker'
 
-const API_BASE = (import.meta as any).env.VITE_API_BASE_URL as string | undefined
-const BASE_SYNC_INTERVAL_MS = Number(((import.meta as any).env.VITE_SYNC_INTERVAL_MS ?? '60000')) || 60000
-const DEBOUNCE_LOCAL_MS = Number(((import.meta as any).env.VITE_SYNC_DEBOUNCE_MS ?? '2000')) || 2000
-const WS_COOLDOWN_MS = Number(((import.meta as any).env.VITE_SYNC_WS_COOLDOWN_MS ?? '3000')) || 3000
-const NO_CHANGE_BACKOFF_MS = Number(((import.meta as any).env.VITE_SYNC_BACKOFF_MS ?? '15000')) || 15000
-const LAST_SYNC_KV = 'lastSyncAt'
+export { isAuthRequired, onAuthRequired, getLastUsername } from './auth'
+export { validateActivityValue } from './activity-values'
+export {
+  deleteNote, createOrUpdateLocalActivity, deleteLocalActivity, createFilterLocal, updateFilterLocal, deleteFilterLocal,
+  updateNoteLocal, addLocalAttachment, deleteLocalAttachment, reorderNoteAttachments,
+} from './local-writes'
+
+const env = import.meta.env
+const BASE_SYNC_INTERVAL_MS = Number(env.VITE_SYNC_INTERVAL_MS ?? '60000') || 60000
+const DEBOUNCE_LOCAL_MS = Number(env.VITE_SYNC_DEBOUNCE_MS ?? '2000') || 2000
+const WS_COOLDOWN_MS = Number(env.VITE_SYNC_WS_COOLDOWN_MS ?? '3000') || 3000
+const NO_CHANGE_BACKOFF_MS = Number(env.VITE_SYNC_BACKOFF_MS ?? '15000') || 15000
 const CURRENT_SPACE_KV = 'currentSpaceId'
-const TOKEN_KV = 'authToken'
-const USERNAME_LS = 'authUsername'
-const AUTH_REQUIRED_LS = 'authRequired'
+const MAX_PUSH_ROUNDS = 5
+const JOB_IDLE_TICK_MS = 2000
 
-let authRequired = false
-let authBC: BroadcastChannel | null = null
 let syncBC: BroadcastChannel | null = null
-try {
-  authBC = new BroadcastChannel('focuz-auth')
-  syncBC = new BroadcastChannel('focuz-sync')
-} catch {}
+try { syncBC = new BroadcastChannel('focuz-sync') } catch {}
 
-function emitAuthRequired(next: boolean) {
-  authRequired = next
-  try { localStorage.setItem(AUTH_REQUIRED_LS, next ? '1' : '0') } catch {}
-  try { window.dispatchEvent(new CustomEvent('focuz:auth-required', { detail: next })) } catch {}
-  try { authBC?.postMessage({ type: 'auth-required', value: next }) } catch {}
-}
-
-export function isAuthRequired(): boolean {
-  return authRequired || (typeof localStorage !== 'undefined' && localStorage.getItem(AUTH_REQUIRED_LS) === '1')
-}
-
-export function onAuthRequired(handler: (required: boolean) => void): () => void {
-  const fn = (e: Event) => {
-    const required = (e as CustomEvent<boolean>).detail
-    handler(!!required)
-  }
-  const storageFn = (e: StorageEvent) => {
-    if (e.key === AUTH_REQUIRED_LS) handler(e.newValue === '1')
-  }
-  const bcFn = (msg: MessageEvent) => {
-    if (msg?.data?.type === 'auth-required') handler(!!msg.data.value)
-  }
-  window.addEventListener('focuz:auth-required', fn as EventListener)
-  window.addEventListener('storage', storageFn)
-  authBC?.addEventListener('message', bcFn)
-  // fire current state immediately
-  handler(isAuthRequired())
-  return () => {
-    window.removeEventListener('focuz:auth-required', fn as EventListener)
-    window.removeEventListener('storage', storageFn)
-    try { authBC?.removeEventListener('message', bcFn) } catch {}
-  }
-}
-
-function getAuthToken(): string | undefined {
-  try {
-    return localStorage.getItem(TOKEN_KV) ?? undefined
-  } catch {
-    return undefined
-  }
-}
-
-function getLastUsernameLS(): string | undefined {
-  try { return localStorage.getItem(USERNAME_LS) ?? undefined } catch { return undefined }
-}
-
-function setLastUsernameLS(username: string) {
-  try { localStorage.setItem(USERNAME_LS, username) } catch {}
-}
-
-async function api(path: string, init?: RequestInit) {
-  if (!API_BASE) throw new Error('Missing VITE_API_BASE_URL')
-  const token = getAuthToken()
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(init?.headers as Record<string, string> | undefined || {}) }
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
-  if (!res.ok) {
-    // If we're online and server says unauthorized (expired/invalid token) for a protected endpoint → require re-auth
-    const isAuthEndpoint = path.startsWith('/login') || path.startsWith('/register')
-    if (navigator.onLine && res.status === 401 && !isAuthEndpoint) {
-      emitAuthRequired(true)
-      throw new Error('AUTH_REQUIRED')
-    }
-    throw new Error(`${res.status} ${res.statusText}`)
-  }
-  return res.json()
-}
-
-async function apiMultipart(path: string, form: FormData): Promise<any> {
-  if (!API_BASE) throw new Error('Missing VITE_API_BASE_URL')
-  const token = getAuthToken()
-  const headers: Record<string, string> = {}
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', body: form, headers })
-  if (!res.ok) {
-    if (navigator.onLine && res.status === 401) { emitAuthRequired(true); throw new Error('AUTH_REQUIRED') }
-    throw new Error(`${res.status} ${res.statusText}`)
-  }
-  return res.json()
-}
+// ---------------------------------------------------------------------------
+// Auth
 
 export async function register(username: string, password: string): Promise<void> {
   await api('/register', { method: 'POST', body: JSON.stringify({ username, password }) })
 }
 
 export async function login(username: string, password: string): Promise<void> {
-  // Reopen DB after previous logout/delete cycle
   await ensureDbOpen().catch(() => {})
   const resp = await api('/login', { method: 'POST', body: JSON.stringify({ username, password }) })
   const token = resp?.data?.token as string
   if (!token) throw new Error('No token')
-  setLastUsernameLS(username)
-  localStorage.setItem(TOKEN_KV, token)
+  setLastUsername(username)
+  setAuthTokenLS(token)
   emitAuthRequired(false)
-}
-
-export function getLastUsername(): string | undefined {
-  return getLastUsernameLS()
-}
-
-export function logout(): void {
-  try { localStorage.removeItem(TOKEN_KV) } catch {}
-  try { authBC?.postMessage({ type: 'logout' }) } catch {}
-  // Best-effort full DB drop to avoid stale state across sessions
-  deleteDatabase().catch(() => { wipeLocalData().catch(() => {}) })
-  // Do not write to IndexedDB after deletion, or it will be recreated empty
-}
-
-export async function purgeAndLogout(): Promise<void> {
-  try { teardownSync() } catch {}
-  try { localStorage.removeItem(TOKEN_KV) } catch {}
-  try { authBC?.postMessage({ type: 'logout' }) } catch {}
-  try { await deleteDatabaseWithRetry(4000) } catch { try { await wipeLocalData() } catch {} }
+  resetFailureState()
 }
 
 export function isAuthenticated(): boolean {
   return !!getAuthToken()
 }
+
+export function logout(): void {
+  clearAuthToken()
+  try { authBC?.postMessage({ type: 'logout' }) } catch {}
+  deleteDatabase().catch(() => { wipeLocalData().catch(() => {}) })
+}
+
+export async function purgeAndLogout(): Promise<void> {
+  try { teardownSync() } catch {}
+  clearAuthToken()
+  try { authBC?.postMessage({ type: 'logout' }) } catch {}
+  try { await deleteDatabaseWithRetry(4000) } catch { try { await wipeLocalData() } catch {} }
+}
+
+/** Local changes that would be lost by logging out (logout drops the local database). */
+export async function countUnsyncedChanges(): Promise<number> {
+  const [n, f, a, j] = await Promise.all([
+    db.notes.where('isDirty').equals(1).count(),
+    db.filters.where('isDirty').equals(1).count(),
+    db.activities.where('isDirty').equals(1).count(),
+    db.jobs.where('kind').equals('attachment-upload').count(),
+  ])
+  return n + f + a + j
+}
+
+export async function setAuthToken(token: string) {
+  await ensureDbOpen().catch(() => {})
+  setAuthTokenLS(token)
+  emitAuthRequired(false)
+  await runSync(true)
+}
+
+// ---------------------------------------------------------------------------
+// Spaces
 
 export async function listSpaces(): Promise<Array<{ id: number; name: string }>> {
   const resp = await api('/spaces', { method: 'GET' })
@@ -149,1306 +95,343 @@ export async function listSpaces(): Promise<Array<{ id: number; name: string }>>
 export async function ensureDefaultSpace(): Promise<number> {
   const existing = await db.spaces.filter(s => !s.deletedAt).toArray()
   if (existing.length > 0) {
-    const current = (await getKV<number>(CURRENT_SPACE_KV)) ?? existing[0].id!
+    const stored = await getKV<number>(CURRENT_SPACE_KV)
+    const current = stored && existing.some(s => s.id === stored) ? stored : existing[0].id!
     await setKV(CURRENT_SPACE_KV, current)
     return current
   }
-
   const now = new Date().toISOString()
   let serverId: number | null = null
+  let name = 'My Space'
   try {
-    if (navigator.onLine && API_BASE && getAuthToken()) {
+    if (getApiBase() && getAuthToken()) {
       const spaces = await listSpaces()
-      if (spaces.length > 0) {
-        const found = spaces[0]
-        const id = await db.spaces.add({
-          serverId: found.id,
-          name: found.name,
-          createdAt: now,
-          modifiedAt: now,
-          deletedAt: null,
-          isDirty: 0,
-        } as SpaceRecord)
-        await setKV(CURRENT_SPACE_KV, id)
-        return id
-      }
-      const resp = await api('/spaces', { method: 'POST', body: JSON.stringify({ name: 'My Space' }) })
-      serverId = resp?.data?.id ?? null
+      if (spaces.length > 0) { serverId = spaces[0].id; name = spaces[0].name }
+      else serverId = (await api('/spaces', { method: 'POST', body: JSON.stringify({ name }) }))?.data?.id ?? null
     }
   } catch {
-    // ignore
+    // offline: a local space is created and pushed later
   }
-
-  const id = await db.spaces.add({
-    serverId,
-    name: 'My Space',
-    createdAt: now,
-    modifiedAt: now,
-    deletedAt: null,
-    isDirty: serverId ? 0 : 1,
-  } as SpaceRecord)
+  const id = await db.spaces.add({ serverId, name, createdAt: now, modifiedAt: now, deletedAt: null, isDirty: serverId ? 0 : 1 } as SpaceRecord)
   await setKV(CURRENT_SPACE_KV, id)
   return id
-}
-
-async function awaitSpaceIdToServer(localSpaceId: number): Promise<number> {
-  const s = await db.spaces.get(localSpaceId)
-  if (!s) throw new Error('Space not found')
-  if (s.serverId) return s.serverId
-  try {
-    const resp = await api('/spaces', { method: 'POST', body: JSON.stringify({ name: s.name }) })
-    const sid = resp?.data?.id as number
-    await db.spaces.update(localSpaceId, { serverId: sid, isDirty: 0 })
-    return sid
-  } catch {
-    return 0 as unknown as number
-  }
-}
-
-export async function deleteNote(localId: number): Promise<void> {
-  const now = new Date().toISOString()
-  await db.notes.update(localId, { deletedAt: now, modifiedAt: now, isDirty: 1 })
-}
-
-// ---- Activities: local create/update + validation mirroring backend ----
-
-function parseBooleanLoose(v: string): boolean | null {
-  const s = v.trim().toLowerCase()
-  if (s === 'true' || s === '1' || s === 'yes') return true
-  if (s === 'false' || s === '0' || s === 'no') return false
-  return null
-}
-
-export async function createOrUpdateLocalActivity(noteLocalId: number, typeServerId: number, rawValue: string): Promise<number> {
-  const note = await db.notes.get(noteLocalId)
-  if (!note) throw new Error('Note not found')
-  const type = await db.activityTypes.where('serverId').equals(typeServerId).first()
-  if (!type) throw new Error('Activity type not found')
-  const checked = validateActivityValue(type, rawValue)
-  const now = new Date().toISOString()
-  // Uniqueness per (noteId, typeId); update if exists
-  const existing = await db.activities.where('noteId').equals(noteLocalId).filter(a => !a.deletedAt && a.typeId === typeServerId).first()
-  if (existing?.id) {
-    await db.activities.update(existing.id, { valueRaw: checked, modifiedAt: now, isDirty: 1 })
-    await db.notes.update(noteLocalId, { modifiedAt: now, isDirty: 1 })
-    try { window.dispatchEvent(new Event('focuz:local-write')) } catch {}
-    return existing.id
-  }
-  const id = await db.activities.add({
-    noteId: noteLocalId,
-    serverId: null,
-    typeId: typeServerId,
-    valueRaw: checked,
-    createdAt: now,
-    modifiedAt: now,
-    deletedAt: null,
-    isDirty: 1,
-  } as ActivityRecord)
-  await db.notes.update(noteLocalId, { modifiedAt: now, isDirty: 1 })
-  try { window.dispatchEvent(new Event('focuz:local-write')) } catch {}
-  return id
-}
-
-export async function deleteLocalActivity(noteLocalId: number, typeServerId: number): Promise<void> {
-  const now = new Date().toISOString()
-  const existing = await db.activities
-    .where('noteId').equals(noteLocalId)
-    .filter(a => !a.deletedAt && a.typeId === typeServerId)
-    .first()
-  if (existing?.id) {
-    await db.activities.update(existing.id, { deletedAt: now, modifiedAt: now, isDirty: 1 })
-    await db.notes.update(noteLocalId, { modifiedAt: now, isDirty: 1 })
-    try { window.dispatchEvent(new Event('focuz:local-write')) } catch {}
-  }
-}
-
-export function validateActivityValue(t: ActivityTypeRecord, raw: string): string {
-  const trimmed = (raw ?? '').toString().trim()
-  if (!trimmed) throw new Error('Value is required')
-  switch (t.valueType) {
-    case 'integer': {
-      const v = Number(trimmed)
-      if (!Number.isInteger(v)) throw new Error('Value must be integer')
-      if (typeof t.minValue === 'number' && v < t.minValue) throw new Error('Value is out of range')
-      if (typeof t.maxValue === 'number' && v > t.maxValue) throw new Error('Value is out of range')
-      return String(v)
-    }
-    case 'float': {
-      const f = Number(trimmed)
-      if (!Number.isFinite(f)) throw new Error('Value must be float')
-      if (typeof t.minValue === 'number' && f < t.minValue) throw new Error('Value is out of range')
-      if (typeof t.maxValue === 'number' && f > t.maxValue) throw new Error('Value is out of range')
-      return String(f)
-    }
-    case 'boolean': {
-      const b = parseBooleanLoose(trimmed)
-      if (b == null) throw new Error('Value must be boolean')
-      return b ? 'true' : 'false'
-    }
-    case 'time': {
-      const ms = parseDurationToMs(trimmed)
-      if (!Number.isFinite(ms)) throw new Error('Value must be a duration (e.g. 1h 2m 3s 250ms)')
-      if (typeof t.minValue === 'number' && ms < t.minValue) throw new Error('Value is out of range')
-      if (typeof t.maxValue === 'number' && ms > t.maxValue) throw new Error('Value is out of range')
-      return String(Math.round(ms))
-    }
-    case 'text':
-    default:
-      return trimmed
-  }
-}
-
-function toServerActivityValue(t: ActivityTypeRecord | undefined, raw: string): any {
-  const base = (raw ?? '').toString()
-  const type = t?.valueType
-  try {
-    switch (type) {
-      case 'integer': return { data: Number.parseInt(base, 10) }
-      case 'float': return { data: Number(base) }
-      case 'boolean': {
-        const b = parseBooleanLoose(base)
-        return { data: !!b }
-      }
-      case 'time': {
-        // Convert milliseconds (string) to PostgreSQL interval literal like '1 hour 2 minutes 3 seconds'
-        const ms = Number(base)
-        if (!Number.isFinite(ms)) return { data: base }
-        const totalMs = Math.max(0, Math.round(ms))
-        const h = Math.floor(totalMs / 3600000)
-        const m = Math.floor((totalMs % 3600000) / 60000)
-        const s = Math.floor((totalMs % 60000) / 1000)
-        const msR = totalMs % 1000
-        const parts: string[] = []
-        if (h) parts.push(`${h} hour${h !== 1 ? 's' : ''}`)
-        if (m) parts.push(`${m} minute${m !== 1 ? 's' : ''}`)
-        if (s || (!h && !m && !msR)) parts.push(`${s} second${s !== 1 ? 's' : ''}`)
-        if (msR) parts.push(`${msR} milliseconds`)
-        const interval = parts.join(' ')
-        return { data: interval }
-      }
-      case 'text':
-      default: return { data: base }
-    }
-  } catch {
-    return { data: base }
-  }
-}
-
-function fromServerActivityValue(v: any): string {
-  if (v == null) return ''
-  if (typeof v === 'object' && 'data' in v) {
-    const d = (v as any).data
-    if (typeof d === 'boolean') return d ? 'true' : 'false'
-    if (typeof d === 'number') return String(d)
-    return String(d ?? '')
-  }
-  if (typeof v === 'boolean') return v ? 'true' : 'false'
-  if (typeof v === 'number') return String(v)
-  if (typeof v === 'string') return v
-  try { return JSON.stringify(v) } catch { return '' }
-}
-
-export async function createFilterLocal(spaceId: number, name: string, params: any, parentServerId?: number | null): Promise<number> {
-  const now = new Date().toISOString()
-  const id = await db.filters.add({
-    spaceId,
-    name,
-    params,
-    parentId: parentServerId ?? null,
-    createdAt: now,
-    modifiedAt: now,
-    deletedAt: null,
-    isDirty: 1,
-    serverId: null,
-    clientId: crypto.randomUUID(),
-  } as unknown as FilterRecord)
-  try { window.dispatchEvent(new Event('focuz:local-write')) } catch {}
-  return id
-}
-
-export async function updateFilterLocal(localId: number, changes: { name?: string; params?: any; parentServerId?: number | null }): Promise<void> {
-  const now = new Date().toISOString()
-  const partial: any = { modifiedAt: now, isDirty: 1 }
-  if (typeof changes.name === 'string') partial.name = changes.name
-  if (typeof changes.parentServerId !== 'undefined') partial.parentId = (changes.parentServerId ?? null)
-  if (typeof changes.params !== 'undefined') partial.params = changes.params
-  await db.filters.update(localId, partial)
-  try { window.dispatchEvent(new Event('focuz:local-write')) } catch {}
-}
-
-export async function deleteFilterLocal(localId: number): Promise<void> {
-  const now = new Date().toISOString()
-  await db.filters.update(localId, { deletedAt: now, modifiedAt: now, isDirty: 1 })
-  try { window.dispatchEvent(new Event('focuz:local-write')) } catch {}
-}
-
-export async function updateNoteLocal(localId: number, changes: { text?: string; tags?: string[] }): Promise<void> {
-  const now = new Date().toISOString()
-  await db.notes.update(localId, { ...changes, modifiedAt: now, isDirty: 1 })
-}
-
-export async function addLocalAttachment(noteId: number, file: File): Promise<number> {
-  const now = new Date().toISOString()
-  const id = await db.attachments.add({
-    noteId,
-    serverId: null,
-    clientId: crypto.randomUUID(),
-    fileName: file.name,
-    fileType: file.type,
-    fileSize: file.size,
-    data: file,
-    createdAt: now,
-    modifiedAt: now,
-    deletedAt: null,
-    isDirty: 1,
-  } as AttachmentRecord)
-  await db.jobs.add({
-    kind: 'attachment-upload',
-    attachmentId: id,
-    priority: 5,
-    status: 'pending',
-    attempts: 0,
-    createdAt: now,
-    updatedAt: now,
-  })
-  try { window.dispatchEvent(new Event('focuz:local-write')) } catch {}
-  return id
-}
-
-export async function deleteLocalAttachment(attachmentLocalId: number): Promise<void> {
-  const now = new Date().toISOString()
-  const att = await db.attachments.get(attachmentLocalId)
-  if (!att) return
-  await db.transaction('rw', db.attachments, db.notes, async () => {
-    await db.attachments.update(attachmentLocalId, { deletedAt: now, modifiedAt: now, isDirty: 1 })
-    // Touch parent note so /sync will accept attachment edits
-    const note = await db.notes.get(att.noteId)
-    if (note?.id) {
-      await db.notes.update(note.id, { modifiedAt: now, isDirty: 1 })
-    }
-  })
-  try { window.dispatchEvent(new Event('focuz:local-write')) } catch {}
-}
-
-export async function reorderNoteAttachments(noteId: number, orderedAttachmentLocalIds: number[]): Promise<void> {
-  // Assign increasing modifiedAt to reflect new order; smallest first
-  const base = Date.now()
-  await db.transaction('rw', db.attachments, db.notes, async () => {
-    for (let i = 0; i < orderedAttachmentLocalIds.length; i++) {
-      const id = orderedAttachmentLocalIds[i]
-      const ts = new Date(base + i).toISOString()
-      const att = await db.attachments.get(id)
-      if (!att || att.deletedAt) continue
-      // Only server-backed attachments participate in server reordering; still update locals for UX
-      await db.attachments.update(id, { modifiedAt: ts, isDirty: (att.serverId ? 1 : att.isDirty) as 0 | 1 })
-    }
-    const note = await db.notes.get(noteId)
-    if (note?.id) {
-      await db.notes.update(note.id, { modifiedAt: new Date(base + orderedAttachmentLocalIds.length).toISOString(), isDirty: 1 })
-    }
-  })
-  try { window.dispatchEvent(new Event('focuz:local-write')) } catch {}
-}
-
-function toNoteChange(n: NoteRecord) {
-  return {
-    id: n.serverId ?? null,
-    clientId: n.serverId ? null : (n.clientId || `tmp-${n.id}`),
-    space_id: 0,
-    user_id: undefined,
-    text: n.text,
-    tags: n.tags,
-    created_at: n.createdAt,
-    modified_at: n.modifiedAt,
-    deleted_at: n.deletedAt ?? null,
-    parent_id: n.parentId ?? null,
-    date: n.date ?? n.createdAt,
-  }
-}
-
-function toFilterChange(f: FilterRecord) {
-  return {
-    id: f.serverId ?? null,
-    clientId: f.serverId ? null : (f.clientId || `tmp-${f.id}`),
-    space_id: 0,
-    user_id: undefined,
-    parent_id: (f.parentId ?? null),
-    name: f.name,
-    params: f.params as any,
-    created_at: f.createdAt,
-    modified_at: f.modifiedAt,
-    deleted_at: f.deletedAt ?? null,
-  }
-}
-
-function toTagChange(t: TagRecord) {
-  return {
-    id: t.serverId ?? null,
-    space_id: 0,
-    name: t.name,
-    created_at: t.createdAt,
-    modified_at: t.modifiedAt,
-    deleted_at: t.deletedAt ?? null,
-  }
-}
-
-function noteSnapshotForConflict(n: NoteRecord) {
-  return {
-    serverId: n.serverId ?? null,
-    clientId: n.clientId ?? null,
-    spaceId: n.spaceId,
-    title: n.title ?? null,
-    text: n.text,
-    tags: n.tags ?? [],
-    createdAt: n.createdAt,
-    modifiedAt: n.modifiedAt,
-    date: n.date,
-    parentId: n.parentId ?? null,
-    deletedAt: n.deletedAt ?? null,
-  }
-}
-
-async function recordNoteConflict(localNote: NoteRecord, conflict: any): Promise<void> {
-  const noteLocalId = localNote.id
-  const noteServerId = localNote.serverId
-  if (!noteLocalId || !noteServerId) return
-  // Avoid spamming duplicates: if there's already an unresolved conflict for this noteServerId, don't add another.
-  const existing = await db.noteConflicts.where('noteServerId').equals(noteServerId).and(x => x.isResolved === 0).first()
-  if (existing?.id) return
-  const now = new Date().toISOString()
-  await db.noteConflicts.add({
-    noteLocalId,
-    noteServerId,
-    reason: String(conflict?.reason ?? 'server-newer'),
-    local: noteSnapshotForConflict(localNote),
-    server: conflict?.server,
-    createdAt: now,
-    isResolved: 0,
-    resolvedAt: null,
-  } as any)
-}
-
-async function pushDirty() {
-  if (!navigator.onLine || !API_BASE || !getAuthToken() || isAuthRequired()) return { applied: 0 }
-
-  // Notes with unresolved conflicts stay dirty but are excluded from pushing until resolved (prevents repeated conflicts/spam).
-  const blockedNoteLocalIds = new Set<number>(
-    (await db.noteConflicts.where('isResolved').equals(0).toArray()).map(x => x.noteLocalId),
-  )
-  const notes = (await db.notes.where('isDirty').equals(1).toArray()).filter(n => !blockedNoteLocalIds.has(n.id!))
-  const filters = await db.filters.where('isDirty').equals(1).toArray()
-  const tags = await db.tags.where('isDirty').equals(1).toArray()
-  const attachments = await db.attachments.where('isDirty').equals(1).toArray()
-  const activities = await db.activities.where('isDirty').equals(1).toArray()
-
-  // Fallback: call deprecated delete endpoint for server-backed notes with deletedAt
-  const deletions = notes.filter(n => n.deletedAt && n.serverId)
-  for (const n of deletions) {
-    try {
-      await api(`/notes/${n.serverId}/delete`, { method: 'PATCH' })
-      await db.notes.update(n.id!, { isDirty: 0 })
-    } catch {
-      // ignore and let /sync try
-    }
-  }
-
-  const remainingNotes = await db.notes.where('isDirty').equals(1).toArray()
-  const notesForSync = remainingNotes
-  if (notesForSync.length + filters.length + tags.length + attachments.length + activities.length === 0) return { applied: 0 }
-
-  const spaceServerIdByLocal = new Map<number, number>()
-  async function toServerSpaceId(localId: number): Promise<number> {
-    if (spaceServerIdByLocal.has(localId)) return spaceServerIdByLocal.get(localId)!
-    const sid = await awaitSpaceIdToServer(localId)
-    spaceServerIdByLocal.set(localId, sid)
-    return sid
-  }
-
-  // Group dirty attachments by note localId
-  const dirtyByNoteLocal = new Map<number, AttachmentRecord[]>()
-  for (const a of attachments) {
-    if (!dirtyByNoteLocal.has(a.noteId)) dirtyByNoteLocal.set(a.noteId, [])
-    dirtyByNoteLocal.get(a.noteId)!.push(a)
-  }
-  // Group dirty activities by note localId
-  const actByNoteLocal = new Map<number, ActivityRecord[]>()
-  for (const a of activities) {
-    if (!actByNoteLocal.has(a.noteId)) actByNoteLocal.set(a.noteId, [])
-    actByNoteLocal.get(a.noteId)!.push(a)
-  }
-  // Ensure notes for which attachments are dirty are included in notesForSync
-  for (const [noteLocalId] of dirtyByNoteLocal) {
-    if (!notesForSync.find(n => n.id === noteLocalId)) {
-      const note = await db.notes.get(noteLocalId)
-      if (note) notesForSync.push(note)
-    }
-  }
-  // Ensure notes for which activities are dirty are included
-  for (const [noteLocalId] of actByNoteLocal) {
-    if (!notesForSync.find(n => n.id === noteLocalId)) {
-      const note = await db.notes.get(noteLocalId)
-      if (note) notesForSync.push(note)
-    }
-  }
-  const notesPayload = await Promise.all(notesForSync.map(async (n) => {
-    const space_id = await toServerSpaceId(n.spaceId)
-    const base = { ...toNoteChange(n), space_id }
-    const atts = dirtyByNoteLocal.get(n.id!) || []
-    const acts = actByNoteLocal.get(n.id!) || []
-
-    const out: any = { ...base }
-    if (atts.length > 0) {
-      // Build minimal attachment updates: only server-backed items matter to server
-      const attPayload = atts
-        .filter(a => !!a.serverId)
-        .map(a => ({
-          id: a.serverId as string,
-          modified_at: a.modifiedAt,
-          is_deleted: !!a.deletedAt,
-        }))
-      if (attPayload.length > 0) out.attachments = attPayload
-    }
-    if (acts.length > 0) {
-      // Build activity updates: include created/modified/deleted and value
-      // Load types for value parsing
-      const typeIds = Array.from(new Set(acts.map(a => a.typeId)))
-      const types = await db.activityTypes.where('serverId').anyOf(typeIds).toArray()
-      const typeById = new Map<number, ActivityTypeRecord>(types.map(t => [t.serverId!, t]))
-      const actPayload = acts.map(a => {
-        const t = typeById.get(a.typeId)
-        const value = toServerActivityValue(t, a.valueRaw)
-        return {
-          id: (a.serverId ?? null),
-          type_id: a.typeId,
-          value,
-          created_at: a.createdAt,
-          modified_at: a.modifiedAt,
-          deleted_at: a.deletedAt ?? null,
-        }
-      })
-      if (actPayload.length > 0) out.activities = actPayload
-    }
-    return out
-  }))
-  const filtersPayload = await Promise.all(filters.map(async (f) => ({ ...toFilterChange(f), space_id: await toServerSpaceId(f.spaceId) })))
-  const tagsPayload = await Promise.all(tags.map(async (t) => ({ ...toTagChange(t), space_id: await toServerSpaceId(t.spaceId) })))
-
-  const resp = await api('/sync', {
-    method: 'POST',
-    body: JSON.stringify({ notes: notesPayload, filters: filtersPayload, tags: tagsPayload, charts: [] }),
-  })
-
-  const mappings: Array<{ resource: string; clientId: string; serverId: number }> = resp?.data?.mappings ?? []
-  const conflicts: Array<{ resource?: string; id?: number; reason?: string; server?: any }> = resp?.data?.conflicts ?? []
-
-  const conflictedNoteServerIds = new Set<number>()
-  const conflictedFilterServerIds = new Set<number>()
-  const conflictedChartServerIds = new Set<number>()
-  const conflictedActivityServerIds = new Set<number>()
-  for (const c of conflicts) {
-    const rid = typeof c?.id === 'number' ? c.id : null
-    if (!rid) continue
-    const r = String(c?.resource ?? '').toLowerCase()
-    if (r === 'note' || r === 'notes') conflictedNoteServerIds.add(rid)
-    else if (r === 'filter' || r === 'filters') conflictedFilterServerIds.add(rid)
-    else if (r === 'chart' || r === 'charts') conflictedChartServerIds.add(rid)
-    else if (r === 'activity' || r === 'activities') conflictedActivityServerIds.add(rid)
-  }
-
-  await db.transaction('rw', [db.notes, db.noteConflicts, db.filters, db.tags, db.attachments, db.activities] as any, async () => {
-    const conflictedNoteLocalIds = new Set<number>()
-    for (const n of notesForSync) {
-      const sid = n.serverId ?? null
-      if (sid && conflictedNoteServerIds.has(sid)) {
-        conflictedNoteLocalIds.add(n.id!)
-        const conflict = conflicts.find(x => String(x?.resource ?? '').toLowerCase() === 'note' && x?.id === sid)
-        await recordNoteConflict(n, conflict)
-        continue // keep dirty
-      }
-      await db.notes.update(n.id!, { isDirty: 0 })
-    }
-    for (const f of filters) {
-      const sid = f.serverId ?? null
-      if (sid && conflictedFilterServerIds.has(sid)) continue
-      await db.filters.update(f.id!, { isDirty: 0 })
-    }
-    for (const t of tags) await db.tags.update(t.id!, { isDirty: 0 })
-    for (const a of attachments) {
-      // If the parent note is in conflict, server did NOT apply attachment edits (attachments are only processed when note wins LWW).
-      if (conflictedNoteLocalIds.has(a.noteId)) continue
-      await db.attachments.update(a.id!, { isDirty: 0 })
-    }
-    for (const a of activities) {
-      const sid = a.serverId ?? null
-      if (sid && conflictedActivityServerIds.has(sid)) continue
-      await db.activities.update(a.id!, { isDirty: 0 })
-    }
-    for (const m of mappings) {
-      if (m.resource === 'note' || m.resource === 'notes') {
-        const local = await db.notes.where('clientId').equals(m.clientId).first()
-        if (local) await db.notes.update(local.id!, { serverId: m.serverId })
-        // Deduplicate: if multiple notes now share the same serverId, keep the one with a clientId (local) if exists
-        const withSame = await db.notes.where('serverId').equals(m.serverId).toArray()
-        if (withSame.length > 1) {
-          const keep = withSame.find(n => !!n.clientId)
-          for (const x of withSame) {
-            if (x.id !== keep!.id) {
-              await db.notes.delete(x.id!)
-            }
-          }
-        }
-      } else if (m.resource === 'filter' || m.resource === 'filters') {
-        const local = await db.filters.where('clientId').equals(m.clientId).first()
-        if (local) await db.filters.update(local.id!, { serverId: m.serverId })
-        // If any children were temporarily referencing this parent via params._parentClientId,
-        // fix them up to use server parent_id and mark dirty for push
-        const all = await db.filters.toArray()
-        for (const ch of all) {
-          const p = (ch.params as any) || {}
-          if (p && p._parentClientId === m.clientId) {
-            const nextParams = { ...p }
-            delete nextParams._parentClientId
-            await db.filters.update(ch.id!, { parentId: m.serverId, params: nextParams as any, isDirty: 1, modifiedAt: new Date().toISOString() })
-          }
-        }
-      } else if (m.resource === 'activity' || m.resource === 'activities') {
-        // Map clientId activities if server echoes mapping; our activities currently do not use clientId, so skip
-      }
-    }
-  })
-
-  // UI must not be called from sync module. Emit status event via app-state instead.
-  if (conflicts.length > 0) markConflictsDetected(conflicts.length)
-
-  try { window.dispatchEvent(new Event('focuz:sync-applied')) } catch {}
-
-  return { applied: resp?.data?.applied ?? 0 }
-}
-
-async function pullSince() {
-  if (!navigator.onLine || !API_BASE || !getAuthToken() || isAuthRequired()) return { pulled: 0 }
-  const since = (await getKV<string>(LAST_SYNC_KV, '1970-01-01T00:00:00Z'))!
-
-  // Advance checkpoint only to the max server modified_at we actually saw
-  let maxSyncAt = since
-  const updateMax = (iso?: string) => { if (iso && iso > maxSyncAt) maxSyncAt = iso }
-
-  let pulled = 0
-  let cursor: string | null = null
-  // Hard safety cap to avoid infinite loops if the server ever misbehaves.
-  for (let page = 0; page < 50; page++) {
-    const qs = new URLSearchParams({ since })
-    if (cursor) qs.set('cursor', cursor)
-    const resp = await api(`/sync?${qs.toString()}`)
-    const data = resp?.data || {}
-
-    for (const s of (data.spaces ?? [])) updateMax(s.modified_at)
-    for (const n of (data.notes ?? [])) updateMax(n.modified_at)
-    for (const t of (data.tags ?? [])) updateMax(t.modified_at ?? t.created_at)
-    for (const f of (data.filters ?? [])) updateMax(f.modified_at)
-    for (const at of (data.activityTypes ?? [])) updateMax(at.modified_at)
-    for (const n of (data.notes ?? [])) {
-      if (Array.isArray(n.attachments)) {
-        for (const a of n.attachments) updateMax(a.modified_at ?? a.created_at)
-      }
-      if (Array.isArray(n.activities)) {
-        for (const a of n.activities) updateMax(a.modified_at)
-      }
-    }
-
-    await db.transaction('rw', [db.spaces, db.notes, db.noteConflicts, db.tags, db.filters, db.attachments, db.activities, db.activityTypes, db.jobs] as any, async () => {
-      for (const s of (data.spaces ?? [])) {
-        pulled++
-        const existing = await db.spaces.where('serverId').equals(s.id).first()
-        const rec: SpaceRecord = {
-          id: existing?.id,
-          serverId: s.id,
-          name: s.name,
-          createdAt: s.created_at,
-          modifiedAt: s.modified_at,
-          deletedAt: s.deleted_at ?? null,
-          isDirty: 0,
-        }
-        if (existing) await db.spaces.put(rec)
-        else await db.spaces.add(rec)
-      }
-
-      for (const n of (data.notes ?? [])) {
-        pulled++
-        let existing = await db.notes.where('serverId').equals(n.id!).first()
-        if (!existing && n.clientId) {
-          // try match by clientId if provided from server (conflict/mapping echo)
-          existing = await db.notes.where('clientId').equals(n.clientId).first()
-        }
-        // Additional deduplication: check for notes with same serverId that might have been created in parallel
-        if (!existing && n.id) {
-          const duplicates = await db.notes.where('serverId').equals(n.id).toArray()
-          if (duplicates.length > 0) {
-            // Keep the one with the latest modifiedAt or the one with clientId
-            existing = duplicates.reduce((best, curr) => {
-              if (curr.clientId && !best.clientId) return curr
-              if (!curr.clientId && best.clientId) return best
-              return (curr.modifiedAt || '') > (best.modifiedAt || '') ? curr : best
-            })
-            // Delete other duplicates
-            for (const dup of duplicates) {
-              if (dup.id !== existing.id) {
-                await db.notes.delete(dup.id!)
-              }
-            }
-          }
-        }
-        const rec: NoteRecord = {
-          id: existing?.id,
-          serverId: n.id ?? null,
-          clientId: existing?.clientId ?? n.clientId ?? null,
-          spaceId: (await db.spaces.where('serverId').equals(n.space_id).first())?.id!,
-          title: null,
-          text: n.text ?? '',
-          tags: n.tags ?? [],
-          createdAt: n.created_at,
-          modifiedAt: n.modified_at,
-          date: n.date ?? n.created_at,
-          parentId: n.parent_id ?? null,
-          deletedAt: n.deleted_at ?? null,
-          isDirty: 0,
-        }
-        if (existing) await db.notes.put(rec)
-        else await db.notes.add(rec)
-      }
-
-      for (const t of (data.tags ?? [])) {
-        pulled++
-        const existing = await db.tags.where('serverId').equals(t.id).first()
-        const rec: TagRecord = {
-          id: existing?.id,
-          serverId: t.id,
-          spaceId: (await db.spaces.where('serverId').equals(t.space_id).first())?.id!,
-          name: t.name,
-          createdAt: t.created_at,
-          modifiedAt: t.modified_at,
-          deletedAt: t.deleted_at ?? null,
-          isDirty: 0,
-        }
-        if (existing) await db.tags.put(rec)
-        else await db.tags.add(rec)
-      }
-
-      for (const f of (data.filters ?? [])) {
-        pulled++
-        const existing = await db.filters.where('serverId').equals(f.id).first()
-        const rec: FilterRecord = {
-          id: existing?.id,
-          serverId: f.id,
-          spaceId: (await db.spaces.where('serverId').equals(f.space_id).first())?.id!,
-          parentId: f.parent_id ?? null,
-          name: f.name,
-          params: (f.params ?? {}) as any,
-          createdAt: f.created_at,
-          modifiedAt: f.modified_at,
-          deletedAt: f.deleted_at ?? null,
-          isDirty: 0,
-        }
-        if (existing) await db.filters.put(rec)
-        else await db.filters.add(rec)
-      }
-
-      // Activity Types
-      for (const t of (data.activityTypes ?? [])) {
-        pulled++
-        const existing = await db.activityTypes.where('serverId').equals(t.id).first()
-        let spaceLocalId = 0
-        if (typeof t.space_id === 'number') {
-          const s = await db.spaces.where('serverId').equals(t.space_id).first()
-          spaceLocalId = s?.id ?? 0
-        }
-        const rec: ActivityTypeRecord = {
-          id: existing?.id,
-          serverId: t.id,
-          spaceId: spaceLocalId,
-          name: t.name,
-          valueType: (t.value_type || t.valueType) as any,
-          minValue: typeof t.min_value === 'number' ? t.min_value : (typeof t.minValue === 'number' ? t.minValue : null),
-          maxValue: typeof t.max_value === 'number' ? t.max_value : (typeof t.maxValue === 'number' ? t.maxValue : null),
-          aggregation: (t.aggregation ?? null),
-          unit: (t.unit ?? null),
-          categoryId: (t.category_id ?? t.categoryId ?? null),
-          createdAt: t.created_at,
-          modifiedAt: t.modified_at,
-          deletedAt: t.deleted_at ?? null,
-        }
-        if (existing) await db.activityTypes.put(rec)
-        else await db.activityTypes.add(rec)
-      }
-
-      const upsertAttachment = async (a: any) => {
-        pulled++
-        const existing = await db.attachments.where('serverId').equals(a.id).first()
-        const noteLocalId = (await db.notes.where('serverId').equals(a.note_id).first())?.id
-        if (!noteLocalId) return
-        const rec: AttachmentRecord = {
-          id: existing?.id,
-          serverId: a.id,
-          noteId: noteLocalId,
-          fileName: a.file_name,
-          fileType: a.file_type,
-          fileSize: a.file_size,
-          data: existing?.data ?? null,
-          createdAt: a.created_at,
-          modifiedAt: a.modified_at,
-          deletedAt: null,
-          isDirty: 0,
-        }
-        const attId = existing ? (await db.attachments.put(rec)) : (await db.attachments.add(rec))
-        // remove any local duplicates for the same note with same fileName+fileSize and null serverId
-        const dups = await db.attachments.where('noteId').equals(noteLocalId).filter(x => !x.serverId && x.fileName === rec.fileName && x.fileSize === rec.fileSize).toArray()
-        for (const d of dups) {
-          if (!rec.data && d.data) {
-            await db.attachments.update(attId, { data: d.data })
-          }
-          await db.attachments.delete(d.id!)
-        }
-      }
-
-      // Top-level attachments removed in new API; rely on per-note attachments
-      for (const n of (data.notes ?? [])) {
-        for (const a of (n.attachments ?? [])) {
-          // include parent note id if not present
-          a.note_id = a.note_id ?? n.id
-          await upsertAttachment(a)
-        }
-        // Upsert activities nested under notes with deduplication against local drafts
-        for (const a of (n.activities ?? [])) {
-          pulled++
-          const noteLocalId = (await db.notes.where('serverId').equals(n.id).first())?.id
-          if (!noteLocalId) continue
-
-          const existingByServer = (typeof a.id === 'number')
-            ? (await db.activities.where('serverId').equals(a.id).first())
-            : null
-          const localDup = await db.activities
-            .where('noteId').equals(noteLocalId)
-            .filter(x => !x.serverId && !x.deletedAt && x.typeId === a.type_id)
-            .first()
-
-          const rec: ActivityRecord = {
-            id: existingByServer?.id ?? localDup?.id,
-            serverId: (typeof a.id === 'number' ? a.id : null),
-            noteId: noteLocalId,
-            typeId: a.type_id,
-            valueRaw: fromServerActivityValue(a.value),
-            createdAt: a.created_at,
-            modifiedAt: a.modified_at,
-            deletedAt: a.deleted_at ?? null,
-            isDirty: 0,
-          }
-
-          if (existingByServer && localDup && existingByServer.id !== localDup.id) {
-            // Prefer server-backed record; update it and remove local duplicate
-            await db.activities.put({ ...rec, id: existingByServer.id })
-            await db.activities.delete(localDup.id!)
-          } else if (localDup && !existingByServer) {
-            // Promote local draft to server-backed by assigning serverId and server fields
-            await db.activities.put(rec)
-          } else if (existingByServer) {
-            await db.activities.put({ ...rec, id: existingByServer.id })
-          } else {
-            await db.activities.add(rec)
-          }
-
-          // Ensure only one activity per (noteId, typeId): remove any extras keeping the best candidate
-          const allOfType = await db.activities
-            .where('noteId').equals(noteLocalId)
-            .filter(x => !x.deletedAt && x.typeId === a.type_id)
-            .toArray()
-          if (allOfType.length > 1) {
-            // Choose winner: prefer with serverId; tie-breaker by latest modifiedAt
-            let winner = allOfType[0]
-            for (const it of allOfType.slice(1)) {
-              const prefer = (Number(!!it.serverId) - Number(!!winner.serverId)) || ((it.modifiedAt || '').localeCompare(winner.modifiedAt || ''))
-              if (prefer > 0) winner = it
-            }
-            for (const it of allOfType) {
-              if (it.id !== winner.id) await db.activities.delete(it.id!)
-            }
-          }
-        }
-      }
-    })
-
-    const hasMore = !!data.hasMore
-    const nextCursor = (typeof data.nextCursor === 'string' && data.nextCursor) ? data.nextCursor : null
-    if (!hasMore) break
-    if (!nextCursor) break // future-proofing: avoid infinite loop if server sends partial without cursor
-    cursor = nextCursor
-  }
-
-  await setKV(LAST_SYNC_KV, maxSyncAt)
-
-  try { window.dispatchEvent(new Event('focuz:sync-applied')) } catch {}
-
-  return { pulled }
-}
-
-let syncTimer: number | null = null
-let ws: WebSocket | null = null
-let wsRetryMs = 1000
-let syncQueued = false
-let syncRunning = false
-let backoffUntilMs = 0
-let lastSyncAtMs = 0
-let lastWSTriggerMs = 0
-let isSyncLeader = false
-let leaderHeartbeatInterval: number | null = null
-let lastLeaderHeartbeat = 0
-const LEADER_HEARTBEAT_INTERVAL_MS = 5000
-const LEADER_TIMEOUT_MS = 10000
-const TAB_ID = crypto.randomUUID()
-
-// Background control & cleanup handles
-let stopRequested = false
-let baselineIntervalId: number | null = null
-let wsRetryTimeoutId: number | null = null
-let onOnline: (() => void) | null = null
-let onFocus: (() => void) | null = null
-let onVisibilityChange: (() => void) | null = null
-let lastCleanup: (() => void) | null = null
-
-// Cross-tab sync coordination: only leader tab performs syncs
-function tryBecomeLeader(): boolean {
-  if (!syncBC) return true // Fallback if BroadcastChannel not available
-  if (isSyncLeader) return true
-  try {
-    syncBC.postMessage({ type: 'claim-leader', tabId: TAB_ID, timestamp: Date.now() })
-    // Give other tabs a moment to respond
-    setTimeout(() => {
-      if (!isSyncLeader) {
-        isSyncLeader = true
-        startLeaderHeartbeat()
-        try { syncBC?.postMessage({ type: 'leader-elected', tabId: TAB_ID }) } catch {}
-      }
-    }, 100)
-    return true
-  } catch {
-    return true // Fallback: allow sync if BC fails
-  }
-}
-
-function startLeaderHeartbeat(): void {
-  if (leaderHeartbeatInterval) return
-  leaderHeartbeatInterval = window.setInterval(() => {
-    if (isSyncLeader && syncBC) {
-      try {
-        lastLeaderHeartbeat = Date.now()
-        syncBC.postMessage({ type: 'leader-heartbeat', tabId: TAB_ID, timestamp: lastLeaderHeartbeat })
-      } catch {}
-    }
-  }, LEADER_HEARTBEAT_INTERVAL_MS)
-}
-
-function stopLeaderHeartbeat(): void {
-  if (leaderHeartbeatInterval) {
-    window.clearInterval(leaderHeartbeatInterval)
-    leaderHeartbeatInterval = null
-  }
-  if (isSyncLeader && syncBC) {
-    try { syncBC.postMessage({ type: 'leader-resigned', tabId: TAB_ID }) } catch {}
-    isSyncLeader = false
-  }
-}
-
-export async function runSync(force = false): Promise<void> {
-  if (stopRequested) return
-  const now = Date.now()
-  if (!force && now < backoffUntilMs) return
-  if (syncRunning) { syncQueued = true; return }
-  
-  // Only leader tab should sync, or if no leader exists, try to become one
-  if (!isSyncLeader && !force) {
-    // Check if we should try to become leader (no heartbeat received recently)
-    if (now - lastLeaderHeartbeat > LEADER_TIMEOUT_MS) {
-      tryBecomeLeader()
-    }
-    // If still not leader and not forced, queue and wait
-    if (!isSyncLeader) {
-      syncQueued = true
-      setTimeout(() => {
-        if (!isSyncLeader) {
-          tryBecomeLeader()
-          if (syncQueued) {
-            syncQueued = false
-            void runSync(force).catch(() => {})
-          }
-        }
-      }, 1000)
-      return
-    }
-  }
-  
-  // Ensure IndexedDB is opened and schema is valid before any sync transactions.
-  // This prevents "objectStore was not found" loops after deployments.
-  try {
-    await ensureDbOpen()
-  } catch (e: any) {
-    const msg = (e?.message || '').toString()
-    if (msg.includes('objectStore') || msg.includes('DB_SCHEMA') || msg.includes('NotFoundError')) {
-      // Schema mismatch - try to recover by ensuring DB is properly opened
-      try {
-        await ensureDbOpen()
-      } catch (recoverError: any) {
-        // If recovery fails, it's a serious schema issue - user should refresh
-        setSyncError('Database schema error - please refresh the page')
-        console.error('IndexedDB schema error:', recoverError)
-        return
-      }
-    } else {
-      throw e
-    }
-  }
-  
-  syncRunning = true
-  setSyncing(true)
-  try {
-    const pushed = await pushDirty()
-    const pulled = await pullSince()
-    lastSyncAtMs = Date.now()
-    if ((pushed.applied ?? 0) === 0 && (pulled.pulled ?? 0) === 0) {
-      backoffUntilMs = lastSyncAtMs + NO_CHANGE_BACKOFF_MS
-    } else {
-      backoffUntilMs = 0
-    }
-    setSyncError(null)
-  } catch (e: any) {
-    const msg = (e?.message || '').toString()
-    // Keep AUTH_REQUIRED as state, but still record as a sync error for debug/UX.
-    setSyncError(msg || 'Sync failed')
-    // If it's an IndexedDB error, try to recover
-    if (msg.includes('objectStore') || msg.includes('NotFoundError')) {
-      try {
-        await ensureDbOpen()
-      } catch {}
-    }
-    throw e
-  } finally {
-    syncRunning = false
-    setSyncing(false)
-    if (syncQueued) {
-      syncQueued = false
-      setTimeout(() => runSync(), 0)
-    }
-  }
-}
-
-export function scheduleAutoSync() {
-  stopRequested = false
-  
-  // Setup cross-tab sync coordination
-  if (syncBC) {
-    syncBC.addEventListener('message', (msg: MessageEvent) => {
-      const data = msg.data
-      if (!data || data.tabId === TAB_ID) return
-      
-      if (data.type === 'claim-leader') {
-        // Another tab is claiming leadership - if we're leader, check if they're newer
-        if (isSyncLeader && data.timestamp && data.timestamp > lastLeaderHeartbeat) {
-          stopLeaderHeartbeat()
-        }
-      } else if (data.type === 'leader-elected') {
-        // Another tab became leader - stop trying
-        if (isSyncLeader && data.tabId !== TAB_ID) {
-          stopLeaderHeartbeat()
-        }
-      } else if (data.type === 'leader-heartbeat') {
-        // Update last heartbeat time
-        if (data.tabId !== TAB_ID && data.timestamp) {
-          lastLeaderHeartbeat = Math.max(lastLeaderHeartbeat, data.timestamp)
-          if (isSyncLeader) {
-            // Another leader exists - resign
-            stopLeaderHeartbeat()
-          }
-        }
-      } else if (data.type === 'leader-resigned') {
-        // Leader resigned - try to become new leader
-        if (!isSyncLeader && !stopRequested) {
-          tryBecomeLeader()
-        }
-      } else if (data.type === 'sync-request') {
-        // Another tab requests sync - if we're leader, trigger it
-        if (isSyncLeader) {
-          void runSync().catch(() => {})
-        }
-      }
-    })
-    
-    // Try to become leader on startup
-    tryBecomeLeader()
-  }
-  
-  const kick = () => {
-    if (syncTimer) window.clearTimeout(syncTimer)
-    syncTimer = window.setTimeout(() => {
-      // Request sync from leader, or do it ourselves if we're leader
-      if (isSyncLeader) {
-        void runSync(true).catch(() => {})
-      } else if (syncBC) {
-        try { syncBC.postMessage({ type: 'sync-request', tabId: TAB_ID }) } catch {}
-      } else {
-        void runSync(true).catch(() => {})
-      }
-    }, DEBOUNCE_LOCAL_MS)
-  }
-
-  onOnline = () => {
-    if (isSyncLeader) {
-      void runSync().catch(() => {})
-    } else if (syncBC) {
-      try { syncBC.postMessage({ type: 'sync-request', tabId: TAB_ID }) } catch {}
-    } else {
-      void runSync().catch(() => {})
-    }
-  }
-  onFocus = () => {
-    // On focus, try to become leader if no leader exists
-    if (!isSyncLeader && Date.now() - lastLeaderHeartbeat > LEADER_TIMEOUT_MS) {
-      tryBecomeLeader()
-    }
-    if (isSyncLeader) {
-      void runSync().catch(() => {})
-    } else if (syncBC) {
-      try { syncBC.postMessage({ type: 'sync-request', tabId: TAB_ID }) } catch {}
-    } else {
-      void runSync().catch(() => {})
-    }
-  }
-  onVisibilityChange = () => {
-    if (document.visibilityState === 'visible') {
-      if (!isSyncLeader && Date.now() - lastLeaderHeartbeat > LEADER_TIMEOUT_MS) {
-        tryBecomeLeader()
-      }
-      if (isSyncLeader) {
-        void runSync().catch(() => {})
-      } else if (syncBC) {
-        try { syncBC.postMessage({ type: 'sync-request', tabId: TAB_ID }) } catch {}
-      } else {
-        void runSync().catch(() => {})
-      }
-    } else {
-      // If tab becomes hidden and we're leader, consider resigning (but keep for a bit)
-      // This allows other tabs to take over if this one is closed
-    }
-  }
-  window.addEventListener('online', onOnline)
-  window.addEventListener('focus', onFocus)
-  document.addEventListener('visibilitychange', onVisibilityChange)
-
-  // Periodic baseline sync - only leader should do this
-  baselineIntervalId = window.setInterval(() => {
-    if (isSyncLeader) {
-      void runSync().catch(() => {})
-    } else if (syncBC) {
-      try { syncBC.postMessage({ type: 'sync-request', tabId: TAB_ID }) } catch {}
-    } else {
-      void runSync().catch(() => {})
-    }
-  }, BASE_SYNC_INTERVAL_MS)
-
-  // Best-effort websocket to get nudges from server when other sessions push
-  const connectWS = () => {
-    try {
-      if (stopRequested) return
-      if (!API_BASE) return
-      const token = getAuthToken()
-      if (!token) return
-      const url = new URL(API_BASE)
-      const wsProto = url.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${wsProto}//${url.host}/ws?token=${encodeURIComponent(token)}`
-      ws = new WebSocket(wsUrl, [])
-      ws.onopen = () => { wsRetryMs = 1000 }
-      ws.onmessage = () => {
-        const now = Date.now()
-        if (now - lastWSTriggerMs < WS_COOLDOWN_MS) return
-        lastWSTriggerMs = now
-        // WebSocket messages should trigger sync in leader tab
-        if (isSyncLeader) {
-          void runSync().catch(() => {})
-        } else if (syncBC) {
-          try { syncBC.postMessage({ type: 'sync-request', tabId: TAB_ID }) } catch {}
-        } else {
-          void runSync().catch(() => {})
-        }
-      }
-      ws.onclose = () => {
-        ws = null
-        if (stopRequested) return
-        wsRetryTimeoutId = window.setTimeout(connectWS, wsRetryMs)
-        wsRetryMs = Math.min(wsRetryMs * 2, 30000)
-      }
-      ws.onerror = () => { try { ws?.close() } catch {} }
-    } catch {
-      if (stopRequested) return
-      wsRetryTimeoutId = window.setTimeout(connectWS, wsRetryMs)
-      wsRetryMs = Math.min(wsRetryMs * 2, 30000)
-    }
-  }
-
-  connectWS()
-  // also start background job processing loop
-  startJobWorker()
-  const cleanup = () => {
-    stopRequested = true
-    stopLeaderHeartbeat()
-    if (syncTimer) { window.clearTimeout(syncTimer); syncTimer = null }
-    if (jobTimer) { window.clearTimeout(jobTimer); jobTimer = null }
-    if (baselineIntervalId) { window.clearInterval(baselineIntervalId); baselineIntervalId = null }
-    if (ws) { try { ws.close(1000, 'logout') } catch {}; ws = null }
-    if (wsRetryTimeoutId) { window.clearTimeout(wsRetryTimeoutId); wsRetryTimeoutId = null }
-    if (onOnline) { window.removeEventListener('online', onOnline); onOnline = null }
-    if (onFocus) { window.removeEventListener('focus', onFocus); onFocus = null }
-    if (onVisibilityChange) { document.removeEventListener('visibilitychange', onVisibilityChange); onVisibilityChange = null }
-  }
-  lastCleanup = cleanup
-  return { kick, cleanup }
-}
-
-async function processOneJob(): Promise<boolean> {
-  if (stopRequested) return false
-  if (!navigator.onLine || isAuthRequired() || !getAuthToken()) return false
-  // Only one worker should process a job at a time; treat non-running jobs as retryable.
-  const job = await db.jobs
-    .orderBy('priority')
-    .filter(j => j.status !== 'running')
-    .first()
-  if (!job) return false
-  const claimAt = new Date().toISOString()
-  // Atomically claim the job (best-effort across tabs/instances).
-  const claimed = await db.jobs
-    .where('id')
-    .equals(job.id!)
-    .and(j => j.status !== 'running')
-    .modify({ status: 'running', updatedAt: claimAt })
-  if (!claimed) return false
-  try {
-    if (job.kind === 'attachment-upload') {
-      const att = await db.attachments.get(job.attachmentId)
-      if (!att || att.deletedAt) throw new Error('Attachment missing')
-      const note = await db.notes.get(att.noteId)
-      if (!note?.serverId) {
-        // Wait until note is mapped to server; keep job retryable.
-        await db.jobs.update(job.id!, { status: 'pending', updatedAt: new Date().toISOString() })
-        return false
-      }
-      const form = new FormData()
-      const blob = (att.data as Blob) || new Blob()
-      form.append('file', blob, att.fileName)
-      form.append('note_id', String(note.serverId))
-      if (att.clientId) form.append('client_id', att.clientId)
-      const resp = await apiMultipart('/upload', form)
-      const serverId = (resp?.data?.attachment_id as string | undefined) || (resp?.data?.id as string | undefined)
-      await db.transaction('rw', db.attachments, async () => {
-        if (serverId) {
-          // If another record with same serverId already exists (from pull), merge and dedupe
-          const existing = await db.attachments.where('serverId').equals(serverId).first()
-          if (existing && existing.id !== att.id) {
-            const preferCurrent = !!att.data && !existing.data
-            const source = preferCurrent ? att : existing
-            const target = preferCurrent ? existing : att
-            // Move data if needed
-            if (!target.data && source.data) {
-              await db.attachments.update(target.id!, { data: source.data })
-            }
-            // Ensure serverId set on target
-            await db.attachments.update(target.id!, { serverId, isDirty: 0 })
-            // Remove the duplicate source record
-            await db.attachments.delete(source.id!)
-          } else {
-            await db.attachments.update(att.id!, { serverId, isDirty: 0 })
-          }
-        } else {
-          await db.attachments.update(att.id!, { isDirty: 0 })
-        }
-      })
-    } else if (job.kind === 'attachment-download') {
-      const att = await db.attachments.get(job.attachmentId)
-      if (!att?.serverId) { await db.jobs.delete(job.id!); return true }
-      // get signed URL
-      const meta = await api(`/files/${encodeURIComponent(att.serverId)}`, { method: 'GET' })
-      const url = meta?.data?.url || meta?.data?.URL || meta?.data?.signedUrl || meta?.data?.signed_url
-      if (!url) throw new Error('No URL')
-      const res = await fetch(url)
-      if (!res.ok) throw new Error('Download failed')
-      const blob = await res.blob()
-      await db.attachments.update(att.id!, { data: blob, modifiedAt: new Date().toISOString() })
-    }
-    await db.jobs.delete(job.id!)
-    try { window.dispatchEvent(new Event('focuz:jobs-changed')) } catch {}
-    return true
-  } catch (e: any) {
-    const attempts = (job.attempts ?? 0) + 1
-    await db.jobs.update(job.id!, { status: 'failed', attempts, updatedAt: new Date().toISOString() })
-    try { window.dispatchEvent(new Event('focuz:jobs-changed')) } catch {}
-    // UI should react via app-state only.
-    try { markJobFailed(job.kind, e?.message || null) } catch {}
-    return false
-  }
-}
-
-let jobTimer: number | null = null
-function startJobWorker() {
-  const tick = async () => {
-    const did = await processOneJob()
-    const delay = did ? 0 : 2000
-    jobTimer = window.setTimeout(tick, delay)
-  }
-  if (jobTimer) window.clearTimeout(jobTimer)
-  tick()
-}
-
-async function ensureDownloadJob(attachmentLocalId: number, priority = 10): Promise<void> {
-  // Skip if job already exists
-  const existing = await db.jobs.where('attachmentId').equals(attachmentLocalId).filter(j => j.kind === 'attachment-download').first()
-  if (existing) return
-  // Ensure attachment exists and its parent note is not deleted
-  const att = await db.attachments.get(attachmentLocalId)
-  if (!att) return
-  const note = await db.notes.get(att.noteId)
-  if (!note || !!note.deletedAt) return
-  const now = new Date().toISOString()
-  await db.jobs.add({ kind: 'attachment-download', attachmentId: attachmentLocalId, priority, status: 'pending', attempts: 0, createdAt: now, updatedAt: now } as JobRecord)
-}
-
-const prefetchCooldownMs = 5000
-const lastPrefetchByAttachment = new Map<number, number>()
-export async function requestAttachmentPrefetch(attachmentLocalId: number, priority = 1): Promise<void> {
-  const now = Date.now()
-  const last = lastPrefetchByAttachment.get(attachmentLocalId) || 0
-  if (now - last < prefetchCooldownMs) return
-  lastPrefetchByAttachment.set(attachmentLocalId, now)
-  await ensureDownloadJob(attachmentLocalId, priority)
-}
-
-export async function setAuthToken(token: string) {
-  await ensureDbOpen().catch(() => {})
-  localStorage.setItem(TOKEN_KV, token)
-  emitAuthRequired(false)
-  await runSync(true)
 }
 
 export async function getCurrentSpaceId(): Promise<number> {
   const id = await getKV<number>(CURRENT_SPACE_KV)
   if (id) return id
   return ensureDefaultSpace()
-} 
+}
+
+// ---------------------------------------------------------------------------
+// Engine state
+
+type Role = 'standalone' | 'leader' | 'follower'
+let role: Role = 'standalone' // before scheduleAutoSync (e.g. right after login) syncs run in-tab
+let stopRequested = false
+let running: Promise<void> | null = null
+let queued = false
+let failures = 0
+let backoffUntilMs = 0
+let noChangeUntilMs = 0
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+let jobTimer: ReturnType<typeof setTimeout> | null = null
+let jobsPausedOffline = false
+let lastCleanup: (() => void) | null = null
+let releaseLeaderLock: (() => void) | null = null
+const TAB_ID = (() => { try { return crypto.randomUUID() } catch { return String(Math.random()) } })()
+
+function setSyncState(patch: SyncStatePatch) {
+  patchSyncState(patch)
+  if (role === 'leader') {
+    try { syncBC?.postMessage({ type: 'state', tabId: TAB_ID, patch }) } catch {}
+  }
+}
+
+function resetFailureState() {
+  failures = 0
+  backoffUntilMs = 0
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+  setSyncState({ nextRetryAt: null })
+}
+
+/** Delay before the n-th consecutive retry: 2s, 4s, 8s ... capped at 60s, with jitter. */
+export function failureBackoffMs(n: number): number {
+  const base = Math.min(60000, 2000 * 2 ** Math.max(0, n - 1))
+  return Math.round(base * (0.85 + Math.random() * 0.3))
+}
+
+function canTalkToServer(): boolean {
+  return !!getApiBase() && !!getAuthToken() && !isAuthRequired()
+}
+
+function describeError(e: unknown): string {
+  if (isNetworkError(e)) return 'Server unreachable'
+  const status = (e as any)?.status
+  if (status === 401) return 'Session expired'
+  if (typeof status === 'number' && status >= 500) return `Server error (${status})`
+  return String((e as any)?.message || e || 'Sync failed')
+}
+
+function scheduleRetry(delayMs: number) {
+  if (retryTimer) clearTimeout(retryTimer)
+  backoffUntilMs = Date.now() + delayMs
+  setSyncState({ nextRetryAt: new Date(backoffUntilMs).toISOString() })
+  retryTimer = setTimeout(() => { retryTimer = null; void runSync(true) }, delayMs)
+}
+
+export interface RunSyncOptions {
+  /** Bypass the "nothing changed recently" throttle (local writes, user action). */
+  force?: boolean
+}
+
+/**
+ * Runs push+pull once (or joins the run in progress). Never throws: failures are reported via
+ * app-state and retried automatically with exponential backoff.
+ */
+export async function runSync(force: boolean | RunSyncOptions = false): Promise<void> {
+  const opts: RunSyncOptions = typeof force === 'boolean' ? { force } : force
+  if (role === 'follower') { requestLeaderSync(); return }
+  if (stopRequested && role === 'leader') return
+  if (!canTalkToServer()) return
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+  const now = Date.now()
+  if (!opts.force && (now < backoffUntilMs || now < noChangeUntilMs)) return
+  if (running) { queued = true; return running }
+
+  running = (async () => {
+    setSyncState({ syncing: true })
+    try {
+      await ensureDbOpen()
+      let applied = 0
+      for (let round = 0; round < MAX_PUSH_ROUNDS; round++) {
+        const r = await pushDirty()
+        applied += r.applied
+        if (r.conflicts > 0) markConflictsDetected(r.conflicts)
+        // Another round when replies waited for their parent's server id (now mapped)
+        // or when a conflict produced a conflict copy that should be uploaded too.
+        const parentsMapped = r.deferred > 0 && r.mapped > 0
+        if (!parentsMapped && r.conflicts === 0) break
+      }
+      const pulled = await pullSince()
+      const okAt = new Date().toISOString()
+      await setKV(LAST_SYNC_OK_KV, okAt)
+      resetFailureState()
+      noChangeUntilMs = applied === 0 && pulled.pulled === 0 ? Date.now() + NO_CHANGE_BACKOFF_MS : 0
+      setSyncState({ syncError: null, serverReachable: true, lastSyncAt: okAt })
+      try { window.dispatchEvent(new Event('focuz:sync-applied')) } catch {}
+      if (jobsPausedOffline) { jobsPausedOffline = false; kickJobs() }
+    } catch (e) {
+      failures++
+      const unreachable = isNetworkError(e)
+      setSyncState({ syncError: describeError(e), serverReachable: !unreachable })
+      if ((e as any)?.status !== 401) scheduleRetry(isTransientError(e) ? failureBackoffMs(failures) : Math.max(30000, failureBackoffMs(failures)))
+      if (!isTransientError(e) && (e as any)?.status !== 401) console.error('Sync failed', e)
+    } finally {
+      setSyncState({ syncing: false })
+      running = null
+      if (queued) {
+        queued = false
+        setTimeout(() => { void runSync(true) }, 0)
+      }
+    }
+  })()
+  return running
+}
+
+// ---------------------------------------------------------------------------
+// Attachment jobs
+
+function kickJobs(delay = 0) {
+  if (role === 'follower') { try { syncBC?.postMessage({ type: 'jobs-kick', tabId: TAB_ID }) } catch {} ; return }
+  if (stopRequested || role === 'standalone') return
+  if (jobTimer) clearTimeout(jobTimer)
+  jobTimer = setTimeout(jobTick, delay)
+}
+
+async function jobTick() {
+  jobTimer = null
+  if (stopRequested || role !== 'leader') return
+  let next = JOB_IDLE_TICK_MS
+  if (canTalkToServer() && navigator.onLine !== false && !jobsPausedOffline) {
+    try {
+      const r = await processNextJob((job, error) => markJobFailed(job.kind, String((error as any)?.message || error || '')))
+      if (r === 'did') next = 0
+      else if (r === 'offline') {
+        // Server unreachable: let the sync backoff probe the server, resume jobs after it succeeds.
+        jobsPausedOffline = true
+        setSyncState({ serverReachable: false })
+        if (!retryTimer) { failures++; scheduleRetry(failureBackoffMs(failures)) }
+      }
+    } catch (e) {
+      console.error('Job worker error', e)
+    }
+  }
+  if (!stopRequested) jobTimer = setTimeout(jobTick, next)
+}
+
+export async function requestAttachmentPrefetch(attachmentLocalId: number, priority = 1): Promise<void> {
+  await ensureDownloadJob(attachmentLocalId, priority)
+  kickJobs()
+}
+
+export async function retryFailedAttachments(): Promise<void> {
+  await retryFailedJobs()
+  jobsPausedOffline = false
+  kickJobs()
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling
+
+let lastWSTriggerMs = 0
+let localKickTimer: ReturnType<typeof setTimeout> | null = null
+
+function requestLeaderSync() {
+  try { syncBC?.postMessage({ type: 'sync-request', tabId: TAB_ID }) } catch {}
+}
+
+/** User-initiated "Sync now": also retries failed attachment transfers. */
+export async function syncNow(): Promise<void> {
+  resetFailureState()
+  if (role === 'follower') { requestLeaderSync(); try { syncBC?.postMessage({ type: 'jobs-retry', tabId: TAB_ID }) } catch {}; return }
+  await retryFailedAttachments()
+  await runSync(true)
+}
+
+function acquireLeadership(onLeader: () => void) {
+  const locks = (navigator as any)?.locks
+  if (!locks?.request || !syncBC) { role = 'leader'; onLeader(); return }
+  role = 'follower'
+  locks.request('focuz-sync-leader', () => new Promise<void>(resolve => {
+    if (stopRequested) { resolve(); return }
+    releaseLeaderLock = resolve
+    role = 'leader'
+    onLeader()
+  })).catch(() => {})
+}
+
+export function scheduleAutoSync(): { kick: () => void; cleanup: () => void } {
+  stopRequested = false
+  const disposers: Array<() => void> = []
+  const on = (target: EventTarget, type: string, fn: EventListener) => {
+    target.addEventListener(type, fn)
+    disposers.push(() => target.removeEventListener(type, fn))
+  }
+
+  const trigger = (force: boolean) => {
+    if (role === 'follower') requestLeaderSync()
+    else void runSync(force)
+  }
+
+  const onMessage = (msg: MessageEvent) => {
+    const data = msg.data
+    if (!data || data.tabId === TAB_ID) return
+    if (data.type === 'state' && role === 'follower') patchSyncState(data.patch)
+    else if (data.type === 'sync-request' && role === 'leader') void runSync(true)
+    else if (data.type === 'jobs-kick' && role === 'leader') kickJobs()
+    else if (data.type === 'jobs-retry' && role === 'leader') void retryFailedAttachments()
+  }
+  if (syncBC) { syncBC.addEventListener('message', onMessage); disposers.push(() => syncBC?.removeEventListener('message', onMessage)) }
+
+  let ws: WebSocket | null = null
+  let wsRetryMs = 1000
+  let wsRetryId: ReturnType<typeof setTimeout> | null = null
+  const connectWS = () => {
+    if (stopRequested || role !== 'leader') return
+    const base = getApiBase()
+    const token = getAuthToken()
+    if (!base || !token) return
+    try {
+      const url = new URL(base)
+      const wsProto = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      ws = new WebSocket(`${wsProto}//${url.host}/ws?token=${encodeURIComponent(token)}`)
+      ws.onopen = () => {
+        wsRetryMs = 1000
+        // The server is back: do not wait for the backoff timer.
+        if (failures > 0) void runSync(true)
+      }
+      ws.onmessage = () => {
+        const now = Date.now()
+        if (now - lastWSTriggerMs < WS_COOLDOWN_MS) return
+        lastWSTriggerMs = now
+        void runSync(true)
+      }
+      ws.onclose = () => {
+        ws = null
+        if (stopRequested) return
+        wsRetryId = setTimeout(connectWS, wsRetryMs)
+        wsRetryMs = Math.min(wsRetryMs * 2, 30000)
+      }
+      ws.onerror = () => { try { ws?.close() } catch {} }
+    } catch {
+      wsRetryId = setTimeout(connectWS, wsRetryMs)
+      wsRetryMs = Math.min(wsRetryMs * 2, 30000)
+    }
+  }
+
+  const onBecameLeader = () => {
+    void (async () => {
+      try { await ensureDbOpen(); await releaseStaleRunningJobs(); await recoverLegacyConflicts() } catch (e) { console.error(e) }
+      if (stopRequested) return
+      connectWS()
+      kickJobs()
+      void runSync(true)
+    })()
+  }
+  acquireLeadership(onBecameLeader)
+
+  on(window, 'online', () => { resetFailureState(); trigger(true) })
+  on(window, 'focus', () => trigger(false))
+  on(document, 'visibilitychange', () => { if (document.visibilityState === 'visible') trigger(false) })
+  const intervalId = setInterval(() => { if (role === 'leader') void runSync(false) }, BASE_SYNC_INTERVAL_MS)
+  disposers.push(() => clearInterval(intervalId))
+
+  const kick = () => {
+    if (localKickTimer) clearTimeout(localKickTimer)
+    localKickTimer = setTimeout(() => { localKickTimer = null; trigger(true) }, DEBOUNCE_LOCAL_MS)
+    // New uploads can start right away (they wait for the note mapping themselves).
+    kickJobs(DEBOUNCE_LOCAL_MS)
+  }
+
+  const cleanup = () => {
+    stopRequested = true
+    for (const d of disposers.splice(0)) { try { d() } catch {} }
+    if (localKickTimer) { clearTimeout(localKickTimer); localKickTimer = null }
+    if (jobTimer) { clearTimeout(jobTimer); jobTimer = null }
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+    if (wsRetryId) { clearTimeout(wsRetryId); wsRetryId = null }
+    if (ws) { try { ws.close(1000, 'logout') } catch {}; ws = null }
+    if (releaseLeaderLock) { releaseLeaderLock(); releaseLeaderLock = null }
+    role = 'standalone'
+  }
+  lastCleanup = cleanup
+  return { kick, cleanup }
+}
 
 export function teardownSync(): void {
   stopRequested = true
-  stopLeaderHeartbeat()
   if (lastCleanup) {
     try { lastCleanup() } catch {}
     lastCleanup = null
   }
 }
 
-// Cross-tab listener to stop background work and drop DB on logout elsewhere
+/** Test hook: reset module state between tests. */
+export function __resetSyncEngineForTests() {
+  teardownSync()
+  stopRequested = false
+  role = 'standalone'
+  running = null
+  queued = false
+  failures = 0
+  backoffUntilMs = 0
+  noChangeUntilMs = 0
+  jobsPausedOffline = false
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+}
+
+// Cross-tab: stop background work and drop the DB on logout elsewhere
 try {
   authBC?.addEventListener('message', (msg: MessageEvent) => {
     if (msg?.data?.type === 'logout') {

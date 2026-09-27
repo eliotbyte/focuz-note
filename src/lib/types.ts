@@ -24,7 +24,14 @@ export interface NoteRecord {
   createdAt: string
   modifiedAt: string
   date?: string
+  // Local id (notes.id) of the parent note. Never a server id.
   parentId?: number | null
+  // Server id of the parent when it is known. Used to link replies whose parent has not been
+  // pulled yet (parentId stays null until the parent arrives).
+  parentServerId?: number | null
+  // Server modified_at of the version this record is based on. Sent as base_modified_at on push
+  // so the server can detect real concurrent edits without comparing device clocks.
+  serverModifiedAt?: string | null
   deletedAt?: string | null
   isDirty: 0 | 1
 }
@@ -81,10 +88,14 @@ export interface JobRecord {
   kind: JobKind
   attachmentId: number
   priority: number
+  // pending: will run (not before nextAttemptAt); running: claimed by a worker;
+  // failed: gave up after repeated non-network errors, waits for a manual retry.
   status: JobStatus
   attempts: number
   createdAt: string
   updatedAt: string
+  nextAttemptAt?: string | null
+  lastError?: string | null
 }
 
 export interface TagRecord {
@@ -120,6 +131,8 @@ export interface FilterRecord {
   params: FilterParams
   createdAt: string
   modifiedAt: string
+  // See NoteRecord.serverModifiedAt
+  serverModifiedAt?: string | null
   deletedAt?: string | null
   isDirty: 0 | 1
 }
