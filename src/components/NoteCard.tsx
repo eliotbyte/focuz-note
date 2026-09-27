@@ -5,7 +5,8 @@ import { activities as activitiesRepo, notes as notesRepo } from '../data'
 import { getLastUsername } from '../lib/sync'
 import { useAppState } from '../lib/app-state'
 // import HighlightedText from './HighlightedText'
-import ParagraphText from './ParagraphText'
+import NoteBody from './NoteBody'
+import { notePreviewText } from '../lib/note-format/render'
 import NoteImages from './NoteImages'
 import { formatExactDateTime, formatRelativeShort, formatDurationShort, parseDurationToMs } from '../lib/time'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
@@ -66,9 +67,9 @@ export default function NoteCard({
             <Pill
               className="w-full justify-start overflow-hidden text-left pill-reply-preview"
               onClick={() => onOpenThread && onOpenThread(parentNote.id!)}
-              title={parentNote.text}
+              title={notePreviewText(parentNote.text)}
             >
-              <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{parentNote.text}</span>
+              <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{notePreviewText(parentNote.text)}</span>
             </Pill>
           </div>
         )}
@@ -77,7 +78,7 @@ export default function NoteCard({
         <NoteImages noteId={note.id!} />
 
         {/* Text */}
-        <ParagraphText className="text-primary" text={note.text} />
+        <NoteBody className="text-primary" noteId={note.id} text={note.text} />
 
         {/* Activities (pills) */}
         {activities.length > 0 && (

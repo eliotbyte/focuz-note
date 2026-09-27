@@ -11,6 +11,8 @@ import { deleteLocalAttachment, reorderNoteAttachments } from '../lib/sync'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
 import { notify } from '../ui/notify'
 import { filesFromDataTransfer, hasFiles, isImageFile } from '../lib/clipboard'
+import FullscreenNoteEditor from './FullscreenNoteEditor'
+import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
 
 const MAX_ATTACHMENTS = 10
 
@@ -57,6 +59,10 @@ export default function NoteEditor({
   const allowActivitiesInAddMenu = mode === 'edit' ? featureFlags.noteCreateAddActivity : allowActivitiesInline
   const [activities, setActivities] = useState<ActivityDraft[]>(allowActivitiesInline ? (value.activities || []) : [])
   const [editRequestTypeId, setEditRequestTypeId] = useState<number | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  // The full-screen editor reports text changes asynchronously; merge them into the latest value.
+  const valueRef = useRef(value)
+  valueRef.current = value
 
   // Existing attachments for edit mode
   const existingAttachments = (useLiveQuery(async () => {
@@ -166,6 +172,104 @@ export default function NoteEditor({
   }
 
   const containerClass = variant === 'card' ? 'card space-y-3' : 'space-y-3'
+  const submitLabel = mode === 'edit' ? 'Update' : mode === 'reply' ? 'Reply' : 'Create'
+
+  function submit() {
+    if (!canSubmit) return
+    if (onSubmitWithExtra) onSubmitWithExtra({ attachments })
+    else onSubmit()
+    setAttachments([])
+    setFullscreen(false)
+    collapseIfNeeded()
+  }
+
+  const thumbnails = (
+    <>
+        {mode === 'edit' && existingAttachments.length > 0 && attachments.length === 0 && (
+          <div className="text-xs text-neutral-400">Adding new photos will be uploaded when you click Update.</div>
+        )}
+        {(mode === 'edit' && existingAttachments.length > 0) && (
+          <div className="flex flex-wrap gap-2"
+            onDragOver={e => { e.preventDefault() }}
+          >
+            {existingAttachments.map((att, idx) => (
+              <div
+                key={att.id ?? idx}
+                className="relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800"
+                draggable
+                onDragStart={e => { e.dataTransfer.setData('text/plain', String(att.id)) }}
+                onDrop={async e => {
+                  e.preventDefault()
+                  const srcId = Number(e.dataTransfer.getData('text/plain'))
+                  const dstId = att.id!
+                  if (!noteId || !srcId || !dstId || srcId === dstId) return
+                  const ids = existingAttachments.map(a => a.id!)
+                  const from = ids.indexOf(srcId)
+                  const to = ids.indexOf(dstId)
+                  if (from < 0 || to < 0) return
+                  const next = ids.slice()
+                  const [m] = next.splice(from, 1)
+                  next.splice(to, 0, m)
+                  try { await reorderNoteAttachments(noteId, next) } catch {}
+                }}
+              >
+                {att.data ? (
+                  <BlobImg blob={att.data} className="w-full h-full object-cover" alt={att.fileName} />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-neutral-500 text-xs">img</div>
+                )}
+                <button
+                  type="button"
+                  className="absolute -top-1 -right-1 bg-neutral-900/80 hover:bg-neutral-800 text-neutral-100 rounded-full w-5 h-5 text-xs"
+                  onClick={async () => { if (att.id != null) { try { await deleteLocalAttachment(att.id) } catch {} } }}
+                  aria-label="Remove attachment"
+                  title="Remove"
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-2"
+            onDragOver={e => { e.preventDefault() }}
+          >
+            {attachments.map((file, idx) => (
+              <div
+                key={`new-${idx}`}
+                className="relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800"
+                draggable
+                onDragStart={e => { e.dataTransfer.setData('text/plain', `new:${idx}`) }}
+                onDrop={e => {
+                  e.preventDefault()
+                  const data = e.dataTransfer.getData('text/plain')
+                  if (!data.startsWith('new:')) return
+                  const from = Number(data.split(':')[1])
+                  const to = idx
+                  if (isNaN(from) || from === to) return
+                  setAttachments(prev => {
+                    const next = prev.slice()
+                    const [m] = next.splice(from, 1)
+                    next.splice(to, 0, m)
+                    return next
+                  })
+                }}
+              >
+                <BlobImg blob={file} className="w-full h-full object-cover" alt="attachment" />
+                <button
+                  type="button"
+                  className="absolute -top-1 -right-1 bg-neutral-900/80 hover:bg-neutral-800 text-neutral-100 rounded-full w-5 h-5 text-xs"
+                  onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
+                  aria-label="Remove attachment"
+                  title="Remove"
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
+    </>
+  )
+
+  const tagsInput = <TagsInput value={value.tags} onChange={tags => onChange({ ...value, tags })} placeholder="Add tags" spaceId={spaceId} />
 
   return (
     <div
@@ -174,14 +278,26 @@ export default function NoteEditor({
       onDragOver={e => { if (hasFiles(e.dataTransfer)) e.preventDefault() }}
       onDrop={onDrop}
     >
-      <textarea
-        ref={textRef}
-        className="input min-h-20 text-primary resize-none overflow-hidden"
-        placeholder={mode === 'reply' ? 'Reply…' : 'Add note… (paste or drop images here)'}
-        value={value.text}
-        onChange={e => onChange({ ...value, text: e.target.value })}
-        onInput={e => autoResize(e.currentTarget)}
-      />
+      <div className="relative">
+        <textarea
+          ref={textRef}
+          className="input min-h-20 text-primary resize-none overflow-hidden pr-10"
+          placeholder={mode === 'reply' ? 'Reply…' : 'Add note… (paste or drop images here)'}
+          value={value.text}
+          onChange={e => onChange({ ...value, text: e.target.value })}
+          onInput={e => autoResize(e.currentTarget)}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit() } }}
+        />
+        <button
+          type="button"
+          className="note-expand-btn"
+          onClick={() => setFullscreen(true)}
+          aria-label="Open full-screen editor"
+          title="Full-screen editor with formatting and checklists"
+        >
+          <OpenInFullRoundedIcon fontSize="inherit" />
+        </button>
+      </div>
       {allowActivitiesInline ? (
         <ActivitiesInput
           value={activities}
@@ -192,88 +308,8 @@ export default function NoteEditor({
           onEditRequestHandled={() => setEditRequestTypeId(null)}
         />
       ) : null}
-      <TagsInput value={value.tags} onChange={tags => onChange({ ...value, tags })} placeholder="Add tags" spaceId={spaceId} />
-      {mode === 'edit' && existingAttachments.length > 0 && attachments.length === 0 && (
-        <div className="text-xs text-neutral-400">Adding new photos will be uploaded when you click Update.</div>
-      )}
-      {(mode === 'edit' && existingAttachments.length > 0) && (
-        <div className="flex flex-wrap gap-2"
-          onDragOver={e => { e.preventDefault() }}
-        >
-          {existingAttachments.map((att, idx) => (
-            <div
-              key={att.id ?? idx}
-              className="relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800"
-              draggable
-              onDragStart={e => { e.dataTransfer.setData('text/plain', String(att.id)) }}
-              onDrop={async e => {
-                e.preventDefault()
-                const srcId = Number(e.dataTransfer.getData('text/plain'))
-                const dstId = att.id!
-                if (!noteId || !srcId || !dstId || srcId === dstId) return
-                const ids = existingAttachments.map(a => a.id!)
-                const from = ids.indexOf(srcId)
-                const to = ids.indexOf(dstId)
-                if (from < 0 || to < 0) return
-                const next = ids.slice()
-                const [m] = next.splice(from, 1)
-                next.splice(to, 0, m)
-                try { await reorderNoteAttachments(noteId, next) } catch {}
-              }}
-            >
-              {att.data ? (
-                <BlobImg blob={att.data} className="w-full h-full object-cover" alt={att.fileName} />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-neutral-500 text-xs">img</div>
-              )}
-              <button
-                type="button"
-                className="absolute -top-1 -right-1 bg-neutral-900/80 hover:bg-neutral-800 text-neutral-100 rounded-full w-5 h-5 text-xs"
-                onClick={async () => { if (att.id != null) { try { await deleteLocalAttachment(att.id) } catch {} } }}
-                aria-label="Remove attachment"
-                title="Remove"
-              >×</button>
-            </div>
-          ))}
-        </div>
-      )}
-      {attachments.length > 0 && (
-        <div className="flex flex-wrap gap-2"
-          onDragOver={e => { e.preventDefault() }}
-        >
-          {attachments.map((file, idx) => (
-            <div
-              key={`new-${idx}`}
-              className="relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800"
-              draggable
-              onDragStart={e => { e.dataTransfer.setData('text/plain', `new:${idx}`) }}
-              onDrop={e => {
-                e.preventDefault()
-                const data = e.dataTransfer.getData('text/plain')
-                if (!data.startsWith('new:')) return
-                const from = Number(data.split(':')[1])
-                const to = idx
-                if (isNaN(from) || from === to) return
-                setAttachments(prev => {
-                  const next = prev.slice()
-                  const [m] = next.splice(from, 1)
-                  next.splice(to, 0, m)
-                  return next
-                })
-              }}
-            >
-              <BlobImg blob={file} className="w-full h-full object-cover" alt="attachment" />
-              <button
-                type="button"
-                className="absolute -top-1 -right-1 bg-neutral-900/80 hover:bg-neutral-800 text-neutral-100 rounded-full w-5 h-5 text-xs"
-                onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
-                aria-label="Remove attachment"
-                title="Remove"
-              >×</button>
-            </div>
-          ))}
-        </div>
-      )}
+      {tagsInput}
+      {thumbnails}
       <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={async e => {
         const files = Array.from(e.target.files ?? [])
         try { if (fileInputRef.current) fileInputRef.current.value = '' } catch {}
@@ -311,17 +347,23 @@ export default function NoteEditor({
         {onCancel && (
           <button className="button" onClick={() => { onCancel(); setAttachments([]); collapseIfNeeded() }}>Cancel</button>
         )}
-        <button
-          className="button"
-          onClick={() => {
-            if (onSubmitWithExtra) onSubmitWithExtra({ attachments })
-            else onSubmit()
-            setAttachments([])
-            collapseIfNeeded()
-          }}
-          disabled={!canSubmit}
-        >{mode === 'edit' ? 'Update' : mode === 'reply' ? 'Reply' : 'Create'}</button>
+        <button className="button" onClick={submit} disabled={!canSubmit}>{submitLabel}</button>
       </div>
+      <FullscreenNoteEditor
+        open={fullscreen}
+        onOpenChange={(o) => { setFullscreen(o); if (!o) requestAnimationFrame(() => textRef.current?.focus()) }}
+        title={mode === 'edit' ? 'Edit note' : mode === 'reply' ? 'Reply' : 'New note'}
+        initialText={value.text}
+        onTextChange={text => onChange({ ...valueRef.current, text })}
+        onSubmit={submit}
+        submitLabel={submitLabel}
+        canSubmit={canSubmit}
+        onPickImage={() => fileInputRef.current?.click()}
+        imagesDisabled={maxReached}
+        placeholder={mode === 'reply' ? 'Reply…' : 'Write a note… Type "[ ] " for a checklist, "# " for a heading'}
+        // Paste/drop of images inside the dialog bubbles (through the React portal) to this editor's handlers.
+        footer={<div className="fse-meta">{tagsInput}{thumbnails}</div>}
+      />
     </div>
   )
 } 

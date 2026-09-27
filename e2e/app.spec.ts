@@ -308,3 +308,63 @@ test.describe('custom server with e-mail accounts', () => {
     await expect(page.getByRole('button', { name: /Sync status/ })).toBeVisible({ timeout: 20000 })
   })
 })
+
+test.describe('full-screen editor', () => {
+  test('write a checklist note with formatting, tick items in the feed', async ({ page }) => {
+    await page.goto('/')
+    const s = await seed(API)
+    await signIn(page, s.token)
+    await page.getByRole('button', { name: 'Add note…' }).click()
+    await page.getByRole('button', { name: 'Open full-screen editor' }).click()
+    const editor = page.getByRole('textbox', { name: 'Note text' })
+    await expect(editor).toBeFocused()
+
+    // Heading via the Aa menu, then a checklist via the "[ ] " shortcut and bold via Ctrl+B.
+    await page.getByRole('button', { name: 'Text style' }).click()
+    await page.getByRole('menuitem', { name: /Heading/ }).hover()
+    await page.getByRole('menuitem', { name: /Heading 2/ }).click()
+    await page.keyboard.type('Weekend trip')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('[ ] ')
+    await page.keyboard.type('tickets')
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('ControlOrMeta+b')
+    await page.keyboard.type('passport')
+    await page.keyboard.press('ControlOrMeta+b')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('charger')
+    await shot(page, '22-fullscreen-editor')
+    await page.keyboard.press('ControlOrMeta+Enter')
+
+    const card = page.locator('li', { hasText: 'Weekend trip' }).first()
+    await expect(card.getByRole('heading', { name: 'Weekend trip' })).toBeVisible()
+    const boxes = card.locator('input.note-task-box')
+    await expect(boxes).toHaveCount(3)
+    await expect(card.locator('strong', { hasText: 'passport' })).toBeVisible()
+    await boxes.nth(1).click()
+    await expect(boxes.nth(1)).toBeChecked()
+    await shot(page, '23-checklist-card')
+
+    const token = s.token
+    await expect.poll(async () => {
+      const res = await fetch(`${API}/sync?since=1970-01-01T00:00:00Z`, { headers: { Authorization: `Bearer ${token}` } })
+      const note = ((await res.json()).data.notes ?? []).find((n: any) => n.text.startsWith('## Weekend trip'))
+      return note?.text
+    }, { timeout: 20000 }).toBe('## Weekend trip\n\n- [ ] tickets\n- [x] **passport**\n- [ ] charger')
+  })
+
+  test('opening an old plain-text note in the editor does not change it', async ({ page }) => {
+    await page.goto('/')
+    const s = await seed(API)
+    await signIn(page, s.token)
+    const card = page.locator('li', { hasText: 'Купить: молоко' })
+    await card.hover()
+    await card.getByRole('button', { name: 'Open actions' }).click()
+    await page.getByRole('menuitem', { name: 'Edit' }).click()
+    await page.getByRole('button', { name: 'Open full-screen editor' }).click()
+    await expect(page.getByRole('textbox', { name: 'Note text' })).toContainText('Купить: молоко')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('textbox', { name: 'Note text' })).toHaveCount(0)
+    await expect(page.locator('textarea').first()).toHaveValue('Купить: молоко, хлеб, кофе в зёрнах, батарейки AA.')
+  })
+})
