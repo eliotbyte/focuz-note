@@ -57,7 +57,7 @@ function TopBar({
   onOpenSpace: (localSpaceId: number) => void
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[304px_minmax(0,1fr)_auto] xl:grid-cols-[324px_minmax(0,1fr)_auto] gap-3 md:gap-6 items-center">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[304px_minmax(0,620px)] xl:grid-cols-[324px_620px] md:justify-center gap-3 md:gap-6 items-center">
       <div className="flex items-center gap-3 min-w-0">
         {isThread ? (
           <button className="icon-btn icon-35" onClick={onBack} type="button" aria-label="Back">
@@ -76,7 +76,6 @@ function TopBar({
           </button>
         ) : <h1 className="text-title text-primary md:hidden">focuz</h1>}
       </div>
-      <div className="hidden md:block" />
       <div className="flex items-center justify-end gap-2">
         <SystemStatusInline />
         <NotificationsBell onOpenSpace={onOpenSpace} />
@@ -1174,7 +1173,7 @@ function App() {
         }}
       >
         <div className="mx-auto max-w-[1440px] px-4 md:px-6">
-          <div className="grid grid-cols-1 md:grid-cols-[304px_minmax(0,1fr)] xl:grid-cols-[324px_minmax(0,1fr)] gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-[304px_minmax(0,620px)] xl:grid-cols-[324px_620px] md:justify-center gap-6">
             <aside
               className="hidden md:block py-4 self-start"
               style={{
@@ -1191,7 +1190,7 @@ function App() {
               </div>
             </aside>
 
-            <main className="min-w-0 py-4 w-full max-w-[880px] mx-auto">
+            <main className="min-w-0 py-4 w-full">
               {center}
               {/* Spacer below feed equals topbar height */}
               <div style={{ height: 'var(--topbar-h, 96px)' }} />
