@@ -6,6 +6,8 @@ import (
 	"focuz-api/initializers"
 	"focuz-api/middleware"
 	"focuz-api/pkg/appenv"
+	"focuz-api/pkg/authcfg"
+	"focuz-api/pkg/mailer"
 	"focuz-api/pkg/notify"
 	"focuz-api/repository"
 	"focuz-api/websocket"
@@ -156,13 +158,28 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	authConfig, err := authcfg.FromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	mail, err := mailer.FromEnv()
+	if err != nil {
+		log.Fatal("Mail configuration: ", err)
+	}
+	log.Printf("Accounts: mode=%s registration=%v mail=%s", authConfig.Mode, authConfig.RegistrationOpen, mail.Describe())
+	if authConfig.Mode == authcfg.ModeEmail && authConfig.PublicAPIURL == "" {
+		log.Printf("PUBLIC_API_URL is not set: confirmation emails will contain the code only, without a link")
+	}
+	authHandler := handlers.NewAuthHandler(repository.NewUsersRepository(db), authConfig, mail, jwtSecret)
+
+	r.GET("/auth/config", authHandler.Config)
 	// Public endpoints with stricter auth rate limit
 	authPublic := r.Group("/", middleware.RateLimitAuthMiddleware())
-	authPublic.POST("/register", notesHandler.Register)
-	authPublic.POST("/login", func(c *gin.Context) {
-		c.Set("jwtSecret", jwtSecret)
-		notesHandler.Login(c)
-	})
+	authPublic.POST("/register", authHandler.Register)
+	authPublic.POST("/login", authHandler.Login)
+	authPublic.POST("/auth/verify-email", authHandler.VerifyEmail)
+	authPublic.POST("/auth/resend-verification", authHandler.ResendVerification)
+	authPublic.GET("/auth/verify", authHandler.VerifyEmailLink)
 
 	auth := r.Group("/", handlers.AuthMiddleware(jwtSecret))
 	{
@@ -227,7 +244,11 @@ func main() {
 		auth.GET("/spaces/:spaceId/filters", syncHandler.GetFiltersBySpace)
 	}
 
-	r.Run(":8080")
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "8080"
+	}
+	r.Run(":" + port)
 }
 
 func parseIntEnv(name string, def int) int {

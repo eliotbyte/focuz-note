@@ -100,7 +100,8 @@ var upgrader = websocket.Upgrader{
 			}
 			origin := r.Header.Get("Origin")
 			_, ok := allowed[origin]
-			return ok
+			_, any := allowed["*"]
+			return ok || any
 		}
 		return true
 	},

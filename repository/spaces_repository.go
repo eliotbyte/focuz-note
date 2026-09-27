@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"focuz-api/models"
+	"strings"
 	"time"
 )
 
@@ -302,8 +303,10 @@ func (r *SpacesRepository) GetUserByUsername(username string) (*models.User, err
 	err := r.db.QueryRow(`
 		SELECT id, username, password_hash, created_at
 		FROM users
-		WHERE username = $1
-	`, username).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt)
+		WHERE username = LOWER($1) OR (LOWER(email) = LOWER($1) AND email_verified_at IS NOT NULL)
+		ORDER BY (username = LOWER($1)) DESC
+		LIMIT 1
+	`, strings.TrimSpace(username)).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

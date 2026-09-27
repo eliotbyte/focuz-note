@@ -56,7 +56,10 @@ func CORSMiddleware() gin.HandlerFunc {
 		// Production: reflect only allowed origins
 		if origin != "" {
 			if allowedOrigins != nil {
-				if _, ok := allowedOrigins[origin]; ok {
+				// "*" lets any web app (e.g. one hosted elsewhere, pointed at this server by the user)
+				// call the API. Safe here because auth is a bearer token, never a cookie.
+				_, any := allowedOrigins["*"]
+				if _, ok := allowedOrigins[origin]; ok || (any && !allowCredentials) {
 					c.Header("Access-Control-Allow-Origin", origin)
 					c.Header("Access-Control-Allow-Methods", allowedMethods)
 					c.Header("Access-Control-Allow-Headers", allowedHeaders)
