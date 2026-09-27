@@ -1570,3 +1570,15 @@ button:disabled { cursor: not-allowed; }
 }
 .space-rail-btn.space-rail-add > * { width: auto !important; height: auto !important; border-radius: 0 !important; overflow: visible; }
 .space-rail-btn.space-rail-add:hover { color: rgb(var(--c-accent)); box-shadow: var(--shadow-raised-hover); }
+.avatar-has-img { background: none !important; overflow: hidden; }
+.avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
+.image-editor { padding: 0 !important; width: min(96vw, 40rem) !important; display: flex; flex-direction: column; gap: 12px; }
+.image-editor-stage { position: relative; height: min(56vh, 420px); margin: 0 20px; border-radius: 12px; overflow: hidden; background: #111; box-shadow: var(--shadow-field); }
+.image-editor-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0 20px; }
+.image-editor-zoom { accent-color: rgb(var(--c-accent)); }
+.filter-btn[aria-pressed='true'] { color: rgb(var(--c-accent)); }
+.filter-chip-select { height: 28px; padding: 0 12px; border-radius: 999px; font-size: 13px; color: var(--text-muted); background: var(--raised-bg); box-shadow: var(--shadow-raised); }
+.filter-chip-select[aria-checked='true'] { color: #fff; background: rgb(var(--c-accent)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 6px -2px rgb(var(--c-accent) / 0.6); }
+.picture-field { display: flex; align-items: center; gap: 14px; }
+.picture-field-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.thumb-edit { position: absolute; left: 2px; bottom: 2px; width: 20px; height: 20px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; color: #fff; background: rgba(0, 0, 0, 0.6); }

@@ -42,6 +42,7 @@
     "markdown-it": "^15.0.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-easy-crop": "^5.5.7",
     "sonner": "^2.0.7"
   },
   "devDependencies": {

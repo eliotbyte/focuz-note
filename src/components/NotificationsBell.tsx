@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
-import { Avatar } from './ui/avatar'
+import { PersonAvatar } from './ui/avatar'
 import { getKV } from '../lib/db'
 import {
   acceptInvitation, declineInvitation, errorText, fetchNotifications, markNotificationsRead, NOTIFICATIONS_KV, type AppNotification,
@@ -123,7 +123,7 @@ export default function NotificationsBell({ onOpenSpace }: { onOpenSpace: (local
               const pendingInvite = n.type === 'space_invitation' && !n.isRead
               return (
                 <li key={n.id} className={`bell-item ${n.isRead ? '' : 'is-unread'}`}>
-                  <Avatar name={d.who || '?'} size={30} />
+                  <PersonAvatar name={d.who || '?'} size={30} />
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="text-[13.5px] leading-snug">{d.text}</div>
                     <div className="text-[11.5px] text-secondary">{formatAgo(n.createdAt)}</div>

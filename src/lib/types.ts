@@ -14,6 +14,8 @@ export interface SpaceRecord {
   /** The private space created at sign-up; it can't be shared. */
   isPersonal?: boolean
   memberCount?: number
+  /** Changes when the space picture changes; 0 or missing = no picture. */
+  iconVersion?: number
   createdAt: string
   modifiedAt: string
   deletedAt?: string | null
@@ -54,6 +56,8 @@ export interface SpaceMember {
   userId: number
   username: string
   role: SpaceRole
+  /** 0 = no picture */
+  avatarVersion?: number
 }
 
 /** An active public link; noteId null = the whole space. Ids are server ids. */

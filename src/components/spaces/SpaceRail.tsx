@@ -2,6 +2,22 @@ import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import type { SpaceRecord } from '../../lib/types'
 import { Avatar } from '../ui/avatar'
+import { useMe } from '../../lib/useSpaces'
+import { avatarPath, spaceIconPath, usePicture } from '../../lib/pictures'
+
+/** The personal space shows your own picture, or a person when you have none. */
+function PersonalTile() {
+  const me = useMe(false)
+  const src = usePicture(me ? avatarPath(me.id) : null, me?.avatarVersion)
+  return src
+    ? <span className="space-rail-personal"><img src={src} alt="" className="space-rail-img" draggable={false} /></span>
+    : <span className="space-rail-personal"><PersonRoundedIcon fontSize="inherit" /></span>
+}
+
+function SpaceTile({ space }: { space: SpaceRecord }) {
+  const src = usePicture(space.serverId ? spaceIconPath(space.serverId) : null, space.iconVersion)
+  return <Avatar name={space.name} size={44} shape="square" className="space-rail-avatar" src={src} />
+}
 
 /** Discord-like column of spaces: the personal one on top, shared spaces below, "+" to create. */
 export default function SpaceRail({ spaces, currentId, onSelect, onCreate }: {
@@ -26,9 +42,7 @@ export default function SpaceRail({ spaces, currentId, onSelect, onCreate }: {
           title={label}
           onClick={() => onSelect(s.id!)}
         >
-          {s.isPersonal
-            ? <span className="space-rail-personal"><PersonRoundedIcon fontSize="inherit" /></span>
-            : <Avatar name={s.name} size={44} shape="square" className="space-rail-avatar" />}
+          {s.isPersonal ? <PersonalTile /> : <SpaceTile space={s} />}
         </button>
       </li>
     )

@@ -20,6 +20,7 @@ import { canDeleteNote, canEditNotes, canWrite } from '../lib/roles'
 import { useNotePublicState } from '../lib/useSpaces'
 import NoteShareDialog from './NoteShareDialog'
 import NoteDetailsDialog from './NoteDetailsDialog'
+import { PersonAvatar } from './ui/avatar'
 
 export default function NoteCard({
   note,
@@ -160,7 +161,7 @@ export default function NoteCard({
           </div>
 
           <div className="note-footer flex items-baseline gap-2 text-secondary min-w-0" title={formatExactDateTime(note.createdAt) + (editedBy ? ` · edited by ${editedBy}` : '')}>
-            {author && <span className="truncate">{author}</span>}
+            {author && <span className="inline-flex items-center gap-1.5 min-w-0 self-center"><PersonAvatar userId={note.authorId ?? view.meId} name={author} size={16} /><span className="truncate">{author}</span></span>}
             {author && <span aria-hidden style={{ fontWeight: 700 }}>·</span>}
             <span>{formatRelativeShort(note.createdAt)}</span>
             {editedBy && <span className="truncate hidden sm:inline">· edited by {editedBy}</span>}

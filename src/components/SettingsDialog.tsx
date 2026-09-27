@@ -7,6 +7,8 @@ import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Avatar } from './ui/avatar'
 import { useMe } from '../lib/useSpaces'
+import { avatarPath, setMyAvatar, usePicture } from '../lib/pictures'
+import PictureField from './PictureField'
 import { changePassword, errorText, updateMe } from '../lib/spaces-api'
 import { getThemePreference, setThemePreference, type ThemePreference } from '../lib/theme'
 import { getServer, serverLabel } from '../lib/server'
@@ -52,6 +54,7 @@ export default function SettingsDialog({ open, onOpenChange, onLogout }: { open:
 
 function AccountTab({ onLogout }: { onLogout: () => void }) {
   const me = useMe()
+  const avatar = usePicture(me ? avatarPath(me.id) : null, me?.avatarVersion)
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [repeat, setRepeat] = useState('')
@@ -71,12 +74,22 @@ function AccountTab({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Avatar name={me?.username ?? '?'} size={44} />
+        <Avatar name={me?.username ?? '?'} size={44} src={avatar} />
         <div className="min-w-0">
           <div className="font-semibold truncate">{me?.username ?? '…'}</div>
           <div className="text-sm text-secondary truncate">{me?.email ?? 'Signed in with a username'}</div>
         </div>
       </div>
+      {me && (
+        <PictureField
+          label="Your picture"
+          name={me.username}
+          round
+          src={avatar}
+          onSave={blob => setMyAvatar(blob)}
+          onRemove={() => setMyAvatar(null)}
+        />
+      )}
       <form className="space-y-2 max-w-sm" onSubmit={e => { e.preventDefault(); void submit() }}>
         <div className="settings-label">Change password</div>
         <input className="input" type="password" autoComplete="current-password" placeholder="Current password" aria-label="Current password" value={current} onChange={e => setCurrent(e.target.value)} />

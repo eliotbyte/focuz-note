@@ -4,7 +4,9 @@ import PublicRoundedIcon from '@mui/icons-material/PublicRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
-import { Avatar } from '../ui/avatar'
+import { PersonAvatar } from '../ui/avatar'
+import PictureField from '../PictureField'
+import { setSpaceIcon, spaceIconPath, usePicture } from '../../lib/pictures'
 import { db } from '../../lib/db'
 import type { SpaceRecord, SpaceRole } from '../../lib/types'
 import { assignableRoles, canManage, canRemoveMember, roleOf, ROLE_HINT, ROLE_LABEL } from '../../lib/roles'
@@ -62,6 +64,7 @@ function GeneralTab({ space, role, onGone }: { space: SpaceRecord; role: SpaceRo
   const [confirm, setConfirm] = useState<'leave' | 'delete' | null>(null)
   const [typed, setTyped] = useState('')
   const editable = canManage(role)
+  const icon = usePicture(space.serverId ? spaceIconPath(space.serverId) : null, space.iconVersion)
 
   async function save() {
     if (!name.trim() || name.trim() === space.name) return
@@ -87,6 +90,15 @@ function GeneralTab({ space, role, onGone }: { space: SpaceRecord; role: SpaceRo
           {editable && <button type="submit" className="button" disabled={busy || !name.trim() || name.trim() === space.name}>Save</button>}
         </div>
       </form>
+      {!space.isPersonal && editable && (
+        <PictureField
+          label="Space picture"
+          name={space.name}
+          src={icon}
+          onSave={blob => setSpaceIcon(space.id!, blob)}
+          onRemove={() => setSpaceIcon(space.id!, null)}
+        />
+      )}
       <div className="settings-note">
         {space.isPersonal
           ? 'Your personal space. Only you can see it, and it can’t be shared. To work with others, create a shared space with the “+” on the left. Single notes from here can still be published.'
@@ -194,7 +206,7 @@ function MembersTab({ space, role }: { space: SpaceRecord; role: SpaceRole }) {
             const options = isMe ? [] : assignableRoles(role, m.role)
             return (
               <li key={m.userId} className="member-row">
-                <Avatar name={m.username} size={30} />
+                <PersonAvatar userId={m.userId} name={m.username} size={30} />
                 <span className="flex-1 min-w-0 truncate">{m.username}{isMe && <span className="text-secondary"> · you</span>}</span>
                 {options.length > 0
                   ? <RoleSelect label={`Role of ${m.username}`} value={m.role} options={options} onChange={r => { setMemberRole(space.id!, m.userId, r).catch(e => notify(errorText(e), 'error')) }} />

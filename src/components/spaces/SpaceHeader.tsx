@@ -4,7 +4,7 @@ import type { SpaceRecord } from '../../lib/types'
 import { canManage, roleOf, ROLE_LABEL } from '../../lib/roles'
 import { useMembers, useShares } from '../../lib/useSpaces'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../ui/dropdown-menu'
-import { Avatar } from '../ui/avatar'
+import { PersonAvatar } from '../ui/avatar'
 import type { SpaceSettingsTab } from './SpaceSettingsDialog'
 
 /** Name of the open space with its menu, and who is in it. */
@@ -56,7 +56,7 @@ export default function SpaceHeader({ space, onOpen, onCreateShared }: {
       {!space.isPersonal && shown.length > 0 && (
         <button type="button" className="space-members" onClick={() => onOpen('members')} aria-label={`Members: ${members.map(m => m.username).join(', ')}`}>
           <span className="flex -space-x-1.5">
-            {shown.map(m => <Avatar key={m.userId} name={m.username} size={22} className="ring-2 ring-[rgb(var(--c-surface))]" title={m.username} />)}
+            {shown.map(m => <PersonAvatar key={m.userId} userId={m.userId} name={m.username} size={22} className="ring-2 ring-[rgb(var(--c-surface))]" title={m.username} />)}
           </span>
           {members.length > shown.length && <span className="text-[11.5px] text-secondary">+{members.length - shown.length}</span>}
         </button>

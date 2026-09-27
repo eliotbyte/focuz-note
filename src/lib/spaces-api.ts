@@ -29,6 +29,7 @@ export interface Me {
   notifyEmail: boolean
   emailNotificationsAvailable: boolean
   authMode: 'username' | 'email'
+  avatarVersion?: number
 }
 
 export const ME_KV = 'me'

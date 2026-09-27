@@ -310,7 +310,7 @@ async function applyMemberships(data: any): Promise<number[]> {
     for (const m of data.memberships as any[]) {
       serverIds.add(m.space_id)
       const existing = await db.spaces.where('serverId').equals(m.space_id).first()
-      const patch = { name: m.name, role: m.role as SpaceRole, isPersonal: !!m.is_personal, memberCount: Number(m.member_count) || 1 }
+      const patch = { name: m.name, role: m.role as SpaceRole, isPersonal: !!m.is_personal, memberCount: Number(m.member_count) || 1, iconVersion: Number(m.icon_version) || 0 }
       if (existing) {
         if (existing.deletedAt) joined.push(m.space_id)
         await db.spaces.update(existing.id!, { ...patch, deletedAt: null })
@@ -324,7 +324,7 @@ async function applyMemberships(data: any): Promise<number[]> {
   const lost = (await db.spaces.toArray()).filter(s => s.serverId != null && !serverIds.has(s.serverId) && !s.deletedAt)
   for (const s of lost) await dropSpaceLocally(s.id!)
 
-  const members: SpaceMember[] = (data.members ?? []).map((m: any) => ({ spaceId: m.space_id, userId: m.user_id, username: m.username, role: m.role }))
+  const members: SpaceMember[] = (data.members ?? []).map((m: any) => ({ spaceId: m.space_id, userId: m.user_id, username: m.username, role: m.role, avatarVersion: Number(m.avatar_version) || 0 }))
   const shares: PublicShare[] = (data.shares ?? []).map((x: any) => ({
     token: x.token, spaceId: x.space_id, noteId: x.note_id ?? null, includeReplies: !!x.include_replies, createdBy: x.created_by, createdAt: x.created_at,
   }))

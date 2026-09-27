@@ -13,6 +13,8 @@ import { notify } from '../ui/notify'
 import { filesFromDataTransfer, hasFiles, isImageFile } from '../lib/clipboard'
 import FullscreenNoteEditor from './FullscreenNoteEditor'
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import ImageEditorDialog from './ImageEditorDialog'
 
 const MAX_ATTACHMENTS = 10
 
@@ -55,6 +57,7 @@ export default function NoteEditor({
   const textRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [attachments, setAttachments] = useState<File[]>([])
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const allowActivitiesInline = mode === 'edit' ? true : featureFlags.noteCreateAddActivity
   const allowActivitiesInAddMenu = mode === 'edit' ? featureFlags.noteCreateAddActivity : allowActivitiesInline
   const [activities, setActivities] = useState<ActivityDraft[]>(allowActivitiesInline ? (value.activities || []) : [])
@@ -257,6 +260,13 @@ export default function NoteEditor({
                 <BlobImg blob={file} className="w-full h-full object-cover" alt="attachment" />
                 <button
                   type="button"
+                  className="thumb-edit"
+                  onClick={() => setEditingIdx(idx)}
+                  aria-label={`Edit image ${idx + 1}`}
+                  title="Crop, rotate, flip"
+                ><EditRoundedIcon fontSize="inherit" /></button>
+                <button
+                  type="button"
                   className="absolute -top-1 -right-1 bg-neutral-900/80 hover:bg-neutral-800 text-neutral-100 rounded-full w-5 h-5 text-xs"
                   onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
                   aria-label="Remove attachment"
@@ -364,6 +374,19 @@ export default function NoteEditor({
         // Paste/drop of images inside the dialog bubbles (through the React portal) to this editor's handlers.
         footer={<div className="fse-meta">{tagsInput}{thumbnails}</div>}
       />
+      {editingIdx != null && attachments[editingIdx] && (
+        <ImageEditorDialog
+          image={attachments[editingIdx]}
+          title="Edit image"
+          saveLabel="Apply"
+          onCancel={() => setEditingIdx(null)}
+          onSave={blob => {
+            const i = editingIdx
+            setAttachments(prev => prev.map((f, k) => k === i ? new File([blob], f.name.replace(/\.[^.]+$/, '') + '.webp', { type: blob.type || 'image/webp' }) : f))
+            setEditingIdx(null)
+          }}
+        />
+      )}
     </div>
   )
 } 
