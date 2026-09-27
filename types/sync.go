@@ -31,6 +31,10 @@ type NoteChange struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	ModifiedAt time.Time  `json:"modified_at"`
 	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
+	// BaseModifiedAt is the server modified_at the client based its edit on (push only).
+	// When present, conflicts are detected by comparing it with the current server version
+	// instead of comparing client and server clocks.
+	BaseModifiedAt *time.Time `json:"base_modified_at,omitempty"`
 	// Activities and attachments are included for pull; for push, clients may include only id, file_name, modified_at, is_deleted for attachments
 	Activities  []ActivityChange   `json:"activities"`
 	Attachments []AttachmentChange `json:"attachments"`
@@ -58,6 +62,8 @@ type FilterChange struct {
 	CreatedAt  time.Time   `json:"created_at"`
 	ModifiedAt time.Time   `json:"modified_at"`
 	DeletedAt  *time.Time  `json:"deleted_at,omitempty"`
+	// BaseModifiedAt: see NoteChange.BaseModifiedAt (push only).
+	BaseModifiedAt *time.Time `json:"base_modified_at,omitempty"`
 }
 
 type ChartChange struct {
@@ -137,9 +143,18 @@ type Mapping struct {
 	ServerID int    `json:"serverId"`
 }
 
+// Version reports the server modified_at of a resource after it was written by a push,
+// so clients can use it as the base for their next edit.
+type Version struct {
+	Resource   string    `json:"resource"`
+	ID         int       `json:"id"`
+	ModifiedAt time.Time `json:"modified_at"`
+}
+
 // SyncPushResponse acknowledges applied changes and conflicts.
 type SyncPushResponse struct {
 	Applied   int        `json:"applied"`
 	Conflicts []Conflict `json:"conflicts"`
 	Mappings  []Mapping  `json:"mappings"`
+	Versions  []Version  `json:"versions"`
 }

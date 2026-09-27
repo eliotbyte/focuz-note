@@ -110,8 +110,9 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 		return
 	}
 
-	// Touch note.modified_at to reflect attachment change
-	_ = h.notesRepo.TouchNoteModified(noteID)
+	// Note: note.modified_at is intentionally not touched here. GET /sync already returns notes whose
+	// attachments changed, and bumping the note version would make the uploading client's next
+	// edit of that note look like a concurrent change (sync conflict).
 
 	c.JSON(http.StatusCreated, types.NewSuccessResponse(map[string]interface{}{
 		"attachment_id": attachmentID,
@@ -152,37 +153,47 @@ func (h *AttachmentsHandler) uploadFileToMinIO(file *multipart.FileHeader, noteI
 	return attachmentID, nil
 }
 
-func (h *AttachmentsHandler) GetFile(c *gin.Context) {
+// authorizedAttachment loads the attachment and checks that the user can access its note.
+// It writes the error response and returns nil when access is not possible.
+func (h *AttachmentsHandler) authorizedAttachment(c *gin.Context) *repository.Attachment {
 	userID := c.GetInt("userId")
 	attID := c.Param("id")
 	if attID == "" {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "attachment id is required"))
-		return
+		return nil
 	}
 
 	att, err := h.attachmentsRepo.GetAttachmentByID(attID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
-		return
+		return nil
 	}
 	if att == nil {
 		c.JSON(http.StatusNotFound, types.NewErrorResponse(types.ErrorCodeNotFound, "attachment not found"))
-		return
+		return nil
 	}
 
 	note, err := h.notesRepo.GetNoteByID(att.NoteID)
 	if err != nil || note == nil || note.IsDeleted {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "no access"))
-		return
+		return nil
 	}
 
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, note.SpaceID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
-		return
+		return nil
 	}
 	if roleID == 0 {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "no access"))
+		return nil
+	}
+	return att
+}
+
+func (h *AttachmentsHandler) GetFile(c *gin.Context) {
+	att := h.authorizedAttachment(c)
+	if att == nil {
 		return
 	}
 
@@ -195,4 +206,35 @@ func (h *AttachmentsHandler) GetFile(c *gin.Context) {
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{
 		"url": url,
 	}))
+}
+
+// GetFileContent streams the attachment bytes through the API.
+// Unlike the presigned URL from GetFile it does not depend on MINIO_EXTERNAL_ENDPOINT being
+// reachable from the client (e.g. a phone on the LAN cannot reach "localhost:9000").
+func (h *AttachmentsHandler) GetFileContent(c *gin.Context) {
+	att := h.authorizedAttachment(c)
+	if att == nil {
+		return
+	}
+	obj, err := initializers.MinioClient.GetObject(c.Request.Context(), initializers.Conf.Bucket, att.ID, minio.GetObjectOptions{})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, types.NewErrorResponse(types.ErrorCodeInternal, "storage unavailable"))
+		return
+	}
+	defer obj.Close()
+	info, err := obj.Stat()
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			c.JSON(http.StatusNotFound, types.NewErrorResponse(types.ErrorCodeNotFound, "file content not found"))
+			return
+		}
+		c.JSON(http.StatusBadGateway, types.NewErrorResponse(types.ErrorCodeInternal, "storage unavailable"))
+		return
+	}
+	contentType := info.ContentType
+	if contentType == "" {
+		contentType = att.FileType
+	}
+	c.Header("Cache-Control", "private, max-age=31536000, immutable")
+	c.DataFromReader(http.StatusOK, info.Size, contentType, obj, nil)
 }

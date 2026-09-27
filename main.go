@@ -198,6 +198,7 @@ func main() {
 
 		auth.POST("/upload", attachmentsHandler.UploadFile)
 		auth.GET("/files/:id", attachmentsHandler.GetFile)
+		auth.GET("/files/:id/content", attachmentsHandler.GetFileContent)
 		auth.GET("/notifications/unread", notificationsHandler.ListUnread)
 		auth.POST("/notifications/mark-read", notificationsHandler.MarkRead)
 
