@@ -20,7 +20,16 @@ export function defaultServer(): string | undefined {
   return v ? v.replace(/\/+$/, '') : undefined
 }
 
+/**
+ * Whether people may point this web app at another server. Operators who host the app for their
+ * own server only build it with VITE_ALLOW_CUSTOM_SERVER=false.
+ */
+export function customServerAllowed(): boolean {
+  return String(import.meta.env.VITE_ALLOW_CUSTOM_SERVER ?? 'true').trim().toLowerCase() !== 'false'
+}
+
 export function getServer(): string | undefined {
+  if (!customServerAllowed()) return defaultServer()
   try {
     const v = localStorage.getItem(SERVER_LS)
     if (v) return v
@@ -37,6 +46,7 @@ export function setServer(url: string | null) {
 }
 
 export function isCustomServer(): boolean {
+  if (!customServerAllowed()) return false
   try { return !!localStorage.getItem(SERVER_LS) } catch { return false }
 }
 

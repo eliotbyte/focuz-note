@@ -10,6 +10,8 @@ Frontend for **focuz-note** (local-first notes).
 Vite env variables:
 - `VITE_API_BASE_URL`: API base URL (e.g. `http://localhost:8080`)
 - `VITE_APP_ENV`: runtime environment (`production` | `test`)
+- `VITE_ALLOW_CUSTOM_SERVER`: `true` (default) lets people pick another focuz server on the sign-in
+  screen; `false` locks this web app to `VITE_API_BASE_URL`
 
 ## Run (via Docker Compose)
 

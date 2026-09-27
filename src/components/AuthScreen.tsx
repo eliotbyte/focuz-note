@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ensureDefaultSpace, getLastUsername, login, register, resendVerification, runSync, verifyEmail } from '../lib/sync'
-import { cachedServerConfig, DEFAULT_SERVER_CONFIG, defaultServer, getServer, isCustomServer, normalizeServerUrl, probeServer, rememberServerConfig, serverLabel, setServer, type ServerConfig } from '../lib/server'
+import { cachedServerConfig, customServerAllowed, DEFAULT_SERVER_CONFIG, defaultServer, getServer, isCustomServer, normalizeServerUrl, probeServer, rememberServerConfig, serverLabel, setServer, type ServerConfig } from '../lib/server'
 import { describeAuthError, looksLikeEmail, passwordChecks, validateAuthForm, type AuthField, type AuthMode, type LoginKind } from '../lib/auth-form'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded'
@@ -136,7 +136,8 @@ export function AuthForm({ onDone }: { onDone: () => void }) {
   const [server, setServerState] = useState<string | undefined>(() => getServer())
   const [config, setConfig] = useState<ServerConfig>(() => cachedServerConfig() ?? DEFAULT_SERVER_CONFIG)
   const [configError, setConfigError] = useState<string | null>(null)
-  const [step, setStep] = useState<'form' | 'verify' | 'server'>(() => (getServer() ? 'form' : 'server'))
+  const canChooseServer = customServerAllowed()
+  const [step, setStep] = useState<'form' | 'verify' | 'server'>(() => (getServer() || !canChooseServer ? 'form' : 'server'))
   const [verifyEmailAddr, setVerifyEmailAddr] = useState('')
 
   // Read how accounts work on the selected server (username or e-mail, registration open).
@@ -152,7 +153,17 @@ export function AuthForm({ onDone }: { onDone: () => void }) {
     return () => { cancelled = true }
   }, [server])
 
-  if (step === 'server') {
+  if (!server && !canChooseServer) {
+    return (
+      <div className="auth-form-wrap">
+        <header className="auth-heading">
+          <h1>No server configured</h1>
+          <p>This copy of focuz was built without a server address. Ask whoever hosts it to set VITE_API_BASE_URL.</p>
+        </header>
+      </div>
+    )
+  }
+  if (step === 'server' && canChooseServer) {
     return (
       <ServerPanel
         current={server}
@@ -176,7 +187,7 @@ export function AuthForm({ onDone }: { onDone: () => void }) {
       config={config}
       server={server}
       serverError={configError}
-      onChangeServer={() => setStep('server')}
+      onChangeServer={canChooseServer ? () => setStep('server') : undefined}
       onNeedsVerification={(email) => { setVerifyEmailAddr(email); setStep('verify') }}
       onDone={onDone}
     />
@@ -189,7 +200,7 @@ function CredentialsForm({
   config: ServerConfig
   server: string | undefined
   serverError: string | null
-  onChangeServer: () => void
+  onChangeServer?: () => void
   onNeedsVerification: (email: string) => void
   onDone: () => void
 }) {
@@ -305,7 +316,7 @@ function CredentialsForm({
       {online && serverProbeError && (
         <div className="auth-banner is-error" role="status">
           <ErrorOutlineRoundedIcon fontSize="inherit" className="icon-sm" />
-          <span>{serverProbeError} <button type="button" className="link" onClick={onChangeServer}>Change server</button></span>
+          <span>{serverProbeError}{onChangeServer ? <> <button type="button" className="link" onClick={onChangeServer}>Change server</button></> : null}</span>
         </div>
       )}
 
@@ -396,12 +407,11 @@ function CredentialsForm({
 }
 
 /** Self-hosted app: which server the account lives on, and a way to pick another. */
-function ServerNote({ server, onChange }: { server: string | undefined; onChange: () => void }) {
+function ServerNote({ server, onChange }: { server: string | undefined; onChange?: () => void }) {
   return (
     <p className="auth-server">
       Server <span className="mono">{serverLabel(server) || 'not selected'}</span>
-      {' · '}
-      <button type="button" className="link" onClick={onChange}>Change</button>
+      {onChange ? <>{' · '}<button type="button" className="link" onClick={onChange}>Change</button></> : null}
     </p>
   )
 }
