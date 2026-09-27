@@ -9,6 +9,10 @@ import type { AttachmentRecord } from '../lib/types'
 import { activities as activitiesRepo, attachments as attachmentsRepo } from '../data'
 import { deleteLocalAttachment, reorderNoteAttachments } from '../lib/sync'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
+import { notify } from '../ui/notify'
+import { filesFromDataTransfer, hasFiles, isImageFile } from '../lib/clipboard'
+
+const MAX_ATTACHMENTS = 10
 
 export type NoteEditorMode = 'create' | 'edit' | 'reply'
 
@@ -61,7 +65,9 @@ export default function NoteEditor({
   }, [noteId, mode]) ?? []) as AttachmentRecord[]
 
   const canSubmit = useMemo(() => value.text.trim().length > 0, [value.text])
-  const maxReached = attachments.length >= 10
+  const maxReached = attachments.length >= MAX_ATTACHMENTS
+  const attachmentsCountRef = useRef(0)
+  attachmentsCountRef.current = attachments.length
 
   useEffect(() => {
     if (expanded) textRef.current?.focus()
@@ -98,6 +104,49 @@ export default function NoteEditor({
     }
   }, [mode, noteId, existingActivities])
 
+  // Stage images locally (compressed to WebP); the parent uploads them on submit.
+  async function addImageFiles(files: File[]) {
+    const images = files.filter(isImageFile)
+    if (images.length === 0) return
+    let added = 0
+    for (const f of images) {
+      if (attachmentsCountRef.current + added >= MAX_ATTACHMENTS) {
+        notify(`Up to ${MAX_ATTACHMENTS} images per note`, 'warning', { id: 'editor-max-images' })
+        break
+      }
+      try {
+        const dim = await getImageDimensions(f)
+        const check = validateImageGeometry(dim)
+        if (!check.ok) {
+          notify(`${f.name || 'Image'}: ${check.reason || 'invalid image'}`, 'warning')
+          continue
+        }
+        const res = await compressToWebP(f)
+        const out = new File([res.blob], res.fileName, { type: res.fileType })
+        added++
+        setAttachments(prev => prev.length >= MAX_ATTACHMENTS ? prev : [...prev, out])
+      } catch {
+        notify(`Could not read ${f.name || 'the image'}`, 'error')
+      }
+    }
+  }
+
+  function onPaste(e: React.ClipboardEvent) {
+    const files = filesFromDataTransfer(e.clipboardData)
+    if (files.length === 0) return
+    // Keep text paste working when the clipboard has both text and an image.
+    const text = e.clipboardData.getData('text/plain')
+    if (!text) e.preventDefault()
+    void addImageFiles(files)
+  }
+
+  function onDrop(e: React.DragEvent) {
+    const files = filesFromDataTransfer(e.dataTransfer)
+    if (files.length === 0) return
+    e.preventDefault()
+    void addImageFiles(files)
+  }
+
   function collapseIfNeeded() {
     if (autoCollapse && (mode === 'create' || mode === 'reply')) setExpanded(false)
   }
@@ -119,11 +168,16 @@ export default function NoteEditor({
   const containerClass = variant === 'card' ? 'card space-y-3' : 'space-y-3'
 
   return (
-    <div className={containerClass}>
+    <div
+      className={containerClass}
+      onPaste={onPaste}
+      onDragOver={e => { if (hasFiles(e.dataTransfer)) e.preventDefault() }}
+      onDrop={onDrop}
+    >
       <textarea
         ref={textRef}
-        className="input min-h-24 text-primary resize-none overflow-hidden"
-        placeholder={mode === 'reply' ? 'Reply…' : 'Add note…'}
+        className="input min-h-20 text-primary resize-none overflow-hidden"
+        placeholder={mode === 'reply' ? 'Reply…' : 'Add note… (paste or drop images here)'}
         value={value.text}
         onChange={e => onChange({ ...value, text: e.target.value })}
         onInput={e => autoResize(e.currentTarget)}
@@ -149,7 +203,7 @@ export default function NoteEditor({
           {existingAttachments.map((att, idx) => (
             <div
               key={att.id ?? idx}
-              className="relative w-16 h-16 rounded overflow-hidden bg-neutral-800"
+              className="relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800"
               draggable
               onDragStart={e => { e.dataTransfer.setData('text/plain', String(att.id)) }}
               onDrop={async e => {
@@ -190,7 +244,7 @@ export default function NoteEditor({
           {attachments.map((file, idx) => (
             <div
               key={`new-${idx}`}
-              className="relative w-16 h-16 rounded overflow-hidden bg-neutral-800"
+              className="relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800"
               draggable
               onDragStart={e => { e.dataTransfer.setData('text/plain', `new:${idx}`) }}
               onDrop={e => {
@@ -220,26 +274,10 @@ export default function NoteEditor({
           ))}
         </div>
       )}
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={async e => {
-        const f = e.target.files?.[0]
-        if (!f) return
-        if (maxReached) return
-        try {
-          const dim = await getImageDimensions(f)
-          const check = validateImageGeometry(dim)
-          if (!check.ok) {
-            alert(check.reason || 'Invalid image')
-            return
-          }
-          const res = await compressToWebP(f)
-          const out = new File([res.blob], res.fileName, { type: res.fileType })
-          // Stage locally; parent will handle upload on submit (create/edit/reply)
-          setAttachments(prev => prev.length >= 10 ? prev : [...prev, out])
-        } catch {
-          // ignore for now
-        } finally {
-          try { if (fileInputRef.current) fileInputRef.current.value = '' } catch {}
-        }
+      <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={async e => {
+        const files = Array.from(e.target.files ?? [])
+        try { if (fileInputRef.current) fileInputRef.current.value = '' } catch {}
+        await addImageFiles(files)
       }} />
       <div className="flex justify-end gap-2">
         <div className="flex-1">

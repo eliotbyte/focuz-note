@@ -127,7 +127,7 @@ export default function NoteImages({ noteId }: { noteId: number }) {
   return (
     <div>
       <div
-        className="grid gap-3"
+        className="grid gap-2"
         style={{
           gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
           gridTemplateRows: rowHeights.length ? rowHeights.map(h => `${Math.max(1, Math.round(h))}px`).join(' ') : undefined,
@@ -228,7 +228,7 @@ function Cell({ span, att, refEl, onOpen }: { span?: { col?: number; row?: numbe
   return (
     <div
       ref={ref}
-      className={['relative rounded-[15px] overflow-hidden', (att.data ? 'cursor-pointer hover:opacity-95' : '')].join(' ')}
+      className={['relative rounded-[var(--radius)] overflow-hidden', (att.data ? 'cursor-pointer hover:opacity-95' : '')].join(' ')}
       style={{
         ...style,
         background: 'rgb(var(--c-surface))',
@@ -247,7 +247,7 @@ function Cell({ span, att, refEl, onOpen }: { span?: { col?: number; row?: numbe
           draggable={false}
         />
       ) : (
-        <div className="w-full h-full min-h-[120px] flex items-center justify-center text-muted">Loading…</div>
+        <div className="w-full h-full min-h-[96px] flex items-center justify-center text-muted">Loading…</div>
       )}
     </div>
   )
