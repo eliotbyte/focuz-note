@@ -362,6 +362,20 @@ describe('attachment jobs', () => {
     expect(reordered.map(a => a.file_name)).toEqual(['c.webp', 'a.webp', 'b.webp'])
   })
 
+  it('does not re-send a note while its images wait for upload', async () => {
+    const space = await ensureDefaultSpace()
+    const id = await localNote(space, 'photo on its way')
+    await addLocalAttachment(id, new File([new Uint8Array([5, 5])], 'w.webp', { type: 'image/webp' }))
+    await runSync(true) // creates the note; the upload has not run
+    const sid = (await db.notes.get(id))!.serverId!
+    const version = server.notes.get(sid)!.modified_at
+    server.log.length = 0
+    await runSync(true)
+    await runSync(true)
+    expect(server.log.filter(l => l === 'POST /sync')).toHaveLength(0)
+    expect(server.notes.get(sid)!.modified_at).toBe(version)
+  })
+
   it('sends a reorder made while an image was still uploading', async () => {
     const space = await ensureDefaultSpace()
     const id = await localNote(space, 'two photos')

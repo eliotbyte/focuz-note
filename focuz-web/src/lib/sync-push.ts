@@ -99,7 +99,9 @@ export async function pushDirty(): Promise<PushResult> {
   const attachments = await db.attachments.where('isDirty').equals(1).toArray()
   const activities = await db.activities.where('isDirty').equals(1).toArray()
 
-  const attByNote = groupByNote<AttachmentRecord>(attachments)
+  // Images not uploaded yet travel with their file (upload job), not inside the note: counting
+  // them here would re-send an unchanged note on every sync for as long as the upload takes.
+  const attByNote = groupByNote<AttachmentRecord>(attachments.filter(a => !!a.serverId))
   const actByNote = groupByNote<ActivityRecord>(activities)
   const candidates = new Map<number, NoteRecord>()
   for (const n of dirtyNotes) candidates.set(n.id!, n)
@@ -131,7 +133,7 @@ export async function pushDirty(): Promise<PushResult> {
       date: n.date ?? n.createdAt,
       base_modified_at: n.serverId ? (n.serverModifiedAt ?? undefined) : undefined,
     }
-    const atts = (attByNote.get(n.id!) ?? []).filter(a => !!a.serverId)
+    const atts = attByNote.get(n.id!) ?? []
     if (atts.length > 0) {
       out.attachments = atts.map(a => ({ id: a.serverId as string, modified_at: a.modifiedAt, position: a.position ?? undefined, is_deleted: !!a.deletedAt }))
     }
