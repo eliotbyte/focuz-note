@@ -170,8 +170,9 @@ function SingleImage({ att, onOpen }: { att: AttachmentRecord; onOpen: () => voi
 }
 
 // Two or three pictures packed together: two side by side, or one across the top with two under it.
-// Each row is fitted to the width by the pictures' own proportions, so nothing is cropped unless
-// a row would come out too tall or too flat. Small pictures don't get blown up past their size.
+// The collage always spans the note; each row is shared out by the pictures' own proportions and
+// capped in height. A picture is never cropped or blown up past its size: whatever room is left
+// around it is filled with the picture itself, blurred and dimmed.
 function Collage({ attachments, onOpen }: { attachments: AttachmentRecord[]; onOpen: (i: number) => void }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(0)
@@ -198,10 +199,7 @@ function Collage({ attachments, onOpen }: { attachments: AttachmentRecord[]; onO
     ? [{ items: [0, 1], maxH: 320 }]
     : [{ items: [0], maxH: 260 }, { items: [1, 2], maxH: 180 }]
 
-  // How wide the collage would be with every picture at its own size; never wider than that.
-  const naturalWidth = Math.max(...rows.map(r =>
-    r.items.reduce((s, i) => s + sizeOf(i).w, 0) + COLLAGE_GAP * (r.items.length - 1)))
-  const W = width > 0 ? Math.min(width, naturalWidth) : 0
+  const W = width
 
   return (
     <div ref={rootRef} className="flex flex-col" style={{ gap: COLLAGE_GAP }}>
@@ -209,7 +207,9 @@ function Collage({ attachments, onOpen }: { attachments: AttachmentRecord[]; onO
         const ratios = row.items.map(i => sizeOf(i).w / sizeOf(i).h)
         const free = W - COLLAGE_GAP * (row.items.length - 1)
         const fitted = free / ratios.reduce((s, x) => s + x, 0)
-        const h = Math.round(Math.min(Math.max(fitted, 72), row.maxH))
+        // Small pictures get a row no taller than the tallest of them, not a big empty frame.
+        const tallest = Math.max(...row.items.map(i => sizeOf(i).h))
+        const h = Math.round(Math.max(Math.min(fitted, row.maxH, tallest), 72))
         return (
           <div key={r} className="flex" style={{ gap: COLLAGE_GAP, width: W, height: h }}>
             {row.items.map((i, k) => {
@@ -217,7 +217,7 @@ function Collage({ attachments, onOpen }: { attachments: AttachmentRecord[]; onO
               return (
                 <div
                   key={att.id ?? i}
-                  className={['relative min-w-0 overflow-hidden media-frame', collageCorners(attachments.length, r, k), att.data ? 'cursor-pointer hover:opacity-95' : ''].join(' ')}
+                  className={['media-cell min-w-0 media-frame', collageCorners(attachments.length, r, k), att.data ? 'cursor-pointer hover:opacity-95' : ''].join(' ')}
                   style={{ flex: `${ratios[k]} 1 0` }}
                   onClick={() => { if (att.data) onOpen(i) }}
                   role={att.data ? 'button' : undefined}
@@ -225,7 +225,10 @@ function Collage({ attachments, onOpen }: { attachments: AttachmentRecord[]; onO
                   tabIndex={-1}
                 >
                   {att.data ? (
-                    <BlobImg blob={att.data} alt={att.fileName} className="block w-full h-full object-cover object-center" draggable={false} />
+                    <>
+                      <BlobImg blob={att.data} className="media-backdrop" draggable={false} />
+                      <BlobImg blob={att.data} alt={att.fileName} className="media-fit" draggable={false} />
+                    </>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
                   )}
@@ -342,8 +345,8 @@ function Carousel({ attachments, index, onIndexChange, onOpen }: {
           >
             {att.data ? (
               <>
-                <BlobImg blob={att.data} className="note-carousel-backdrop" draggable={false} />
-                <BlobImg blob={att.data} alt={att.fileName} className="note-carousel-img" draggable={false} />
+                <BlobImg blob={att.data} className="media-backdrop" draggable={false} />
+                <BlobImg blob={att.data} alt={att.fileName} className="media-fit" draggable={false} />
               </>
             ) : (
               <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
