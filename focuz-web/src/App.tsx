@@ -704,6 +704,8 @@ function App() {
         targetTop = el.scrollTop + (relTop - desired)
       }
     }
+    // Not a user scroll: keep the header as it is, or hiding it would shift the feed by its height.
+    lastScrollTopRef.current = Math.max(0, Math.min(targetTop, el.scrollHeight - el.clientHeight))
     el.scrollTop = targetTop
   }
 
