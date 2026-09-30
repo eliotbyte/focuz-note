@@ -29,4 +29,12 @@ describe('frozen store', () => {
     expect(getFrozen('a', 'y')).toBeUndefined()
     expect(getFrozen('b', 'x')).toBeUndefined()
   })
+
+  it('evicts the list used least recently, not the one written first', () => {
+    for (let i = 0; i < 100; i++) setFrozen(`k${i}`, 's', [i])
+    expect(getFrozen('k0', 's')).toEqual([0])
+    setFrozen('new', 's', [1])
+    expect(getFrozen('k0', 's')).toEqual([0])
+    expect(getFrozen('k1', 's')).toBeUndefined()
+  })
 })

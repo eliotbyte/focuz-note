@@ -8,6 +8,7 @@
 
 type Snapshot = { sig: string; ids: number[] }
 
+/** Lists kept; the one used least recently goes first. */
 const MAX_ENTRIES = 100
 const snapshots = new Map<string, Snapshot>()
 
@@ -19,7 +20,11 @@ export function newEntryKey(): string {
 /** Ids for the frozen list `key` showing `sig`, or undefined when it has to be built afresh. */
 export function getFrozen(key: string, sig: string): number[] | undefined {
   const s = snapshots.get(key)
-  return s && s.sig === sig ? s.ids : undefined
+  if (!s || s.sig !== sig) return undefined
+  // Map keeps insertion order: moving a list to the end makes it the last to be evicted.
+  snapshots.delete(key)
+  snapshots.set(key, s)
+  return s.ids
 }
 
 export function setFrozen(key: string, sig: string, ids: number[]) {
