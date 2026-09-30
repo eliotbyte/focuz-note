@@ -11,6 +11,9 @@ const MAX_MEDIA_HEIGHT = 360
 // Past this many dots the indicator turns into a "3 / 12" counter.
 const MAX_DOTS = 10
 const NONE: AttachmentRecord[] = []
+// Up to this many pictures are packed together; more go into the carousel.
+const MAX_COLLAGE = 3
+const COLLAGE_GAP = 4
 
 export default function NoteImages({ noteId }: { noteId: number }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
@@ -66,7 +69,9 @@ export default function NoteImages({ noteId }: { noteId: number }) {
     <div>
       {attachments.length === 1
         ? <SingleImage att={attachments[0]} onOpen={() => setViewerIndex(0)} />
-        : <Carousel attachments={attachments} index={slide} onIndexChange={setSlide} onOpen={setViewerIndex} />}
+        : attachments.length <= MAX_COLLAGE
+          ? <Collage attachments={attachments} onOpen={setViewerIndex} />
+          : <Carousel attachments={attachments} index={slide} onIndexChange={setSlide} onOpen={setViewerIndex} />}
 
       {viewerIndex != null && (
         createPortal(
@@ -162,6 +167,83 @@ function SingleImage({ att, onOpen }: { att: AttachmentRecord; onOpen: () => voi
       />
     </div>
   )
+}
+
+// Two or three pictures packed together: two side by side, or one across the top with two under it.
+// Each row is fitted to the width by the pictures' own proportions, so nothing is cropped unless
+// a row would come out too tall or too flat. Small pictures don't get blown up past their size.
+function Collage({ attachments, onOpen }: { attachments: AttachmentRecord[]; onOpen: (i: number) => void }) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const [width, setWidth] = useState(0)
+  const dims = useImageDimensions(attachments)
+
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    const update = () => setWidth(el.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  usePrefetchWhenVisible(rootRef, attachments.filter(a => !a.data))
+
+  const sizeOf = (i: number) => {
+    const a = attachments[i]
+    const d = a.id != null ? dims[a.id] : undefined
+    return d && d.w > 0 && d.h > 0 ? d : { w: 1, h: 1 }
+  }
+  const rows: Array<{ items: number[]; maxH: number }> = attachments.length === 2
+    ? [{ items: [0, 1], maxH: 320 }]
+    : [{ items: [0], maxH: 260 }, { items: [1, 2], maxH: 180 }]
+
+  // How wide the collage would be with every picture at its own size; never wider than that.
+  const naturalWidth = Math.max(...rows.map(r =>
+    r.items.reduce((s, i) => s + sizeOf(i).w, 0) + COLLAGE_GAP * (r.items.length - 1)))
+  const W = width > 0 ? Math.min(width, naturalWidth) : 0
+
+  return (
+    <div ref={rootRef} className="flex flex-col" style={{ gap: COLLAGE_GAP }}>
+      {W > 0 && rows.map((row, r) => {
+        const ratios = row.items.map(i => sizeOf(i).w / sizeOf(i).h)
+        const free = W - COLLAGE_GAP * (row.items.length - 1)
+        const fitted = free / ratios.reduce((s, x) => s + x, 0)
+        const h = Math.round(Math.min(Math.max(fitted, 72), row.maxH))
+        return (
+          <div key={r} className="flex" style={{ gap: COLLAGE_GAP, width: W, height: h }}>
+            {row.items.map((i, k) => {
+              const att = attachments[i]
+              return (
+                <div
+                  key={att.id ?? i}
+                  className={['relative min-w-0 overflow-hidden media-frame', collageCorners(attachments.length, r, k), att.data ? 'cursor-pointer hover:opacity-95' : ''].join(' ')}
+                  style={{ flex: `${ratios[k]} 1 0` }}
+                  onClick={() => { if (att.data) onOpen(i) }}
+                  role={att.data ? 'button' : undefined}
+                  aria-label={att.data ? `Open image ${i + 1} of ${attachments.length}` : undefined}
+                  tabIndex={-1}
+                >
+                  {att.data ? (
+                    <BlobImg blob={att.data} alt={att.fileName} className="block w-full h-full object-cover object-center" draggable={false} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// The collage reads as one rounded picture: only its outer corners are rounded.
+function collageCorners(count: number, row: number, col: number): string {
+  if (count === 2) return col === 0 ? 'rounded-l-[var(--radius)]' : 'rounded-r-[var(--radius)]'
+  if (row === 0) return 'rounded-t-[var(--radius)]'
+  return col === 0 ? 'rounded-bl-[var(--radius)]' : 'rounded-br-[var(--radius)]'
 }
 
 // Several pictures: a strip you flip through, one at a time, with arrows and a position indicator.
