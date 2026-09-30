@@ -21,6 +21,7 @@ import { useFolderIndex } from './lib/useFolderIndex'
 import { directOnly, folderKind, type FolderIndex } from './lib/folders'
 import { createFolder, saveFolderRule } from './lib/folder-actions'
 import { hasOpenTasks } from './lib/note-format/render'
+import { getFrozen, mergeFrozen, newEntryKey, setFrozen } from './lib/feed-snapshot'
 import {
   DEFAULT_QUICK, criteriaFromQuick, criteriaFromRule, mergeIntoRule, quickFromCriteria, ruleFromCriteria,
   type Criteria, type QuickState,
@@ -180,9 +181,11 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
   )
 }
 
-function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTag, onAddQuickActivity, scopeIds, folderIndex, emptyText, hiddenTags = [] }: { spaceId: number; filter: FilterRecord | null; quick: QuickState; parentId?: number | null; onOpenThread?: (noteId: number) => void; onAddQuickTag?: (tag: string) => void; onAddQuickActivity?: (name: string) => void; /** Only these notes (the open folder), or null for all. */ scopeIds?: Set<number> | null; folderIndex?: FolderIndex; emptyText?: string; /** Tags every note here has anyway (the open folder's), not repeated on each card. */ hiddenTags?: string[] }) {
+function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTag, onAddQuickActivity, scopeIds, folderIndex, emptyText, hiddenTags = [], freeze }: { spaceId: number; filter: FilterRecord | null; quick: QuickState; parentId?: number | null; onOpenThread?: (noteId: number) => void; onAddQuickTag?: (tag: string) => void; onAddQuickActivity?: (name: string) => void; /** Only these notes (the open folder), or null for all. */ scopeIds?: Set<number> | null; folderIndex?: FolderIndex; emptyText?: string; /** Tags every note here has anyway (the open folder's), not repeated on each card. */ hiddenTags?: string[]; /** Keep the order this list had when opened (see feed-snapshot). `sig` names what the caller shows; `ready` is false while that is still loading. */ freeze?: { key: string; sig: string; ready: boolean } }) {
   const [foldersFor, setFoldersFor] = useState<NoteRecord | null>(null)
-  const [idsBySearch, setIdsBySearch] = useState<number[] | null>(null)
+  const [search, setSearch] = useState<{ q: string; ids: number[] } | null>(null)
+  const searchQ = (quick.text || '').trim()
+  const idsBySearch = search && search.q === searchQ ? search.ids : null
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingValue, setEditingValue] = useState<{ text: string; tags: string[]; activities?: any[] }>({ text: '', tags: [], activities: [] })
   const [replyingForId, setReplyingForId] = useState<number | null>(null)
@@ -193,11 +196,10 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
 
   useEffect(() => {
     let cancelled = false
-    const q = (quick.text || '').trim()
-    if (!q) { setIdsBySearch(null); return }
-    searchNotes(spaceId, q).then(ids => { if (!cancelled) setIdsBySearch(ids) }).catch(() => { if (!cancelled) setIdsBySearch([]) })
+    if (!searchQ) { setSearch(null); return }
+    searchNotes(spaceId, searchQ).then(ids => { if (!cancelled) setSearch({ q: searchQ, ids }) }).catch(() => { if (!cancelled) setSearch({ q: searchQ, ids: [] }) })
     return () => { cancelled = true }
-  }, [spaceId, quick.text])
+  }, [spaceId, searchQ])
 
   useEffect(() => {
     if (editingId != null) {
@@ -211,7 +213,8 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
     setReplyingForId(null)
   }, [JSON.stringify(quick), JSON.stringify(filter?.params ?? {}), parentId ?? null])
 
-  const allNotes = useLiveQuery(async () => {
+  const querySig = JSON.stringify([spaceId, filter?.params ?? {}, quick, idsBySearch, parentId ?? null])
+  const live = useLiveQuery(async () => {
     const arr = await notesRepo.listActiveBySpace(spaceId)
     let result = arr
 
@@ -283,9 +286,23 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
       return dir === 'ASC' ? cmp : -cmp
     })
 
-    return result
-  }, [spaceId, JSON.stringify(filter?.params ?? {}), JSON.stringify(quick), JSON.stringify(idsBySearch), parentId ?? null]) ?? []
-  const notes = useMemo(() => scopeIds ? allNotes.filter(n => scopeIds.has(n.id!)) : allNotes, [allNotes, scopeIds])
+    return { sig: querySig, all: arr, result }
+  }, [querySig])
+  const freezeKey = freeze?.key, freezeSig = freeze?.sig, freezeReady = freeze?.ready ?? true
+  const notes = useMemo(() => {
+    const result = live?.result ?? []
+    const liveNotes = scopeIds ? result.filter(n => scopeIds.has(n.id!)) : result
+    // Until everything this list depends on has loaded, show it live and freeze nothing.
+    const ready = !!live && live.sig === querySig && (!searchQ || idsBySearch != null) && freezeReady
+    if (freezeKey == null || !ready) return liveNotes
+    const sig = `${freezeSig}|${querySig}`
+    const frozen = getFrozen(freezeKey, sig)
+    const ids = mergeFrozen(frozen, liveNotes.map(n => n.id!))
+    if (ids !== frozen) setFrozen(freezeKey, sig, ids)
+    // Frozen notes stay even if they no longer match; deleted ones drop out (and come back on undo).
+    const byId = new Map(live.all.map(n => [n.id!, n]))
+    return ids.map(id => byId.get(id)).filter((n): n is NoteRecord => !!n)
+  }, [live, querySig, scopeIds, searchQ, idsBySearch, freezeKey, freezeSig, freezeReady])
 
   // Parent previews no longer preloaded here; NoteCard handles parent preview on demand
   const repliesById = useLiveQuery(async () => {
@@ -503,8 +520,12 @@ function App() {
   const [scope, setScope] = useState<FolderScope>('deep')
   // Folder rule being edited: the filter bar edits it and the feed previews it.
   const [ruleDraft, setRuleDraft] = useState<{ id: number; criteria: Criteria } | null>(null)
-  // In-memory back trail within tab. Oldest -> newest. Excludes current page. null represents feed (space root)
-  const historyTrailRef = useRef<Array<number | null>>([])
+  // In-memory back trail within tab. Oldest -> newest. Excludes current page. note null represents feed (space root).
+  // key: that page's history entry key, so going back finds its frozen list again.
+  const historyTrailRef = useRef<Array<{ note: number | null; key: string }>>([])
+  // Key of the current history entry (see feed-snapshot): a new one means a freshly built feed.
+  const [entryKey, setEntryKey] = useState(() => newEntryKey())
+  const entryKeyRef = useRef(entryKey)
   const authRequired = useAppState(s => s.authRequired)
 
   const [quickFeed, setQuickFeed] = useState<QuickState>(DEFAULT_QUICK)
@@ -592,15 +613,17 @@ function App() {
     const filter = p.get('filter')
     return { space: space ? Number(space) : undefined, note: note ? Number(note) : undefined, filter: filter ? Number(filter) : undefined, unsorted: p.get('view') === 'unsorted' }
   }
-  function pushQuery(next: { space: number; note?: number | null; filter?: number | null; unsorted?: boolean }, replace = false) {
+  function pushQuery(next: { space: number; note?: number | null; filter?: number | null; unsorted?: boolean }, replace = false, key = newEntryKey()) {
     const params = new URLSearchParams()
     params.set('space', String(next.space))
     if (next.note != null) params.set('note', String(next.note))
     if (next.filter != null) params.set('filter', String(next.filter))
     else if (next.unsorted ?? unsortedViewRef.current) params.set('view', 'unsorted')
     const url = `${location.pathname}?${params.toString()}`
-    if (replace) history.replaceState(null, '', url)
-    else history.pushState(null, '', url)
+    if (replace) history.replaceState({ k: key }, '', url)
+    else history.pushState({ k: key }, '', url)
+    entryKeyRef.current = key
+    setEntryKey(key)
   }
 
   function getFeedScrollKey(spaceId: number) { return `ui:scroll:space:${spaceId}:feed` }
@@ -731,7 +754,7 @@ function App() {
       const id = space || await getCurrentSpaceId()
       setCurrentSpaceId(id)
       setCurrentNoteId(note ?? null)
-      historyTrailRef.current = note ? [null] : []
+      historyTrailRef.current = note ? [{ note: null, key: newEntryKey() }] : []
       if (filter) {
         const foundLocal = await filtersRepo.getByLocalId(filter)
         const foundServer = foundLocal ? null : await filtersRepo.getByServerId(filter)
@@ -759,13 +782,17 @@ function App() {
       await runSync()
       setTimeout(() => { runSync() }, 1000)
       // normalize URL
-      pushQuery({ space: id, note: note ?? null, filter: (filter ?? null), unsorted: unsorted && !filter }, true)
+      pushQuery({ space: id, note: note ?? null, filter: (filter ?? null), unsorted: unsorted && !filter }, true, entryKeyRef.current)
     })
 
     const onPop = () => {
       const prevSpaceId = currentSpaceIdRef.current
       const prevNoteId = currentNoteIdRef.current
       const { space: s, note: n, filter: f, unsorted: u } = parseQuery()
+      // Back/forward: same entry, same frozen feed. Entries from before a reload start fresh.
+      const k = typeof history.state?.k === 'string' ? history.state.k as string : newEntryKey()
+      entryKeyRef.current = k
+      setEntryKey(k)
       if (s) setCurrentSpaceId(s)
       setCurrentNoteId(n ?? null)
       setUnsortedView(u && f == null)
@@ -871,11 +898,11 @@ function App() {
     // Update in-tab trail: collapse to before existing target, or push current
     {
       const prev = historyTrailRef.current
-      const idx = prev.findIndex(x => x === noteId)
+      const idx = prev.findIndex(x => x.note === noteId)
       if (idx !== -1) {
         historyTrailRef.current = prev.slice(0, idx)
       } else if (currentNoteId !== noteId) {
-        historyTrailRef.current = [...prev, currentNoteId ?? null]
+        historyTrailRef.current = [...prev, { note: currentNoteId ?? null, key: entryKeyRef.current }]
       }
     }
     setCurrentNoteId(noteId)
@@ -936,10 +963,10 @@ function App() {
       return
     }
     const next = prev.slice(0, -1)
-    const target = prev[prev.length - 1]
+    const { note: target, key } = prev[prev.length - 1]
     historyTrailRef.current = next
     setCurrentNoteId(target ?? null)
-    pushQuery({ space: currentSpaceId, note: target ?? null, filter: selectedFilter?.id ?? null })
+    pushQuery({ space: currentSpaceId, note: target ?? null, filter: selectedFilter?.id ?? null }, false, key)
     if (target == null) void restoreFeedScroll(currentSpaceId)
     // load respective quick
     void (async () => {
@@ -1004,6 +1031,7 @@ function App() {
         <NoteThread
           spaceId={currentSpaceId}
           noteId={currentNoteId}
+          entryKey={entryKey}
           onBack={goBack}
           onOpenThread={openThread}
           quick={quickThread}
@@ -1089,6 +1117,12 @@ function App() {
             folderIndex={folderIndex}
             hiddenTags={editing ? [] : folderTags}
             emptyText={emptyText}
+            // A rule being edited previews live; otherwise the feed keeps what it showed on opening.
+            freeze={editing ? undefined : {
+              key: entryKey,
+              sig: JSON.stringify([feedView, scope]),
+              ready: feedView.kind === 'all' || (!!folderIndex && (feedView.kind !== 'folder' || folderIndex.nodes.has(feedView.id))),
+            }}
             onOpenThread={openThread}
             onAddQuickTag={(tag) => {
               if (editing) return
@@ -1291,7 +1325,7 @@ function ReplyComposer({ spaceId, parentId, positiveQuickTags = [] }: { spaceId:
   )
 }
 
-function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTag, toolbar }: { spaceId: number; noteId: number; onBack: () => void; onOpenThread: (nid: number) => void; quick: QuickState; onAddQuickTag?: (tag: string) => void; toolbar?: ReactNode }) {
+function NoteThread({ spaceId, noteId, entryKey, onBack, onOpenThread, quick, onAddQuickTag, toolbar }: { spaceId: number; noteId: number; entryKey: string; onBack: () => void; onOpenThread: (nid: number) => void; quick: QuickState; onAddQuickTag?: (tag: string) => void; toolbar?: ReactNode }) {
   const mainNote = useLiveQuery(() => notesRepo.getByLocalId(noteId), [noteId]) as NoteRecord | undefined
   const view = useSpaceView()
   const [editing, setEditing] = useState(false)
@@ -1338,7 +1372,7 @@ function NoteThread({ spaceId, noteId, onBack, onOpenThread, quick, onAddQuickTa
       {canWrite(view.role) && <ReplyComposer spaceId={spaceId} parentId={noteId} positiveQuickTags={quick.tags.filter(t => !t.startsWith('!'))} />}
       {toolbar}
       <div className="min-w-0">
-        <NoteList spaceId={spaceId} filter={null} quick={quick} parentId={noteId} onOpenThread={onOpenThread} onAddQuickTag={onAddQuickTag} />
+        <NoteList spaceId={spaceId} filter={null} quick={quick} parentId={noteId} freeze={{ key: entryKey, sig: 'thread', ready: true }} onOpenThread={onOpenThread} onAddQuickTag={onAddQuickTag} />
       </div>
     </div>
   )
