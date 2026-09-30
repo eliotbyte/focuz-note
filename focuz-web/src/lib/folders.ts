@@ -106,6 +106,20 @@ export function describeRule(r: FolderRule): string {
   return `Notes ${parts.join(', ')}`
 }
 
+export type RuleChipKind = 'tag' | 'without' | 'text' | 'activity' | 'tasks' | 'noreply'
+
+/** The rule as short chips for the folder header, in the same order as describeRule. */
+export function ruleChips(r: FolderRule): { kind: RuleChipKind; label: string }[] {
+  return [
+    ...r.includeTags.map(t => ({ kind: 'tag' as const, label: `#${t}` })),
+    ...r.excludeTags.map(t => ({ kind: 'without' as const, label: `#${t}` })),
+    ...(r.textContains ? [{ kind: 'text' as const, label: `“${r.textContains}”` }] : []),
+    ...r.includeActivities.map(a => ({ kind: 'activity' as const, label: a })),
+    ...(r.hasOpenTasks ? [{ kind: 'tasks' as const, label: 'Open tasks' }] : []),
+    ...(r.notReply ? [{ kind: 'noreply' as const, label: 'No replies' }] : []),
+  ]
+}
+
 export interface FolderIndex {
   roots: FilterTreeNode[]
   nodes: Map<number, FilterTreeNode>

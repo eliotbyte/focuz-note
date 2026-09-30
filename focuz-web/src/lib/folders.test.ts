@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { FilterRecord, NoteRecord } from './types'
 import {
-  buildFolderIndex, describeRule, directOnly, folderKind, orphansAfterDelete, ruleFromParams, ruleToParams,
+  buildFolderIndex, describeRule, directOnly, folderKind, orphansAfterDelete, ruleChips, ruleFromParams, ruleToParams,
   slugTag, tagsForFolder, EMPTY_RULE,
 } from './folders'
 
@@ -65,6 +65,19 @@ describe('folder rules', () => {
   it('describes a rule in plain words', () => {
     expect(describeRule(ruleFromParams({ includeTags: ['work'], excludeTags: ['archive'] }))).toBe('Notes tagged #work, without #archive')
     expect(describeRule(EMPTY_RULE)).toBe('Shows the notes of its subfolders')
+  })
+
+  it('lists the rule as header chips', () => {
+    const r = ruleFromParams({ includeTags: ['work', 'q3'], excludeTags: ['archive'] })
+    expect(ruleChips({ ...r, textContains: 'invoice', hasOpenTasks: true, notReply: true })).toEqual([
+      { kind: 'tag', label: '#work' },
+      { kind: 'tag', label: '#q3' },
+      { kind: 'without', label: '#archive' },
+      { kind: 'text', label: '“invoice”' },
+      { kind: 'tasks', label: 'Open tasks' },
+      { kind: 'noreply', label: 'No replies' },
+    ])
+    expect(ruleChips(EMPTY_RULE)).toEqual([])
   })
 
   it('makes a tag from a folder name', () => {

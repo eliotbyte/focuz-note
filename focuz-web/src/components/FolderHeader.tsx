@@ -1,11 +1,12 @@
-import type { FolderIndex, FolderRule } from '../lib/folders'
-import { describeRule, folderKind } from '../lib/folders'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import type { FolderIndex, FolderRule, RuleChipKind } from '../lib/folders'
+import { describeRule, folderKind, ruleChips } from '../lib/folders'
 import { FolderIcon } from './FolderIcon'
 import type { FeedView } from './FolderTree'
 
 export type FolderScope = 'deep' | 'here'
 
-/** Title, rule in plain words, "with subfolders / only this one" and the rule-editing banner. */
+/** Title, the rule as chips, "with subfolders / only this one" and the rule-editing banner. */
 export default function FolderHeader({
   index,
   view,
@@ -15,7 +16,6 @@ export default function FolderHeader({
   onEditRule,
   onSaveRule,
   onCancelRule,
-  newNoteTags,
 }: {
   index: FolderIndex | undefined
   view: FeedView
@@ -26,7 +26,6 @@ export default function FolderHeader({
   onEditRule: () => void
   onSaveRule: () => void
   onCancelRule: () => void
-  newNoteTags: string[]
 }) {
   if (view.kind === 'all') return null
   if (view.kind === 'unsorted') {
@@ -59,17 +58,43 @@ export default function FolderHeader({
           </div>
         )}
       </div>
-      <p className="folder-rule">
-        {describeRule(rule)}
-        {!editingRule && <> · <button type="button" className="link-btn" onClick={onEditRule}>Edit rule</button></>}
-        {!editingRule && newNoteTags.length > 0 && <span className="folder-newtags"> · New notes here get {newNoteTags.map(t => `#${t}`).join(' ')}</span>}
-      </p>
+      <RuleChips rule={rule} onEdit={editingRule ? undefined : onEditRule} />
       {editingRule && (
         <div className="folder-editing" role="region" aria-label="Editing folder rule">
           <span className="flex-1 min-w-[12rem]">Editing the rule. The list below shows what the folder will contain.</span>
           <button type="button" className="filter-btn" onClick={onCancelRule}>Cancel</button>
           <button type="button" className="button !h-8 !px-3 text-sm" onClick={onSaveRule}>Save rule</button>
         </div>
+      )}
+    </div>
+  )
+}
+
+const CHIP_HINT: Record<RuleChipKind, string> = {
+  tag: 'Notes with this tag. New notes here get it too',
+  without: 'Notes with this tag are left out',
+  text: 'Notes containing this text',
+  activity: 'Notes with this activity',
+  tasks: 'Notes with unticked checklist items',
+  noreply: 'Replies are left out',
+}
+
+/** The rule at a glance: what gets in (green), what stays out (red). Edited with the pencil. */
+function RuleChips({ rule, onEdit }: { rule: FolderRule; onEdit?: () => void }) {
+  const chips = ruleChips(rule)
+  return (
+    <div className="folder-rule" role="group" aria-label={describeRule(rule)}>
+      {chips.length === 0 && <span>Only subfolders</span>}
+      {chips.map((c, i) => (
+        <span key={`${c.kind}-${i}`} className={`rule-chip rule-chip-${c.kind}`} title={CHIP_HINT[c.kind]}>
+          {c.kind === 'without' && <span className="sr-only">not </span>}
+          {c.label}
+        </span>
+      ))}
+      {onEdit && (
+        <button type="button" className="icon-btn rule-edit" onClick={onEdit} aria-label="Edit rule" title="Edit rule">
+          <EditRoundedIcon fontSize="inherit" />
+        </button>
       )}
     </div>
   )

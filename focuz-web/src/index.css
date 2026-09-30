@@ -21,6 +21,7 @@
   --c-surface: 250 251 252;
   --c-text: 18 22 30;
   --c-accent: 82 168 44; /* Miiverse green */
+  --c-danger: 220 38 38;
 
   --font-size-base: 15px;
   --font-size-small: 13px;
@@ -143,6 +144,7 @@ body::after {
   --c-surface: 27 29 34;
   --c-text: 255 255 255;
   --c-accent: 122 196 80;
+  --c-danger: 239 90 90;
 
   --page-bg: linear-gradient(180deg, #22252a 0%, #16181c 40%, #0d0e10 75%, #08090a 100%);
   --ambient-light: 150 170 200;
@@ -1216,8 +1218,21 @@ button:disabled { cursor: not-allowed; }
 .folder-head { display: flex; flex-direction: column; gap: 4px; padding: 2px 2px 0; }
 .folder-crumbs { font-size: 12.5px; color: var(--text-muted); }
 .folder-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 20px; font-weight: 650; line-height: 1.25; }
-.folder-rule { font-size: 13.5px; color: var(--text-muted); }
-.folder-newtags { color: var(--text-muted); }
+.folder-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13.5px; color: var(--text-muted); }
+/* Rule chips: read-only outlines. Green: notes must have the tag; red: notes with it are left out. */
+.rule-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 10px;
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 0 0 1px rgba(var(--c-text) / 0.18);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.rule-chip-tag { box-shadow: inset 0 0 0 1.5px rgb(var(--c-accent) / 0.75); }
+.rule-chip-without { box-shadow: inset 0 0 0 1.5px rgb(var(--c-danger) / 0.75); }
+.rule-edit { padding: 4px; font-size: 16px; color: var(--text-muted); }
 .link-btn { color: rgb(var(--c-accent)); border-radius: 4px; }
 .link-btn:hover { text-decoration: underline; }
 .folder-editing {

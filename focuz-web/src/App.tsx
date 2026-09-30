@@ -1058,7 +1058,6 @@ function App() {
             onEditRule={() => { if (feedView.kind === 'folder') startEditRule(feedView.id) }}
             onSaveRule={() => { void commitRule() }}
             onCancelRule={() => setRuleDraft(null)}
-            newNoteTags={folderTags}
           />
           {editing ? (
             <FilterBar
