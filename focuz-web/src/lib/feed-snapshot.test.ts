@@ -14,6 +14,11 @@ describe('mergeFrozen', () => {
     expect(mergeFrozen([1, 2, 3], [9, 1, 2, 8, 3, 7])).toEqual([9, 1, 2, 8, 3, 7])
   })
 
+  it('does not anchor new notes on frozen ones that moved since', () => {
+    // 3 was edited and jumped to the top of the live order; 9 is new and newest.
+    expect(mergeFrozen([1, 2, 3, 4], [9, 3, 1, 2, 4])).toEqual([9, 1, 2, 3, 4])
+  })
+
   it('returns the same array when nothing is new', () => {
     const frozen = [1, 2]
     expect(mergeFrozen(frozen, [2, 1])).toBe(frozen)

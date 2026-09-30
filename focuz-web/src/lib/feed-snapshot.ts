@@ -35,25 +35,31 @@ export function setFrozen(key: string, sig: string, ids: number[]) {
 
 /**
  * Keeps `frozen` as is and adds the ids of `live` it does not have yet: each one goes right
- * before the frozen note that follows it in live order, or at the end.
+ * before the first frozen note (in frozen order) that the live order puts after it, or at
+ * the end. Frozen notes that moved since (edited, restored) are no anchor: they sit ahead
+ * of it in live order.
  */
 export function mergeFrozen(frozen: number[] | undefined, live: number[]): number[] {
   if (!frozen) return live.slice()
   const known = new Set(frozen)
+  if (live.every(id => known.has(id))) return frozen
+  const pos = new Map(live.map((id, i) => [id, i]))
   const before = new Map<number, number[]>()
-  let pending: number[] = []
+  const tail: number[] = []
   for (const id of live) {
-    if (!known.has(id)) pending.push(id)
-    else if (pending.length) { before.set(id, pending); pending = [] }
+    if (known.has(id)) continue
+    const p = pos.get(id)!
+    const at = frozen.find(f => (pos.get(f) ?? -1) > p)
+    if (at == null) tail.push(id)
+    else before.set(at, [...(before.get(at) ?? []), id])
   }
-  if (before.size === 0 && pending.length === 0) return frozen
   const out: number[] = []
   for (const id of frozen) {
     const b = before.get(id)
     if (b) out.push(...b)
     out.push(id)
   }
-  out.push(...pending)
+  out.push(...tail)
   return out
 }
 
