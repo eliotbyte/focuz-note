@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useObjectUrl } from '../lib/useObjectUrl'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -6,88 +6,21 @@ import type { AttachmentRecord } from '../lib/types'
 import { attachments as attachmentsRepo } from '../data'
 import { requestAttachmentPrefetch } from '../lib/sync'
 
+// Images in the feed never grow past their own size and never get taller than this.
+const MAX_MEDIA_HEIGHT = 360
+// Past this many dots the indicator turns into a "3 / 12" counter.
+const MAX_DOTS = 10
+const NONE: AttachmentRecord[] = []
+
 export default function NoteImages({ noteId }: { noteId: number }) {
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  const cellRefs = useRef<Array<HTMLDivElement | null>>([])
-  const [containerWidth, setContainerWidth] = useState(0)
-  const [dimensions, setDimensions] = useState<Record<number, { w: number; h: number } | undefined>>({})
-  const [cellWidths, setCellWidths] = useState<number[]>([])
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
+  const [slide, setSlide] = useState(0)
   const wheelAccumRef = useRef(0)
   const wheelCooldownRef = useRef<number | null>(null)
 
   const attachments = (useLiveQuery(async () => {
     return attachmentsRepo.listDisplayForNote(noteId)
-  }, [noteId]) ?? []) as AttachmentRecord[]
-
-  const hasAny = attachments.length > 0
-  const layout = useMemo(() => computeLayout(attachments.length), [attachments.length])
-  const rowHeights = useMemo(() => {
-    if (!hasAny) return [] as number[]
-    const style = containerRef.current ? getComputedStyle(containerRef.current) : undefined
-    const gap = style ? (parseFloat(style.columnGap || '0') || 0) : 0
-    return computeRowHeightsFromDims(layout, attachments, dimensions, cellWidths, containerWidth, gap)
-  }, [hasAny, layout, attachments, dimensions, cellWidths, containerWidth])
-
-  useEffect(() => {
-    if (!containerRef.current) return
-    const el = containerRef.current
-    const update = () => {
-      setContainerWidth(el.clientWidth)
-      const widths: number[] = []
-      for (let i = 0; i < attachments.length; i++) {
-        const ref = cellRefs.current[i]
-        widths.push(ref ? ref.clientWidth : 0)
-      }
-      setCellWidths(widths)
-    }
-    update()
-    const ro = new ResizeObserver(() => update())
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [attachments.length, layout.columns])
-
-  // Re-measure cell widths after attachments/layout render
-  useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      const widths: number[] = []
-      for (let i = 0; i < attachments.length; i++) {
-        const ref = cellRefs.current[i]
-        widths.push(ref ? ref.clientWidth : 0)
-      }
-      setCellWidths(widths)
-    })
-    return () => cancelAnimationFrame(id)
-  }, [attachments.length, layout.columns])
-
-  useEffect(() => {
-    let cancelled = false
-    const loaders: Array<() => void> = []
-    for (let i = 0; i < attachments.length; i++) {
-      const a = attachments[i]
-      if (!a.data || a.id == null) continue
-      if (dimensions[a.id]) continue
-      const url = URL.createObjectURL(a.data)
-      const img = new Image()
-      img.onload = () => {
-        if (!cancelled) {
-          setDimensions(prev => ({ ...prev, [a.id!]: { w: img.naturalWidth, h: img.naturalHeight } }))
-        }
-        URL.revokeObjectURL(url)
-      }
-      img.onerror = () => {
-        URL.revokeObjectURL(url)
-      }
-      img.src = url
-      loaders.push(() => {
-        URL.revokeObjectURL(url)
-      })
-    }
-    return () => {
-      cancelled = true
-      for (const revoke of loaders) revoke()
-    }
-  }, [attachments, dimensions])
+  }, [noteId]) ?? NONE) as AttachmentRecord[]
 
   // When viewer is open, ensure the current image is prefetched and enable keyboard navigation
   useEffect(() => {
@@ -121,23 +54,19 @@ export default function NoteImages({ noteId }: { noteId: number }) {
       wheelAccumRef.current = 0
     }
   }, [viewerIndex, attachments.length])
-  
-  if (!hasAny) return null
+
+  // The viewer and the carousel point at the same picture: leaving the viewer leaves the carousel where you were.
+  useEffect(() => {
+    if (viewerIndex != null) setSlide(viewerIndex)
+  }, [viewerIndex])
+
+  if (attachments.length === 0) return null
 
   return (
     <div>
-      <div
-        className="grid gap-2"
-        style={{
-          gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
-          gridTemplateRows: rowHeights.length ? rowHeights.map(h => `${Math.max(1, Math.round(h))}px`).join(' ') : undefined,
-        }}
-        ref={containerRef}
-      >
-        {attachments.map((att, idx) => (
-          <Cell key={att.id ?? idx} span={layout.spans[idx]} att={att} refEl={(el) => { cellRefs.current[idx] = el }} onOpen={() => setViewerIndex(idx)} />
-        ))}
-      </div>
+      {attachments.length === 1
+        ? <SingleImage att={attachments[0]} onOpen={() => setViewerIndex(0)} />
+        : <Carousel attachments={attachments} index={slide} onIndexChange={setSlide} onOpen={setViewerIndex} />}
 
       {viewerIndex != null && (
         createPortal(
@@ -203,169 +132,256 @@ export default function NoteImages({ noteId }: { noteId: number }) {
   )
 }
 
-function Cell({ span, att, refEl, onOpen }: { span?: { col?: number; row?: number }; att: AttachmentRecord; refEl?: (el: HTMLDivElement | null) => void; onOpen?: () => void }) {
+// One picture: shown at its own size, only ever scaled down to fit the card and the height cap. No cropping.
+function SingleImage({ att, onOpen }: { att: AttachmentRecord; onOpen: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (!ref.current) return
-    if (refEl) refEl(ref.current)
-    if (att.data || !att.serverId) return
-    const el = ref.current
-    const io = new IntersectionObserver((entries) => {
-      const e = entries[0]
-      if (e.isIntersecting) {
-        requestAttachmentPrefetch(att.id!)
-        io.disconnect()
-      }
-    }, { rootMargin: '200px' })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [att.data, att.serverId, att.id, refEl])
+  usePrefetchWhenVisible(ref, att.data ? [] : [att])
 
-  const style: React.CSSProperties = {}
-  if (span?.row && span.row > 1) style.gridRow = `span ${span.row} / span ${span.row}`
-  if (span?.col && span.col > 1) style.gridColumn = `span ${span.col} / span ${span.col}`
-
+  if (!att.data) {
+    return (
+      <div ref={ref} className="rounded-[var(--radius)] media-frame h-[160px] flex items-center justify-center text-muted">
+        Loading…
+      </div>
+    )
+  }
   return (
     <div
       ref={ref}
-      className={['relative rounded-[var(--radius)] overflow-hidden media-frame', (att.data ? 'cursor-pointer hover:opacity-95' : '')].join(' ')}
-      style={style}
-      onClick={() => { if (att.data && onOpen) onOpen() }}
-      role={att.data ? 'button' : undefined}
-      aria-label={att.data ? 'Open image' : undefined}
+      className="inline-block max-w-full align-top rounded-[var(--radius)] overflow-hidden media-frame cursor-pointer hover:opacity-95"
+      onClick={onOpen}
+      role="button"
+      aria-label="Open image"
       tabIndex={-1}
     >
-      {att.data ? (
-        <BlobImg
-          blob={att.data}
-          alt={att.fileName}
-          className="block w-full h-full object-cover object-center"
-          draggable={false}
-        />
+      <BlobImg
+        blob={att.data}
+        alt={att.fileName}
+        className="block w-auto h-auto max-w-full"
+        style={{ maxHeight: `min(${MAX_MEDIA_HEIGHT}px, 60vh)` }}
+        draggable={false}
+      />
+    </div>
+  )
+}
+
+// Several pictures: a strip you flip through, one at a time, with arrows and a position indicator.
+function Carousel({ attachments, index, onIndexChange, onOpen }: {
+  attachments: AttachmentRecord[]
+  index: number
+  onIndexChange: (i: number) => void
+  onOpen: (i: number) => void
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const trackRef = useRef<HTMLDivElement | null>(null)
+  const [width, setWidth] = useState(0)
+  const dims = useImageDimensions(attachments)
+  const count = attachments.length
+  const current = Math.min(Math.max(index, 0), count - 1)
+
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    const update = () => setWidth(el.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Off-screen slides are clipped by the strip, so fetch what's around the current one instead of waiting to see it.
+  const around = [current - 1, current, current + 1]
+    .filter(i => i >= 0 && i < count)
+    .map(i => attachments[i])
+    .filter(a => !a.data)
+  usePrefetchWhenVisible(rootRef, around)
+
+  // Keep the strip in step when the index is changed from outside (arrows, dots, the viewer).
+  // While the strip glides to a chosen slide, the slides it passes over must not become "current".
+  const gliding = useRef<{ target: number; timer: number } | null>(null)
+  useEffect(() => {
+    const track = trackRef.current
+    if (!track || !track.clientWidth) return
+    const target = current * track.clientWidth
+    if (Math.abs(track.scrollLeft - target) <= 1) return
+    if (gliding.current) clearTimeout(gliding.current.timer)
+    // Fallback in case the glide is interrupted (a finger on the strip) and never arrives.
+    const timer = window.setTimeout(() => { gliding.current = null; onScroll() }, 700)
+    gliding.current = { target, timer }
+    track.scrollTo({ left: target, behavior: 'smooth' })
+    // onScroll reads the latest props; it doesn't need to re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, width])
+  useEffect(() => () => { if (gliding.current) clearTimeout(gliding.current.timer) }, [])
+
+  function onScroll() {
+    const track = trackRef.current
+    if (!track || !track.clientWidth) return
+    const g = gliding.current
+    if (g) {
+      if (Math.abs(track.scrollLeft - g.target) > 1) return
+      clearTimeout(g.timer)
+      gliding.current = null
+    }
+    const i = Math.round(track.scrollLeft / track.clientWidth)
+    if (i !== current && i >= 0 && i < count) onIndexChange(i)
+  }
+
+  // One height for the whole strip, so flipping doesn't make the card jump: the tallest picture as it
+  // would sit in the strip without being enlarged, capped.
+  const height = (() => {
+    const cap = Math.min(MAX_MEDIA_HEIGHT, typeof window !== 'undefined' ? window.innerHeight * 0.6 : MAX_MEDIA_HEIGHT)
+    let tallest = 0
+    for (const a of attachments) {
+      const d = a.id != null ? dims[a.id] : undefined
+      if (!d || d.w <= 0) continue
+      const scale = width > 0 ? Math.min(1, width / d.w) : 1
+      tallest = Math.max(tallest, d.h * scale)
+    }
+    return Math.round(tallest > 0 ? Math.min(tallest, cap) : cap * 0.75)
+  })()
+
+  const go = (i: number) => onIndexChange(Math.min(Math.max(i, 0), count - 1))
+
+  return (
+    <div
+      ref={rootRef}
+      className="note-carousel group relative rounded-[var(--radius)] overflow-hidden media-frame"
+      style={{ height }}
+    >
+      <div ref={trackRef} className="note-carousel-track" onScroll={onScroll}>
+        {attachments.map((att, i) => (
+          <div
+            key={att.id ?? i}
+            className={['note-carousel-slide', att.data ? 'cursor-pointer' : ''].join(' ')}
+            onClick={() => { if (att.data) onOpen(i) }}
+            role={att.data ? 'button' : undefined}
+            aria-label={att.data ? `Open image ${i + 1} of ${count}` : undefined}
+            tabIndex={-1}
+          >
+            {att.data ? (
+              <>
+                <BlobImg blob={att.data} className="note-carousel-backdrop" draggable={false} />
+                <BlobImg blob={att.data} alt={att.fileName} className="note-carousel-img" draggable={false} />
+              </>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {current > 0 && (
+        <button
+          type="button"
+          className="note-carousel-arrow left-2"
+          onClick={(e) => { e.stopPropagation(); go(current - 1) }}
+          aria-label="Previous image"
+        >
+          <ArrowIcon dir="left" />
+        </button>
+      )}
+      {current < count - 1 && (
+        <button
+          type="button"
+          className="note-carousel-arrow right-2"
+          onClick={(e) => { e.stopPropagation(); go(current + 1) }}
+          aria-label="Next image"
+        >
+          <ArrowIcon dir="right" />
+        </button>
+      )}
+
+      {count <= MAX_DOTS ? (
+        <div className="note-carousel-dots" role="tablist" aria-label="Images">
+          {attachments.map((att, i) => (
+            <button
+              key={att.id ?? i}
+              type="button"
+              role="tab"
+              aria-selected={i === current}
+              aria-label={`Image ${i + 1} of ${count}`}
+              className={i === current ? 'is-current' : ''}
+              onClick={(e) => { e.stopPropagation(); go(i) }}
+            />
+          ))}
+        </div>
       ) : (
-        <div className="w-full h-full min-h-[96px] flex items-center justify-center text-muted">Loading…</div>
+        <div className="note-carousel-counter" aria-live="polite">{current + 1} / {count}</div>
       )}
     </div>
   )
 }
 
-function BlobImg({ blob, alt, className, draggable }: { blob: Blob; alt?: string; className?: string; draggable?: boolean }) {
+function ArrowIcon({ dir }: { dir: 'left' | 'right' }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {dir === 'left'
+        ? <><path d="M19 12H5" /><path d="M11 6l-6 6 6 6" /></>
+        : <><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></>}
+    </svg>
+  )
+}
+
+// Asks sync for the given images once the element comes near the screen.
+function usePrefetchWhenVisible(ref: React.RefObject<HTMLElement | null>, pending: AttachmentRecord[]) {
+  const key = pending.filter(a => a.serverId && a.id != null).map(a => a.id).join(',')
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !key) return
+    const ids = key.split(',').map(Number)
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) {
+        for (const id of ids) requestAttachmentPrefetch(id)
+        io.disconnect()
+      }
+    }, { rootMargin: '200px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [ref, key])
+}
+
+function useImageDimensions(attachments: AttachmentRecord[]) {
+  const [dims, setDims] = useState<Record<number, { w: number; h: number } | undefined>>({})
+  const requestedRef = useRef(new Set<number>())
+  useEffect(() => {
+    const requested = requestedRef.current
+    let cancelled = false
+    const urls: string[] = []
+    for (const a of attachments) {
+      if (!a.data || a.id == null || requested.has(a.id)) continue
+      const id = a.id
+      requested.add(id)
+      const url = URL.createObjectURL(a.data)
+      urls.push(url)
+      const img = new Image()
+      img.onload = () => {
+        if (!cancelled) setDims(prev => ({ ...prev, [id]: { w: img.naturalWidth, h: img.naturalHeight } }))
+      }
+      img.onerror = () => { requested.delete(id) }
+      img.src = url
+    }
+    return () => {
+      cancelled = true
+      for (const url of urls) URL.revokeObjectURL(url)
+      // Loads cut short here get another go on the next run.
+      for (const a of attachments) if (a.id != null && !dimsRef.current[a.id]) requested.delete(a.id)
+    }
+  }, [attachments])
+  const dimsRef = useRef(dims)
+  dimsRef.current = dims
+  return dims
+}
+
+function BlobImg({ blob, alt, className, style, draggable }: { blob: Blob; alt?: string; className?: string; style?: React.CSSProperties; draggable?: boolean }) {
   const url = useObjectUrl(blob)
   if (!url) return null
   return (
     <img
       src={url}
-      alt={alt}
+      alt={alt ?? ''}
       className={className}
+      style={style}
       draggable={draggable}
     />
   )
 }
-
-function computeLayout(n: number): { columns: number; rows: number; spans: Array<{ col?: number; row?: number } | undefined> } {
-  if (n <= 0) return { columns: 1, rows: 1, spans: [] }
-  if (n === 1) return { columns: 1, rows: 1, spans: [undefined] }
-  if (n === 2) return { columns: 2, rows: 1, spans: [undefined, undefined] }
-  if (n === 3) {
-    // Row1: 1 (full width), Row2: 2
-    return { columns: 2, rows: 2, spans: [
-      { col: 2 },
-      undefined, undefined,
-    ]}
-  }
-  if (n === 4) return { columns: 2, rows: 2, spans: [undefined, undefined, undefined, undefined] }
-  if (n === 5) {
-    // 2 on first row (each 1/2), 3 on second row (each 1/3)
-    // Use 6 columns: top spans=3, bottom spans=2
-    return { columns: 6, rows: 2, spans: [
-      { col: 3 }, { col: 3 }, // row 1
-      { col: 2 }, { col: 2 }, { col: 2 }, // row 2
-    ]}
-  }
-  if (n === 6) return { columns: 3, rows: 2, spans: new Array(6).fill(undefined) }
-  if (n === 7) {
-    // 2, 2, 3
-    // 6 columns: row1 spans=3, row2 spans=3, row3 spans=2
-    return { columns: 6, rows: 3, spans: [
-      { col: 3 }, { col: 3 }, // row 1: 2 images
-      { col: 3 }, { col: 3 }, // row 2: 2 images  
-      { col: 2 }, { col: 2 }, { col: 2 }, // row 3: 3 images
-    ]}
-  }
-  if (n === 8) {
-    // 2, then 3, then 3
-    // 6 columns: row1 spans=3, row2 spans=2, row3 spans=2
-    return { columns: 6, rows: 3, spans: [
-      { col: 3 }, { col: 3 },
-      { col: 2 }, { col: 2 }, { col: 2 },
-      { col: 2 }, { col: 2 }, { col: 2 },
-    ]}
-  }
-  if (n === 9) return { columns: 3, rows: 3, spans: new Array(9).fill(undefined) }
-  if (n === 10) {
-    // 4 rows: 2,2,3,3
-    // 6 columns: rows with 2 use spans=3; rows with 3 use spans=2
-    return { columns: 6, rows: 4, spans: [
-      { col: 3 }, { col: 3 },
-      { col: 3 }, { col: 3 },
-      { col: 2 }, { col: 2 }, { col: 2 },
-      { col: 2 }, { col: 2 }, { col: 2 },
-    ]}
-  }
-  // Fallback for >10: three-column grid, rows auto
-  return { columns: 3, rows: Math.ceil(n / 3), spans: new Array(n).fill(undefined) }
-}
-
-// Compute per-row heights using natural image dimensions with clamp: [1.0x, 1.25x] of width per image.
-function computeRowHeightsFromDims(
-  layout: { columns: number; rows: number; spans: Array<{ col?: number; row?: number } | undefined> },
-  attachments: AttachmentRecord[],
-  dims: Record<number, { w: number; h: number } | undefined>,
-  cellWidths: number[],
-  containerWidth: number,
-  gap: number
-): number[] {
-  if (layout.rows <= 0) return []
-  const heights: number[] = []
-
-  // Simulate placement and compute row height by averaging capped heights
-  let imgIndex = 0
-  for (let row = 0; row < layout.rows; row++) {
-    let c = 0
-    const perImageHeights: number[] = []
-    while (imgIndex < attachments.length && c < layout.columns) {
-      const span = layout.spans[imgIndex]
-      const colSpan = span?.col || 1
-      let widthPx = cellWidths[imgIndex] ?? 0
-      if (!widthPx && containerWidth) {
-        // Fallback to container-based estimate including gaps when ref not measured yet
-        const colWidth = (containerWidth - gap * (layout.columns - 1)) / layout.columns
-        widthPx = colWidth * colSpan + gap * (colSpan - 1)
-      }
-
-      const att = attachments[imgIndex]
-      const d = att.id != null ? dims[att.id] : undefined
-      let naturalHeightAtWidth: number | undefined
-      if (d && d.w > 0) {
-        naturalHeightAtWidth = (d.h / d.w) * widthPx
-      }
-      const minCap = 1.0 * widthPx
-      const maxCap = 1.25 * widthPx
-      const target = naturalHeightAtWidth != null
-        ? Math.min(Math.max(naturalHeightAtWidth, minCap), maxCap)
-        : minCap
-      perImageHeights.push(target)
-
-      c += colSpan
-      imgIndex++
-    }
-    if (perImageHeights.length) {
-      // Row height is average of per-image targets (your "середина" логика)
-      const sum = perImageHeights.reduce((a, b) => a + b, 0)
-      heights.push(sum / perImageHeights.length)
-    }
-  }
-  return heights
-}
-
-
