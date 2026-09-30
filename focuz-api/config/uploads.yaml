@@ -1,0 +1,6 @@
+max_file_size: 10485760
+allowed_file_types:
+  - image/webp
+  - application/pdf
+  - text/plain
+presigned_url_expiry: 3600 

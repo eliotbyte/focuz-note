@@ -1,0 +1,1907 @@
+openapi: 3.0.0
+info:
+  title: Focuz API
+  description: API for a note-taking application with workspaces, notes, charts, and activities
+  version: 0.1.0-alpha
+  contact:
+    name: Focuz Team
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.focuz.com
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service health
+          headers:
+            X-Request-ID:
+              $ref: '#/components/parameters/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /register:
+    post:
+      summary: User registration
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User successfully registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '429':
+          description: Too many requests (rate limited)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /login:
+    post:
+      summary: User authentication
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful authentication
+          headers:
+            X-Request-ID:
+              $ref: '#/components/parameters/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '429':
+          description: Too many requests (rate limited)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /ws:
+    get:
+      summary: WebSocket connection
+      description: Upgrades to WebSocket. Requires a valid Bearer token.
+      tags:
+        - Realtime
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Upgrade to WebSocket (101 Switching Protocols)
+
+  /spaces:
+    get:
+      summary: Get available workspaces
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            enum: [10, 20, 50, 100]
+            default: 20
+          example: 20
+      responses:
+        '200':
+          description: List of workspaces
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+          headers:
+            X-Request-ID:
+              $ref: '#/components/parameters/XRequestID'
+        '429':
+          description: Too many requests (rate limited)
+          headers:
+            Retry-After:
+              description: Seconds until next allowed request
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+    post:
+      summary: Create a workspace
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSpaceRequest'
+      responses:
+        '201':
+          description: Workspace created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '429':
+          description: Too many requests (rate limited)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}:
+    patch:
+      summary: Update a workspace
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSpaceRequest'
+      responses:
+        '200':
+          description: Workspace updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/delete:
+    patch:
+      summary: Delete a workspace (soft delete)
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Workspace deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/restore:
+    patch:
+      summary: Restore a workspace
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Workspace restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/users:
+    get:
+      summary: Get users in a workspace
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            enum: [10, 20, 50, 100]
+            default: 20
+          example: 20
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+          headers:
+            X-Request-ID:
+              $ref: '#/components/parameters/XRequestID'
+
+  /spaces/{spaceId}/invite:
+    post:
+      summary: Invite a user to a workspace
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteUserRequest'
+      responses:
+        '200':
+          description: User invited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/users/{userId}:
+    delete:
+      summary: Remove a user from a workspace
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: User removed from workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/invitations/accept:
+    post:
+      summary: Accept an invitation to join a space
+      description: Effective only when INVITATIONS_REQUIRE_ACCEPT=true in server environment.
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Invitation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/invitations/decline:
+    post:
+      summary: Decline an invitation to join a space
+      description: Effective only when INVITATIONS_REQUIRE_ACCEPT=true in server environment.
+      tags:
+        - Spaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Invitation declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /notes:
+    get:
+      summary: Get notes
+      deprecated: true
+      tags:
+        - Notes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Filter notes from this date (YYYY-MM-DD)
+          example: '2024-01-01'
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Filter notes until this date (YYYY-MM-DD)
+          example: '2024-12-31'
+        - name: tags
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: Array of tags. Use '!' prefix to exclude tags (e.g. '!archived')
+          example: ['important', '!archived']
+        - name: sort
+          in: query
+          schema:
+            type: string
+          description: "Sort field and order (format: field,order). Fields: createdat, modifiedat. Orders: ASC, DESC"
+          example: 'createdat,DESC'
+        - name: notReply
+          in: query
+          schema:
+            type: boolean
+          description: Show only notes that are not replies
+          example: true
+        - name: parentId
+          in: query
+          schema:
+            type: integer
+          description: Show only replies to this note ID
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            enum: [10, 20, 50, 100]
+            default: 20
+          example: 20
+      responses:
+        '200':
+          description: List of notes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+          headers:
+            X-Request-ID:
+              $ref: '#/components/parameters/XRequestID'
+        '429':
+          description: Too many requests (rate limited)
+          headers:
+            Retry-After:
+              description: Seconds until next allowed request
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+    post:
+      summary: Create a note
+      deprecated: true
+      tags:
+        - Notes
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, date, spaceId]
+              properties:
+                text: { type: string }
+                date: { type: string, format: date-time }
+                spaceId: { type: integer }
+                tags:
+                  type: array
+                  items: { type: string }
+                parentId: { type: integer, nullable: true }
+      responses:
+        '201':
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+          headers:
+            X-Request-ID:
+              $ref: '#/components/parameters/XRequestID'
+
+  /notes/{id}:
+    get:
+      summary: Get a note by ID
+      deprecated: true
+      tags:
+        - Notes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Note
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /notes/{id}/delete:
+    patch:
+      summary: Delete a note (soft delete)
+      deprecated: true
+      tags:
+        - Notes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Note deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /notes/{id}/restore:
+    patch:
+      summary: Restore a note
+      deprecated: true
+      tags:
+        - Notes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Note restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /tags/autocomplete:
+    get:
+      summary: Tag autocomplete
+      deprecated: true
+      tags:
+        - Notes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of tags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /activities:
+    get:
+      summary: Get activity analysis
+      tags:
+        - Activities
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: typeId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: periodId
+          in: query
+          required: true
+          schema:
+            type: integer
+            enum: [1, 2, 3, 4]
+          description: 1=day, 2=week, 3=month, 4=year
+        
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: RFC3339 timestamp
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: RFC3339 timestamp
+        - name: tags
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: Array of tags. Use '!' prefix to exclude tags
+      responses:
+        '200':
+          description: Analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+          headers:
+            X-Request-ID:
+              $ref: '#/components/parameters/XRequestID'
+        '429':
+          description: Too many requests (rate limited)
+          headers:
+            Retry-After:
+              description: Seconds until next allowed request
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+    post:
+      summary: Create an activity
+      tags:
+        - Activities
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateActivityRequest'
+      responses:
+        '201':
+          description: Activity created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /activities/{activityId}:
+    patch:
+      summary: Update an activity
+      tags:
+        - Activities
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: activityId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateActivityRequest'
+      responses:
+        '200':
+          description: Activity updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /activities/{activityId}/delete:
+    patch:
+      summary: Delete an activity (soft delete)
+      tags:
+        - Activities
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: activityId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Activity deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /activities/{activityId}/restore:
+    patch:
+      summary: Restore an activity
+      tags:
+        - Activities
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: activityId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Activity restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/activity-types:
+    get:
+      summary: Get activity types in space (default + space-specific)
+      tags:
+        - Activity Types
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            enum: [10, 20, 50, 100]
+            default: 20
+          example: 20
+      responses:
+        '200':
+          description: List of activity types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+          headers:
+            X-Request-ID:
+              $ref: '#/components/parameters/XRequestID'
+    post:
+      summary: Create an activity type
+      tags:
+        - Activity Types
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateActivityTypeRequest'
+      responses:
+        '201':
+          description: Activity type created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/activity-types/{typeId}/delete:
+    patch:
+      summary: Delete an activity type (soft delete)
+      tags:
+        - Activity Types
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: typeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Activity type deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/activity-types/{typeId}/restore:
+    patch:
+      summary: Restore an activity type
+      tags:
+        - Activity Types
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: typeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Activity type restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /charts:
+    get:
+      summary: Get charts
+      tags:
+        - Charts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            enum: [10, 20, 50, 100]
+            default: 20
+          example: 20
+      responses:
+        '200':
+          description: List of charts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+          headers:
+            X-Request-ID:
+              $ref: '#/components/parameters/XRequestID'
+        '429':
+          description: Too many requests (rate limited)
+          headers:
+            Retry-After:
+              description: Seconds until next allowed request
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+    post:
+      summary: Create a chart
+      tags:
+        - Charts
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spaceId, kindId, activityTypeId, periodId]
+              properties:
+                spaceId: { type: integer }
+                kindId: { type: integer }
+                activityTypeId: { type: integer }
+                periodId: { type: integer }
+      responses:
+        '201':
+          description: Chart created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /charts/{id}:
+    patch:
+      summary: Update a chart
+      tags:
+        - Charts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChartRequest'
+      responses:
+        '200':
+          description: Chart updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /charts/{id}/delete:
+    patch:
+      summary: Delete a chart (soft delete)
+      tags:
+        - Charts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Chart deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /charts/{id}/restore:
+    patch:
+      summary: Restore a chart
+      tags:
+        - Charts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Chart restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /charts/{id}/data:
+    get:
+      summary: Get chart data
+      tags:
+        - Charts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: RFC3339 timestamp
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: RFC3339 timestamp
+        - name: tags
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: Array of tags. Use '!' prefix to exclude tags
+      responses:
+        '200':
+          description: Chart data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    date: { type: string, format: date-time }
+                    value: { type: number }
+        '429':
+          description: Too many requests (rate limited)
+          headers:
+            Retry-After:
+              description: Seconds until next allowed request
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /chart-types:
+    get:
+      summary: Get chart types
+      tags:
+        - Charts
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of chart types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /period-types:
+    get:
+      summary: Get period types
+      tags:
+        - Charts
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of period types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /upload:
+    post:
+      summary: Upload a file
+      description: |
+        Upload a file attachment for a note. The server validates file size and type against a server-side policy.
+        Allowed MIME types and maximum size are configured on the server (not via client headers).
+        Default limits:
+        - Max size: 10 MB
+        - Allowed types: image/jpeg, image/png, application/pdf, text/plain
+      tags:
+        - Attachments
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                note_id:
+                  type: integer
+      responses:
+        '201':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '400':
+          description: Invalid request (e.g., disallowed file type or too large)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /files/{id}:
+    get:
+      summary: Get a file
+      tags:
+        - Attachments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /notifications/unread:
+    get:
+      summary: List unread notifications
+      tags: [Notifications]
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Unread notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+  /notifications/mark-read:
+    post:
+      summary: Mark notifications as read
+      tags: [Notifications]
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+              required: [ids]
+      responses:
+        '200':
+          description: Marked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /filters:
+    get:
+      summary: List saved note filters in a space
+      tags:
+        - Filters
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated list of filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+    post:
+      summary: Create a saved filter
+      tags:
+        - Filters
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spaceId, name, params]
+              properties:
+                spaceId:
+                  type: integer
+                parentId:
+                  type: integer
+                  nullable: true
+                name:
+                  type: string
+                params:
+                  description: Arbitrary JSON representing note filter parameters
+                  type: object
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /filters/{id}:
+    patch:
+      summary: Update a saved filter
+      tags:
+        - Filters
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                parentId:
+                  type: integer
+                  nullable: true
+                params:
+                  type: object
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /filters/{id}/delete:
+    patch:
+      summary: Soft delete a saved filter
+      tags:
+        - Filters
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /filters/{id}/restore:
+    patch:
+      summary: Restore a soft-deleted filter
+      tags:
+        - Filters
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /sync:
+    get:
+      summary: Pull changes since a timestamp
+      tags:
+        - Sync
+      security:
+        - BearerAuth: []
+      description: |
+        Pull incremental changes since `since` (RFC3339).
+        
+        **Forward-compat contract**: server may start returning a **partial** result in the future.
+        If `data.hasMore=true`, client must continue pulling using `data.nextCursor` (passed as `cursor` query param)
+        until `hasMore=false`.
+      parameters:
+        - name: since
+          in: query
+          required: true
+          description: RFC3339 timestamp
+          schema:
+            type: string
+            format: date-time
+        - name: spaceId
+          in: query
+          required: false
+          description: Optional space to scope the pull
+          schema:
+            type: integer
+        - name: cursor
+          in: query
+          required: false
+          description: Continuation token for partial pull (future-proof; may be ignored by server).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Changes since timestamp
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    $ref: '#/components/schemas/SyncPullResponse'
+    post:
+      summary: Push local changes with last-write-wins
+      tags:
+        - Sync
+      security:
+        - BearerAuth: []
+      description: |
+        Push a batch of local changes.
+        
+        **Limits (contract)**:
+        - Max JSON body size: **25 MiB** by default (configurable via `SYNC_MAX_BODY_BYTES`)
+        - Max batch items: **10000** by default (configurable via `SYNC_MAX_BATCH_ITEMS`)
+        
+        Batch item count includes top-level arrays and nested per-note arrays (`attachments`, `activities`, `charts`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPushRequest'
+      responses:
+        '200':
+          description: Applied changes / conflicts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    $ref: '#/components/schemas/SyncPushResponse'
+        '413':
+          description: Payload too large (body size or batch size limit exceeded)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/tags:
+    get:
+      summary: List tags in a space
+      tags: [Sync]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Tags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/filters:
+    get:
+      summary: List filters in a space (alias)
+      tags: [Sync]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    XRequestID:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Optional request correlation ID. If provided, the server will echo it back. Otherwise, the server generates one.
+      schema:
+        type: string
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        timestamp:
+          type: string
+        version:
+          type: string
+        environment:
+          type: string
+          description: Application runtime environment.
+          enum: [production, test]
+
+    APIResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          nullable: true
+        error:
+          nullable: true
+
+    PaginatedResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            data:
+              oneOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Space'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Note'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Note'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Chart'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/ActivityType'
+            pagination:
+              type: object
+              properties:
+                page: { type: integer }
+                pageSize: { type: integer }
+                total: { type: integer }
+                totalPages: { type: integer }
+
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+        password:
+          type: string
+          minLength: 8
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+
+    LoginResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            token: { type: string }
+
+    CreateSpaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    Space:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        ownerId: { type: integer }
+        createdAt: { type: string, format: date-time }
+        modifiedAt: { type: string, format: date-time }
+
+    Note:
+      type: object
+      properties:
+        id: { type: integer }
+        userId: { type: integer }
+        text: { type: string }
+        spaceId: { type: integer }
+        tags:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        modifiedAt: { type: string, format: date-time }
+        date: { type: string, format: date-time }
+        parent:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            text: { type: string }
+        replyCount: { type: integer }
+        activities:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              typeId: { type: integer }
+              value: { type: string }
+              unit: { type: string }
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              url: { type: string }
+              fileName: { type: string }
+              fileType: { type: string }
+              fileSize: { type: integer, format: int64 }
+
+    CreateNoteRequest:
+      type: object
+      required: [text, date, spaceId]
+      properties:
+        text: { type: string }
+        date: { type: string, format: date-time }
+        spaceId: { type: integer }
+        tags:
+          type: array
+          items: { type: string }
+        parentId:
+          type: integer
+
+    CreateChartRequest:
+      type: object
+      required:
+        - spaceId
+        - kindId
+        - activityTypeId
+        - periodId
+        - name
+      properties:
+        spaceId:
+          type: integer
+          example: 1
+        kindId:
+          type: integer
+          example: 1
+        activityTypeId:
+          type: integer
+          example: 1
+        periodId:
+          type: integer
+          example: 2
+        name:
+          type: string
+          example: "Weekly steps"
+        description:
+          type: string
+        noteId:
+          type: integer
+
+    UpdateChartRequest:
+      type: object
+      properties:
+        kindId:
+          type: integer
+          example: 2
+        periodId:
+          type: integer
+          example: 3
+        activityTypeId:
+          type: integer
+          example: 5
+        name:
+          type: string
+        description:
+          type: string
+        noteId:
+          type: integer
+
+    Chart:
+      type: object
+      properties:
+        id: { type: integer }
+        userId: { type: integer }
+        spaceId: { type: integer }
+        kindId: { type: integer }
+        activityTypeId: { type: integer }
+        periodId: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        noteId: { type: integer, nullable: true }
+        createdAt: { type: string, format: date-time }
+        modifiedAt: { type: string, format: date-time }
+
+    ActivityType:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        valueType: { type: string }
+        minValue: { type: number, nullable: true }
+        maxValue: { type: number, nullable: true }
+        aggregation: { type: string }
+        spaceId: { type: integer, nullable: true }
+        isDefault: { type: boolean }
+        unit: { type: string, nullable: true }
+        categoryId: { type: integer, nullable: true }
+
+    # --- Sync Schemas ---
+    SyncPullResponse:
+      type: object
+      properties:
+        hasMore:
+          type: boolean
+          description: When true, this response is partial and must be continued with `nextCursor`.
+        nextCursor:
+          type: string
+          nullable: true
+          description: Continuation token to be passed as `cursor` query param for the next pull page.
+        spaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpaceChange'
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteChange'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagChange'
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterChange'
+        activityTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityTypeChange'
+
+    SpaceChange:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    NoteChange:
+      type: object
+      properties:
+        id: { type: integer, nullable: true }
+        clientId: { type: string, nullable: true }
+        space_id: { type: integer }
+        user_id: { type: integer }
+        text: { type: string, nullable: true }
+        tags:
+          type: array
+          items: { type: string }
+        date: { type: string, format: date-time, nullable: true }
+        parent_id: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+        activities:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityChange'
+        charts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChartChange'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttachmentChange'
+
+    TagChange:
+      type: object
+      properties:
+        id: { type: integer }
+        space_id: { type: integer }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    FilterChange:
+      type: object
+      properties:
+        id: { type: integer }
+        space_id: { type: integer }
+        user_id: { type: integer }
+        parent_id: { type: integer, nullable: true }
+        name: { type: string }
+        params: { type: object }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    ChartChange:
+      type: object
+      properties:
+        id: { type: integer }
+        space_id: { type: integer }
+        user_id: { type: integer }
+        kind_id: { type: integer }
+        activity_type_id: { type: integer }
+        period_id: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        note_id: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    ActivityChange:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        note_id: { type: integer, nullable: true }
+        type_id: { type: integer }
+        value: { type: object }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    SyncPushRequest:
+      type: object
+      properties:
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteChange'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagChange'
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterChange'
+        charts:
+          description: Deprecated. Use notes[].charts for chart edits/deletes.
+          deprecated: true
+          type: array
+          items:
+            $ref: '#/components/schemas/ChartChange'
+        activities:
+          description: Deprecated. Use notes[].activities for activity edits/deletes.
+          deprecated: true
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityChange'
+
+    Conflict:
+      type: object
+      properties:
+        resource: { type: string }
+        id: { type: integer }
+        reason: { type: string }
+        server: { type: object }
+
+    Mapping:
+      type: object
+      properties:
+        resource: { type: string }
+        clientId: { type: string }
+        serverId: { type: integer }
+
+    SyncPushResponse:
+      type: object
+      properties:
+        applied: { type: integer }
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conflict'
+        mappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mapping'
+
+    AttachmentChange:
+      type: object
+      properties:
+        id: { type: string }
+        note_id: { type: integer, nullable: true }
+        file_name: { type: string }
+        file_type: { type: string }
+        file_size: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+
+    ActivityTypeChange:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        value_type: { type: string }
+        min_value: { type: number, nullable: true }
+        max_value: { type: number, nullable: true }
+        aggregation: { type: string }
+        space_id: { type: integer, nullable: true }
+        is_default: { type: boolean }
+        unit: { type: string, nullable: true }
+        category_id: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time } 

@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/schemas/invitation_created.schema.json",
+  "title": "InvitationCreated",
+  "type": "object",
+  "properties": {
+    "type": { "const": "InvitationCreated" },
+    "spaceId": { "type": "integer" },
+    "inviterId": { "type": "integer" }
+  },
+  "required": ["type", "spaceId", "inviterId"],
+  "additionalProperties": true
+} 
