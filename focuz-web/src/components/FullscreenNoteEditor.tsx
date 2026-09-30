@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
+import { BubbleMenu } from '@tiptap/react/menus'
+import { TextSelection } from '@tiptap/pm/state'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { noteExtensions, normalizeEditorMarkdown } from '../lib/note-format/extensions'
 import {
@@ -26,6 +28,7 @@ import HorizontalRuleRoundedIcon from '@mui/icons-material/HorizontalRuleRounded
 import TitleRoundedIcon from '@mui/icons-material/TitleRounded'
 import NotesRoundedIcon from '@mui/icons-material/NotesRounded'
 import CloseFullscreenRoundedIcon from '@mui/icons-material/CloseFullscreenRounded'
+import { INLINE_TOOLS, touchScreen } from '../lib/selection-format'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 /** Shortcut label for the current platform: "Mod-Shift-B" -> "Ctrl+Shift+B" / "⌘⇧B". */
@@ -86,8 +89,15 @@ function useToolbarState(editor: Editor | null) {
   })
 }
 
-function LinkButton({ editor, active, href }: { editor: Editor; active: boolean; href: string }) {
-  const [open, setOpen] = useState(false)
+function LinkButton({ editor, active, href, inputId = 'fse-link-input', onOpenChange }: {
+  editor: Editor
+  active: boolean
+  href: string
+  inputId?: string
+  onOpenChange?: (open: boolean) => void
+}) {
+  const [open, setOpenState] = useState(false)
+  const setOpen = (o: boolean) => { setOpenState(o); onOpenChange?.(o) }
   const [url, setUrl] = useState('')
   useEffect(() => { if (open) setUrl(href || '') }, [open, href])
   function apply(e: React.FormEvent) {
@@ -111,10 +121,10 @@ function LinkButton({ editor, active, href }: { editor: Editor; active: boolean;
           <LinkRoundedIcon fontSize="inherit" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="p-3 w-80 fse-popover" onOpenAutoFocus={e => { e.preventDefault(); requestAnimationFrame(() => document.getElementById('fse-link-input')?.focus()) }}>
+      <PopoverContent align="start" className="p-3 w-80 fse-popover" onOpenAutoFocus={e => { e.preventDefault(); requestAnimationFrame(() => document.getElementById(inputId)?.focus()) }}>
         <form onSubmit={apply} className="flex flex-col gap-2">
-          <label htmlFor="fse-link-input" className="text-sm font-semibold">Link address</label>
-          <input id="fse-link-input" className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="example.com" autoComplete="off" inputMode="url" />
+          <label htmlFor={inputId} className="text-sm font-semibold">Link address</label>
+          <input id={inputId} className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="example.com" autoComplete="off" inputMode="url" />
           <div className="flex justify-between gap-2">
             {active ? (
               <button type="button" className="fse-text-btn" onClick={() => { editor.chain().focus().extendMarkRange('link').unsetLink().run(); setOpen(false) }}>
@@ -128,6 +138,10 @@ function LinkButton({ editor, active, href }: { editor: Editor; active: boolean;
     </Popover>
   )
 }
+
+const TOGGLE = { bold: 'toggleBold', italic: 'toggleItalic', strike: 'toggleStrike', code: 'toggleCode' } as const
+// Under the selection on touch screens: the system's copy/paste menu takes the space above it.
+const BUBBLE_OPTIONS = { placement: touchScreen() ? 'bottom' : 'top', offset: 8, flip: true, shift: { padding: 8 } } as const
 
 export interface FullscreenNoteEditorProps {
   open: boolean
@@ -192,6 +206,8 @@ function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmi
     },
   })
   const s = useToolbarState(editor)
+  // The link popover takes the focus from the editor; the bubble must stay while it is open.
+  const bubbleLinkOpen = useRef(false)
   if (!editor || !s) return null
   const chain = () => editor.chain().focus()
 
@@ -271,6 +287,21 @@ function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmi
 
       <div className="fse-scroll" onClick={e => { if (e.target === e.currentTarget) editor.commands.focus('end') }}>
         <EditorContent editor={editor} className="fse-editor" />
+        <BubbleMenu
+          editor={editor}
+          className="sel-bar"
+          role="toolbar"
+          aria-label="Format selection"
+          options={BUBBLE_OPTIONS}
+          shouldShow={({ editor: e, state, from, to }) =>
+            bubbleLinkOpen.current || (from !== to && e.isFocused && state.selection instanceof TextSelection && !e.isActive('codeBlock'))}
+        >
+          {INLINE_TOOLS.map(t => (
+            <ToolButton key={t.mark} label={t.label} shortcut={t.shortcut} active={s[t.mark]} onClick={() => chain()[TOGGLE[t.mark]]().run()}>{t.icon}</ToolButton>
+          ))}
+          <span className="sel-bar-sep" aria-hidden />
+          <LinkButton editor={editor} active={s.link} href={s.linkHref} inputId="fse-bubble-link-input" onOpenChange={o => { bubbleLinkOpen.current = o }} />
+        </BubbleMenu>
       </div>
 
       <div className="fse-footer">

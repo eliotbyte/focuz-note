@@ -15,6 +15,7 @@ import FullscreenNoteEditor from './FullscreenNoteEditor'
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import ImageEditorDialog from './ImageEditorDialog'
+import { TextareaFormatBar } from './SelectionFormatBar'
 
 const MAX_ATTACHMENTS = 10
 
@@ -307,6 +308,7 @@ export default function NoteEditor({
         >
           <OpenInFullRoundedIcon fontSize="inherit" />
         </button>
+        <TextareaFormatBar textareaRef={textRef} />
       </div>
       {allowActivitiesInline ? (
         <ActivitiesInput
