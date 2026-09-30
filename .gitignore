@@ -74,3 +74,5 @@ postgres-data/
 
 # Docker volumes
 docker-volumes/ 
+# Local test stand credentials (never commit)
+LOCAL_TEST_ACCOUNTS.md
