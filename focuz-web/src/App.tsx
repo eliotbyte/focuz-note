@@ -36,6 +36,9 @@ import SpaceSettingsDialog, { type SpaceSettingsTab } from './components/spaces/
 import { SpaceContext, useSpaceView, type SpaceView } from './lib/space-context'
 import { useMe, useSpace, useSpaces } from './lib/useSpaces'
 import { canWrite, roleOf, ROLE_LABEL } from './lib/roles'
+import NoteGrid, { FeedLayoutToggle } from './components/NoteGrid'
+import type { FeedLayout } from './lib/feed-layout'
+import { useFeedLayout } from './lib/useFeedLayout'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
@@ -47,6 +50,7 @@ function TopBar({
   onBack,
   viewTitle,
   onOpenSpace,
+  wide,
 }: {
   onOpenSpaces: () => void
   onOpenSettings: () => void
@@ -55,9 +59,11 @@ function TopBar({
   /** Current folder, shown on phones where the folder list lives in the drawer. */
   viewTitle?: string
   onOpenSpace: (localSpaceId: number) => void
+  /** The feed is shown as tiles and takes the whole width. */
+  wide?: boolean
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[304px_minmax(0,620px)] xl:grid-cols-[324px_620px] md:justify-center gap-3 md:gap-6 items-center">
+    <div className={`grid grid-cols-[minmax(0,1fr)_auto] md:justify-center gap-3 md:gap-6 items-center ${wide ? 'md:grid-cols-[304px_minmax(0,1fr)] xl:grid-cols-[324px_minmax(0,1fr)]' : 'md:grid-cols-[304px_minmax(0,620px)] xl:grid-cols-[324px_620px]'}`}>
       <div className="flex items-center gap-3 min-w-0">
         {isThread ? (
           <button className="icon-btn icon-35" onClick={onBack} type="button" aria-label="Back">
@@ -181,7 +187,7 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
   )
 }
 
-function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTag, onAddQuickActivity, scopeIds, folderIndex, emptyText, hiddenTags = [], freeze }: { spaceId: number; filter: FilterRecord | null; quick: QuickState; parentId?: number | null; onOpenThread?: (noteId: number) => void; onAddQuickTag?: (tag: string) => void; onAddQuickActivity?: (name: string) => void; /** Only these notes (the open folder), or null for all. */ scopeIds?: Set<number> | null; folderIndex?: FolderIndex; emptyText?: string; /** Tags every note here has anyway (the open folder's), not repeated on each card. */ hiddenTags?: string[]; /** Keep the order this list had when opened (see feed-snapshot). `sig` names what the caller shows; `ready` is false while that is still loading. */ freeze?: { key: string; sig: string; ready: boolean } }) {
+function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTag, onAddQuickActivity, scopeIds, folderIndex, emptyText, hiddenTags = [], freeze, layout, onLayoutChange }: { spaceId: number; filter: FilterRecord | null; quick: QuickState; parentId?: number | null; onOpenThread?: (noteId: number) => void; onAddQuickTag?: (tag: string) => void; onAddQuickActivity?: (name: string) => void; /** Only these notes (the open folder), or null for all. */ scopeIds?: Set<number> | null; folderIndex?: FolderIndex; emptyText?: string; /** Tags every note here has anyway (the open folder's), not repeated on each card. */ hiddenTags?: string[]; /** Keep the order this list had when opened (see feed-snapshot). `sig` names what the caller shows; `ready` is false while that is still loading. */ freeze?: { key: string; sig: string; ready: boolean }; /** Tiles instead of cards (the main feed only). */ layout?: FeedLayout; onLayoutChange?: (next: FeedLayout) => void }) {
   const [foldersFor, setFoldersFor] = useState<NoteRecord | null>(null)
   const [search, setSearch] = useState<{ q: string; ids: number[] } | null>(null)
   const searchQ = (quick.text || '').trim()
@@ -397,6 +403,27 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
     }
     setReplyingForId(null)
     setReplyValue({ text: '', tags: [] })
+  }
+
+  if (layout?.mode === 'grid' && onLayoutChange) {
+    const positiveQuickTags = ((quick as any).tags || []).filter((t: string) => !t.startsWith('!')) as string[]
+    return (
+      <>
+        <NoteGrid
+          notes={notes}
+          layout={layout}
+          onLayoutChange={onLayoutChange}
+          onOpenThread={onOpenThread}
+          onDelete={(id) => { void removeNote(id) }}
+          onManageFolders={folderIndex ? setFoldersFor : undefined}
+          repliesById={repliesById}
+          hiddenTags={new Set([...positiveQuickTags, ...hiddenTags])}
+          showParentPreview={parentId == null}
+          emptyText={emptyText}
+        />
+        {foldersFor && <NoteFoldersDialog index={folderIndex} note={foldersFor} onClose={() => setFoldersFor(null)} />}
+      </>
+    )
   }
 
   return (
@@ -829,6 +856,9 @@ function App() {
 
   const feedView: FeedView = selectedFilter?.id != null ? { kind: 'folder', id: selectedFilter.id } : unsortedView ? { kind: 'unsorted' } : { kind: 'all' }
   const currentRule = feedView.kind === 'folder' ? folderIndex?.rules.get(feedView.id) : undefined
+  const [feedLayout, setFeedLayout] = useFeedLayout(currentSpaceId, feedView, folderIndex, canWrite(spaceView.role))
+  // Tiles use the room a wide screen has; a thread and the list keep the reading width.
+  const wideFeed = !currentNoteId && feedLayout.mode === 'grid' && !ruleDraft
 
   function setFeedQuick(next: QuickState) {
     setQuickFeed(next)
@@ -1105,6 +1135,7 @@ function App() {
               onSortChange={(sort) => setFeedQuick({ ...quickFeed, sort })}
               saveTarget={feedView.kind === 'folder' ? viewTitle : null}
               onSaveAsFolder={(name) => { void saveAsFolder(name) }}
+              trailing={<FeedLayoutToggle layout={feedLayout} onChange={setFeedLayout} />}
             />
           )}
           {!editing && canWrite(spaceView.role) && <NoteComposer spaceId={currentSpaceId} positiveQuickTags={newNoteTags} />}
@@ -1119,6 +1150,8 @@ function App() {
             folderIndex={folderIndex}
             hiddenTags={editing ? [] : folderTags}
             emptyText={emptyText}
+            layout={editing ? undefined : feedLayout}
+            onLayoutChange={setFeedLayout}
             // A rule being edited previews live; otherwise the feed keeps what it showed on opening.
             freeze={editing ? undefined : {
               key: entryKey,
@@ -1172,6 +1205,7 @@ function App() {
             onBack={goBack}
             viewTitle={viewTitle}
             onOpenSpace={(id) => switchSpace(id)}
+            wide={wideFeed}
           />
         </div>
       </header>
@@ -1208,7 +1242,7 @@ function App() {
         }}
       >
         <div className="mx-auto max-w-[1440px] px-4 md:px-6">
-          <div className="grid grid-cols-1 md:grid-cols-[304px_minmax(0,620px)] xl:grid-cols-[324px_620px] md:justify-center gap-6">
+          <div className={`grid grid-cols-1 md:justify-center gap-6 ${wideFeed ? 'md:grid-cols-[304px_minmax(0,1fr)] xl:grid-cols-[324px_minmax(0,1fr)]' : 'md:grid-cols-[304px_minmax(0,620px)] xl:grid-cols-[324px_620px]'}`}>
             <aside
               className="hidden md:block py-4 self-start"
               style={{

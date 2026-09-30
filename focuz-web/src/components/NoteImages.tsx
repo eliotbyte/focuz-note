@@ -470,3 +470,24 @@ function BlobImg({ blob, alt, className, style, draggable }: { blob: Blob; alt?:
     />
   )
 }
+
+// Pictures of a note in a grid tile. Tiles are all one size, so here pictures are cropped to fill
+// their box: one fills it, two share it side by side, three are one big and two small, and four or
+// more show the first four with "+N" on the last.
+export function NoteTileImages({ attachments, className }: { attachments: AttachmentRecord[]; className?: string }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const shown = attachments.slice(0, 4)
+  usePrefetchWhenVisible(ref, shown.filter(a => !a.data))
+  if (attachments.length === 0) return null
+  const more = attachments.length - shown.length
+  return (
+    <div ref={ref} className={`tile-media tile-media-${shown.length} ${className ?? ''}`}>
+      {shown.map((a, i) => (
+        <div key={a.id ?? i} className="tile-media-cell">
+          {a.data ? <BlobImg blob={a.data} alt={a.fileName} className="tile-media-img" draggable={false} /> : null}
+          {more > 0 && i === shown.length - 1 && <span className="tile-media-more">+{more}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}

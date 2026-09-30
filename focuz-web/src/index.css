@@ -1738,3 +1738,103 @@ button:disabled { cursor: not-allowed; }
 .picture-field { display: flex; align-items: center; gap: 14px; }
 .picture-field-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .thumb-edit { position: absolute; left: 2px; bottom: 2px; width: 20px; height: 20px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; color: #fff; background: rgba(0, 0, 0, 0.6); }
+
+/* ---------- Feed as tiles ---------- */
+.seg-icons button { display: grid; place-items: center; padding: 0 9px; height: 30px; font-size: 17px; }
+.note-grid { display: grid; list-style: none; margin: 0; padding: 0; }
+/* Every tile is the same square; what doesn't fit is cut off with a fade. Type follows the tile's width. */
+.note-tile {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--glass);
+  box-shadow: var(--shadow-surface);
+  cursor: pointer;
+  container-type: inline-size;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.note-tile:hover { transform: translateY(-1px); }
+.note-tile:focus-visible { outline: 2px solid rgb(var(--c-accent)); outline-offset: 2px; }
+/* Container units refer to the tile, so they work on its children: the tile's width drives its type. */
+.tile-body, .tile-foot { font-size: clamp(11px, 7.2cqi, 14.5px); }
+
+.tile-media { display: grid; gap: 2px; min-height: 0; background: #000; }
+/* The pictures take what the text leaves, and never less than half the tile. */
+.tile-media-area { flex: 1 1 0; min-height: 52%; }
+.note-tile.has-media .tile-body { flex: 0 1 auto; }
+.tile-media-1 { grid-template: 1fr / 1fr; }
+.tile-media-2 { grid-template: 1fr / 1fr 1fr; }
+.tile-media-3 { grid-template: 1fr 1fr / 2fr 1fr; }
+.tile-media-3 > :first-child { grid-row: 1 / 3; }
+.tile-media-4 { grid-template: 1fr 1fr / 1fr 1fr; }
+.tile-media-cell { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: rgba(var(--c-text) / 0.06); }
+.tile-media-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile-media-more {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: clamp(14px, 11cqi, 22px); background: rgba(0, 0, 0, 0.45);
+}
+
+.tile-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 0.35em; padding: 0.7em 0.8em 0; }
+.tile-parent { display: flex; align-items: center; gap: 0.3em; min-width: 0; color: var(--text-muted); font-size: 0.85em; flex: none; }
+.tile-parent svg { flex: none; }
+.tile-text { flex: 1 1 auto; min-height: 0; overflow: hidden; color: var(--text-primary); line-height: 1.4; }
+.tile-text.is-clipped {
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 1.6em), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 1.6em), transparent);
+}
+.tile-text.note-prose > * + * { margin-top: 0.4em; }
+.tile-text.note-prose h1 { font-size: 1.2em; }
+.tile-text.note-prose h2 { font-size: 1.12em; }
+.tile-text.note-prose pre { padding: 0.4em 0.5em; }
+.tile-text.note-prose img { display: none; }
+.tile-text.note-prose li.note-task { flex-wrap: nowrap; gap: 0.45em; }
+.tile-text.note-prose input[type='checkbox'] { width: 1em; height: 1em; margin-top: 0.2em; pointer-events: none; }
+.tile-text.is-short { font-size: 1.3em; line-height: 1.3; font-weight: 600; }
+.tile-text.is-short h1, .tile-text.is-short h2, .tile-text.is-short h3 { font-size: 1em; }
+.tile-meta { flex: none; color: rgb(var(--c-accent)); font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.tile-foot {
+  flex: none; display: flex; align-items: center; gap: 0.5em; padding: 0.45em 0.8em 0.6em;
+  color: var(--text-muted); font-size: 0.82em; white-space: nowrap;
+}
+.tile-foot svg { font-size: 1.15em; flex: none; }
+.tile-replies { display: inline-flex; align-items: center; gap: 0.2em; color: var(--text-primary); }
+.tile-date { margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
+/* Picture only: date and replies sit on the picture. */
+.note-tile.is-media-only .tile-foot {
+  position: absolute; left: 0; right: 0; bottom: 0; color: #fff; padding-top: 1.6em;
+  background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.55));
+}
+.note-tile.is-media-only .tile-replies { color: #fff; }
+
+.tile-menu { position: absolute; right: 6px; top: 6px; z-index: 2; opacity: 0; transition: opacity 140ms ease; }
+.note-tile:hover .tile-menu, .note-tile:focus-within .tile-menu, .tile-menu.is-open { opacity: 1; }
+/* Touch: no hover to reveal it, and a button always on top would cover the text; a long press opens the menu. */
+@media (hover: none) { .tile-menu:not(.is-open) .tile-menu-btn { visibility: hidden; } .tile-menu.is-open { opacity: 1; } }
+.tile-menu-btn {
+  width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center;
+  font-size: 18px; color: #fff; background: rgba(0, 0, 0, 0.45);
+}
+.tile-menu-btn:hover { background: rgba(0, 0, 0, 0.65); }
+.tile-menu-btn:focus-visible { outline: 2px solid rgb(var(--c-accent)); outline-offset: 1px; }
+
+/* Narrow tiles: drop what doesn't fit anyway. */
+@container (max-width: 150px) {
+  .tile-meta, .tile-parent { display: none; }
+  .tile-body { padding: 0.55em 0.6em 0; }
+  .tile-foot { padding: 0.35em 0.6em 0.45em; }
+}
+
+/* Tile size: a slider that snaps to whole tiles per row. */
+.tile-size { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--text-muted); font-size: 13px; }
+.tile-size-icon { font-size: 18px; flex: none; }
+.tile-size-icon.is-small { font-size: 13px; }
+.tile-size-track { position: relative; width: min(220px, 50%); display: flex; flex-direction: column; }
+.tile-size-track input { width: 100%; accent-color: rgb(var(--c-accent)); position: relative; z-index: 1; margin: 0; }
+.tile-size-ticks { display: flex; justify-content: space-between; padding: 0 6px; margin-top: 2px; }
+.tile-size-ticks span { width: 4px; height: 4px; border-radius: 999px; background: rgba(var(--c-text) / 0.25); }
+.tile-size-ticks span.is-on { background: rgb(var(--c-accent)); }
+.tile-size-label { min-width: 5.5em; text-align: right; white-space: nowrap; }

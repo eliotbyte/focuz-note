@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
@@ -25,6 +25,7 @@ export default function FilterBar({
   mode = 'feed',
   saveTarget,
   onSaveAsFolder,
+  trailing,
 }: {
   spaceId: number
   value: Criteria
@@ -35,6 +36,8 @@ export default function FilterBar({
   /** Where "Save as folder" puts the new folder (current folder name), or null for the top level. */
   saveTarget?: string | null
   onSaveAsFolder?: (name: string) => void
+  /** Extra controls at the end of the row (the list / tiles switch). */
+  trailing?: ReactNode
 }) {
   const [text, setText] = useState(value.text)
   // Keep typing smooth: the bar owns the text while focused and reports changes right away.
@@ -92,6 +95,7 @@ export default function FilterBar({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+      {trailing}
 
       {!empty && mode !== 'rule' && (
         <button type="button" className="filter-btn filter-btn-ghost" onClick={() => { setText(''); onChange({ ...EMPTY_CRITERIA }) }}>Clear</button>
