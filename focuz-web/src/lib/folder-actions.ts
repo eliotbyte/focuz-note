@@ -5,6 +5,7 @@ import { createFilterLocal, deleteNote, updateFilterLocal, updateNoteLocal } fro
 import { notes as notesRepo } from '../data'
 import type { FilterTreeNode } from './filter-tree'
 import { descendantIds, orphansAfterDelete, ruleToParams, tagsForFolder, type FolderIndex, type FolderRule } from './folders'
+import { paramsWithLook, type FolderLook } from './folder-look'
 
 function emit() { try { window.dispatchEvent(new Event('focuz:local-write')) } catch {} }
 
@@ -50,6 +51,12 @@ export async function saveFolderRule(localId: number, rule: FolderRule): Promise
   const rec = await db.filters.get(localId)
   if (!rec) return
   await updateFilterLocal(localId, { params: ruleToParams(rule, rec.params) })
+}
+
+export async function setFolderLook(localId: number, look: FolderLook): Promise<void> {
+  const rec = await db.filters.get(localId)
+  if (!rec) return
+  await updateFilterLocal(localId, { params: paramsWithLook(rec.params, look) })
 }
 
 /** Moves a folder under another one (or to the top level), at the end. Its content does not change. */

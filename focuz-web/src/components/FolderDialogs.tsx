@@ -3,11 +3,13 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import type { NoteRecord } from '../lib/types'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog'
 import { notes as notesRepo } from '../data'
-import { deleteFolder, planFolderDelete, setNoteInFolder } from '../lib/folder-actions'
+import { deleteFolder, planFolderDelete, setFolderLook, setNoteInFolder } from '../lib/folder-actions'
 import { descendantIds, folderKind, matchesRule, tagsForFolder, type FolderIndex } from '../lib/folders'
 import { notePreviewText } from '../lib/note-format/render'
 import type { FilterTreeNode } from '../lib/filter-tree'
 import { FolderIcon } from './FolderIcon'
+import { FOLDER_COLORS, FOLDER_ICON_KEYS, lookFromParams, type FolderLook } from '../lib/folder-look'
+import { FOLDER_COLOR_LABEL, FOLDER_ICONS } from '../lib/folder-icons'
 
 function flatten(roots: FilterTreeNode[]): FilterTreeNode[] {
   const out: FilterTreeNode[] = []
@@ -40,7 +42,7 @@ export function MoveFolderDialog({ index, folderId, onClose, onMove }: {
           {targets.map(n => (
             <button key={n.id} type="button" role="option" aria-selected={currentParent === n.id} disabled={currentParent === n.id}
               className="folder-pick" style={{ paddingLeft: 10 + n.depth * 14 }} onClick={() => onMove(n.id)}>
-              <FolderIcon kind={folderKind(index.rules.get(n.id)!)} className="shrink-0 text-secondary" />
+              <FolderIcon kind={folderKind(index.rules.get(n.id)!)} look={lookFromParams(n.rec.params)} className="shrink-0 text-secondary" />
               <span className="flex-1 truncate">{n.rec.name}</span>
               {currentParent === n.id && <span className="text-xs text-secondary">current</span>}
             </button>
@@ -162,13 +164,66 @@ export function NoteFoldersDialog({ index, note, onClose }: { index: FolderIndex
                     void setNoteInFolder(live.id!, live.tags || [], rule, on)
                   }}
                 />
-                <FolderIcon kind={kind} className="shrink-0 text-secondary" />
+                <FolderIcon kind={kind} look={lookFromParams(n.rec.params)} className="shrink-0 text-secondary" />
                 <span className="flex-1 truncate">{n.rec.name}</span>
                 {tags && !hint && <span className="text-xs text-secondary truncate max-w-[40%]">{tags.map(t => `#${t}`).join(' ')}</span>}
                 {hint && <span className="text-xs text-secondary">{hint}</span>}
               </label>
             )
           })}
+        </div>
+        <div className="flex justify-end"><button type="button" className="button" onClick={onClose}>Done</button></div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+const KIND_LEGEND = {
+  folder: 'Solid: this folder collects notes by tags. A group of subfolders gets the outline, a smart folder a funnel.',
+  group: 'Outline: this folder only groups its subfolders. Folders by tags are solid, smart folders get a funnel.',
+  smart: 'Funnel: this is a smart folder. Folders by tags are solid, groups of subfolders are outlined.',
+} as const
+
+/** Icon and color of a folder. Every pick is saved at once, so the tree shows it behind the dialog. */
+export function FolderLookDialog({ index, folderId, onClose }: { index: FolderIndex; folderId: number; onClose: () => void }) {
+  const node = index.nodes.get(folderId)
+  const [look, setLook] = useState<FolderLook>(() => lookFromParams(node?.rec.params))
+  if (!node) return null
+  const kind = folderKind(index.rules.get(folderId)!)
+  const change = (next: FolderLook) => { setLook(next); void setFolderLook(folderId, next) }
+  // The grid shows plain shapes (outlined for a group); the funnel of a smart folder is only in the preview.
+  const gridKind = kind === 'group' ? 'group' : 'folder'
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="p-5 space-y-4 look-dialog">
+        <DialogTitle>Icon and color</DialogTitle>
+        <DialogDescription className="sr-only">Pick how “{node.rec.name}” looks in the folder list.</DialogDescription>
+        <div className="look-preview" aria-hidden>
+          <FolderIcon kind={kind} look={look} className="look-preview-icon" />
+          <span className="truncate">{node.rec.name}</span>
+        </div>
+        <div className="space-y-2">
+          <div className="settings-label">Color</div>
+          <div className="look-colors" role="radiogroup" aria-label="Color">
+            <button type="button" role="radio" aria-checked={!look.color} aria-label="No color" title="No color"
+              className="look-swatch look-swatch-none" onClick={() => change({ ...look, color: undefined })} />
+            {FOLDER_COLORS.map(c => (
+              <button key={c} type="button" role="radio" aria-checked={look.color === c} aria-label={FOLDER_COLOR_LABEL[c]} title={FOLDER_COLOR_LABEL[c]}
+                className={`look-swatch folder-color-${c}`} onClick={() => change({ ...look, color: c })} />
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="settings-label">Icon</div>
+          <div className="look-icons" role="radiogroup" aria-label="Icon">
+            {FOLDER_ICON_KEYS.map(k => (
+              <button key={k} type="button" role="radio" aria-checked={(look.icon ?? 'folder') === k} aria-label={FOLDER_ICONS[k].label} title={FOLDER_ICONS[k].label}
+                className="look-icon" onClick={() => change({ ...look, icon: k === 'folder' ? undefined : k })}>
+                <FolderIcon kind={gridKind} look={{ icon: k, color: look.color }} />
+              </button>
+            ))}
+          </div>
+          <p className="look-legend">{KIND_LEGEND[kind]}</p>
         </div>
         <div className="flex justify-end"><button type="button" className="button" onClick={onClose}>Done</button></div>
       </DialogContent>

@@ -15,7 +15,8 @@ import { FolderIcon } from './FolderIcon'
 import { flattenVisible } from '../lib/filter-tree'
 import { createFolder, moveFolder, renameFolder } from '../lib/folder-actions'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
-import { DeleteFolderDialog, MoveFolderDialog } from './FolderDialogs'
+import { DeleteFolderDialog, FolderLookDialog, MoveFolderDialog } from './FolderDialogs'
+import { lookFromParams } from '../lib/folder-look'
 
 export type FeedView = { kind: 'all' } | { kind: 'unsorted' } | { kind: 'folder'; id: number }
 
@@ -70,6 +71,7 @@ export default function FolderTree({
   const [renaming, setRenaming] = useState<number | null>(null)
   const [moving, setMoving] = useState<number | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
+  const [styling, setStyling] = useState<number | null>(null)
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropOver, setDropOver] = useState<{ id: number; pos: 'before' | 'after' | 'inside' } | null>(null)
 
@@ -266,7 +268,7 @@ export default function FolderTree({
                   ) : (
                     <span className="shrink-0 w-[18px]" aria-hidden />
                   )}
-                  <FolderIcon kind={kind} className="shrink-0 folder-icon" />
+                  <FolderIcon kind={kind} look={lookFromParams(node.rec.params)} className="shrink-0 folder-icon" />
                   {renaming === node.id ? (
                     <RenameInput
                       initial={node.rec.name}
@@ -280,6 +282,7 @@ export default function FolderTree({
                     name={node.rec.name}
                     onNewSubfolder={() => { setCreating({ parent: node.id }); setExpanded(prev => new Set([...prev, node.id])) }}
                     onRename={() => setRenaming(node.id)}
+                    onLook={() => setStyling(node.id)}
                     onEditRule={() => onEditRule(node.id)}
                     onMove={() => setMoving(node.id)}
                     onDelete={() => setDeleting(node.id)}
@@ -301,6 +304,7 @@ export default function FolderTree({
           )}
         </ul>
       </div>
+      {index && styling != null && <FolderLookDialog index={index} folderId={styling} onClose={() => setStyling(null)} />}
       {index && moving != null && (
         <MoveFolderDialog index={index} folderId={moving} onClose={() => setMoving(null)} onMove={async (parent) => {
           setMoving(null)
@@ -324,10 +328,11 @@ export default function FolderTree({
   )
 }
 
-function FolderMenu({ name, onNewSubfolder, onRename, onEditRule, onMove, onDelete }: {
+function FolderMenu({ name, onNewSubfolder, onRename, onLook, onEditRule, onMove, onDelete }: {
   name: string
   onNewSubfolder: () => void
   onRename: () => void
+  onLook: () => void
   onEditRule: () => void
   onMove: () => void
   onDelete: () => void
@@ -349,6 +354,7 @@ function FolderMenu({ name, onNewSubfolder, onRename, onEditRule, onMove, onDele
       <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onSelect={onNewSubfolder}>New subfolder</DropdownMenuItem>
         <DropdownMenuItem onSelect={onRename}>Rename</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onLook}>Icon and color…</DropdownMenuItem>
         <DropdownMenuItem onSelect={onEditRule}>Edit rule</DropdownMenuItem>
         <DropdownMenuItem onSelect={onMove}>Move to…</DropdownMenuItem>
         <DropdownMenuSeparator />

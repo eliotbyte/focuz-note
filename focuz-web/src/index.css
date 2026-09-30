@@ -1252,8 +1252,77 @@ button:disabled { cursor: not-allowed; }
 .feed-empty { padding: 28px 12px; text-align: center; color: var(--text-muted); font-size: 14px; }
 
 .folder-count { flex: none; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.folder-icon-smart { color: rgb(139 92 246); }
-[data-theme='dark'] .folder-icon-smart { color: rgb(167 139 250); }
+
+/* Smart folder: the folder's solid icon with a funnel badge in the corner. */
+.folder-glyph { position: relative; display: inline-flex; }
+.folder-glyph > svg { width: 1em; height: 1em; }
+.folder-smart-badge {
+  position: absolute; right: -0.56em; bottom: -0.44em;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.5em; width: 1.24em; height: 1.24em; border-radius: 999px;
+  background: var(--glass-strong);
+  color: rgb(139 92 246);
+}
+[data-theme='dark'] .folder-smart-badge { color: rgb(167 139 250); }
+.folder-smart-badge > svg { width: 1em; height: 1em; }
+
+/* Folder colors (icon and swatch). Deeper tones on light, brighter ones on dark. */
+.folder-color-red { --fc: 214 54 56; }
+.folder-color-orange { --fc: 226 110 22; }
+.folder-color-yellow { --fc: 200 148 0; }
+.folder-color-green { --fc: 56 150 60; }
+.folder-color-teal { --fc: 0 145 140; }
+.folder-color-blue { --fc: 37 110 230; }
+.folder-color-indigo { --fc: 88 86 214; }
+.folder-color-purple { --fc: 146 70 210; }
+.folder-color-pink { --fc: 214 60 140; }
+.folder-color-gray { --fc: 110 116 128; }
+[data-theme='dark'] .folder-color-red { --fc: 244 104 104; }
+[data-theme='dark'] .folder-color-orange { --fc: 250 150 70; }
+[data-theme='dark'] .folder-color-yellow { --fc: 240 196 60; }
+[data-theme='dark'] .folder-color-green { --fc: 110 200 100; }
+[data-theme='dark'] .folder-color-teal { --fc: 60 200 190; }
+[data-theme='dark'] .folder-color-blue { --fc: 96 160 250; }
+[data-theme='dark'] .folder-color-indigo { --fc: 140 140 250; }
+[data-theme='dark'] .folder-color-purple { --fc: 186 130 250; }
+[data-theme='dark'] .folder-color-pink { --fc: 244 120 180; }
+[data-theme='dark'] .folder-color-gray { --fc: 160 166 178; }
+.folder-color, .folder-icon.folder-color, .text-secondary.folder-color { color: rgb(var(--fc)) !important; }
+
+/* Header icon opens the icon and color picker. */
+.folder-look-btn { display: inline-flex; padding: 3px; margin: -3px; border-radius: 8px; }
+.folder-look-btn:hover { background: rgba(var(--c-text) / 0.08); }
+.folder-look-btn:focus-visible { outline: 2px solid rgb(var(--c-accent)); outline-offset: 1px; }
+
+.look-dialog { width: min(440px, calc(100vw - 32px)); }
+.look-preview {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 10px 12px; border-radius: var(--radius-control);
+  background: var(--field-bg); box-shadow: var(--shadow-field);
+  font-size: 15px; font-weight: 600;
+}
+.look-preview-icon { font-size: 24px !important; width: 24px !important; height: 24px !important; }
+.look-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+.look-swatch {
+  width: 28px; height: 28px; border-radius: 999px;
+  background: rgb(var(--fc));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition: transform 100ms ease;
+}
+.look-swatch:hover { transform: scale(1.1); }
+.look-swatch[aria-checked='true'] { box-shadow: 0 0 0 2px var(--glass-strong), 0 0 0 4px rgb(var(--fc, var(--c-text)) / 0.9); }
+.look-swatch-none { --fc: var(--c-text); background: transparent; box-shadow: inset 0 0 0 1.5px rgba(var(--c-text) / 0.35); position: relative; overflow: hidden; }
+.look-swatch-none::after { content: ''; position: absolute; left: 50%; top: 3px; bottom: 3px; width: 1.5px; background: rgba(var(--c-text) / 0.45); transform: rotate(45deg); }
+.look-swatch-none[aria-checked='true'] { box-shadow: inset 0 0 0 1.5px rgba(var(--c-text) / 0.35), 0 0 0 2px var(--glass-strong), 0 0 0 4px rgba(var(--c-text) / 0.6); }
+.look-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; }
+.look-icon {
+  height: 40px; display: flex; align-items: center; justify-content: center;
+  border-radius: 10px; font-size: 22px; color: var(--text-primary);
+}
+.look-icon .icon-sm { font-size: 22px !important; width: 22px !important; height: 22px !important; }
+.look-icon:hover { background: rgba(var(--c-text) / 0.07); }
+.look-icon[aria-checked='true'] { background: rgb(var(--c-accent) / 0.14); box-shadow: inset 0 0 0 1.5px rgb(var(--c-accent) / 0.7); }
+.look-legend { font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
 .folder-more {
   flex: none;
   display: none;

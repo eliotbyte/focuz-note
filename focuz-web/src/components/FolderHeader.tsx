@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import type { FolderIndex, FolderRule, RuleChipKind } from '../lib/folders'
 import { describeRule, folderKind, ruleChips } from '../lib/folders'
 import { FolderIcon } from './FolderIcon'
+import { FolderLookDialog } from './FolderDialogs'
+import { lookFromParams } from '../lib/folder-look'
 import type { FeedView } from './FolderTree'
 
 export type FolderScope = 'deep' | 'here'
@@ -27,6 +30,7 @@ export default function FolderHeader({
   onSaveRule: () => void
   onCancelRule: () => void
 }) {
+  const [styling, setStyling] = useState(false)
   if (view.kind === 'all') return null
   if (view.kind === 'unsorted') {
     return (
@@ -48,7 +52,9 @@ export default function FolderHeader({
       {crumbs.length > 0 && <div className="folder-crumbs">{crumbs.join(' › ')} ›</div>}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h2 className="folder-title">
-          <FolderIcon kind={kind} className="folder-icon text-secondary" />
+          <button type="button" className="folder-look-btn" onClick={() => setStyling(true)} aria-label="Icon and color" title="Icon and color">
+            <FolderIcon kind={kind} look={lookFromParams(node.rec.params)} className="folder-icon text-secondary" />
+          </button>
           <span className="truncate">{node.rec.name}</span>
         </h2>
         {hasChildren && !editingRule && (
@@ -59,6 +65,7 @@ export default function FolderHeader({
         )}
       </div>
       <RuleChips rule={rule} onEdit={editingRule ? undefined : onEditRule} />
+      {styling && <FolderLookDialog index={index} folderId={view.id} onClose={() => setStyling(false)} />}
       {editingRule && (
         <div className="folder-editing" role="region" aria-label="Editing folder rule">
           <span className="flex-1 min-w-[12rem]">Editing the rule. The list below shows what the folder will contain.</span>
