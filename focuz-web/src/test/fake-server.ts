@@ -9,7 +9,7 @@ type Filter = {
   id: number; space_id: number; parent_id: number | null; name: string; params: any
   created_at: string; modified_at: string; is_deleted: boolean; client_id: string | null
 }
-type Attachment = { id: string; note_id: number; client_id: string | null; file_name: string; file_type: string; file_size: number; created_at: string; modified_at: string; data: Uint8Array }
+type Attachment = { id: string; note_id: number; client_id: string | null; file_name: string; file_type: string; file_size: number; created_at: string; modified_at: string; position: number | null; data: Uint8Array }
 
 export class FakeServer {
   base = 'http://api.test'
@@ -67,7 +67,7 @@ export class FakeServer {
 
   addAttachment(noteId: number, fileName: string, bytes = new Uint8Array([1, 2, 3])): Attachment {
     const t = this.now()
-    const a: Attachment = { id: `att-${this.nextAttId++}`, note_id: noteId, client_id: null, file_name: fileName, file_type: 'image/webp', file_size: bytes.length, created_at: t, modified_at: t, data: bytes }
+    const a: Attachment = { id: `att-${this.nextAttId++}`, note_id: noteId, client_id: null, file_name: fileName, file_type: 'image/webp', file_size: bytes.length, created_at: t, modified_at: t, position: null, data: bytes }
     this.attachments.set(a.id, a)
     return a
   }
@@ -144,7 +144,10 @@ export class FakeServer {
         const att = this.attachments.get(a.id)
         if (!att || att.note_id !== cur.id) continue
         if (a.is_deleted) this.attachments.delete(a.id)
-        else if (a.modified_at) att.modified_at = a.modified_at
+        else {
+          if (typeof a.position === 'number') { att.position = a.position; att.modified_at = this.now() }
+          else if (a.modified_at) att.modified_at = a.modified_at
+        }
       }
       resp.applied++
       resp.versions.push({ resource: 'note', id: cur.id, modified_at: cur.modified_at })
@@ -183,7 +186,9 @@ export class FakeServer {
         id: n.id, space_id: n.space_id, user_id: n.user_id, author_name: `user${n.user_id}`, text: n.text, tags: n.tags, date: n.date, parent_id: n.parent_id ?? undefined,
         created_at: n.created_at, modified_at: n.modified_at, deleted_at: n.is_deleted ? n.modified_at : undefined,
         activities: [], charts: [],
-        attachments: [...this.attachments.values()].filter(a => a.note_id === n.id).map(a => ({ id: a.id, file_name: a.file_name, file_type: a.file_type, file_size: a.file_size, created_at: a.created_at, modified_at: a.modified_at })),
+        attachments: [...this.attachments.values()].filter(a => a.note_id === n.id)
+          .sort((a, b) => ((a.position ?? 1e9) - (b.position ?? 1e9)) || a.created_at.localeCompare(b.created_at))
+          .map(a => ({ id: a.id, file_name: a.file_name, file_type: a.file_type, file_size: a.file_size, created_at: a.created_at, modified_at: a.modified_at, position: a.position })),
       }))
     return {
       spaces: [...this.spaces.values()].filter(x => after(x.modified_at)),
@@ -205,11 +210,13 @@ export class FakeServer {
     if (!note || note.is_deleted) return json(400, { success: false, error: { code: 'INVALID', message: 'invalid note' } })
     const file = form.get('file') as File
     const clientId = (form.get('client_id') as string) || null
+    const pos = form.get('position')
+    const position = pos != null ? Number(pos) : Math.max(-1, ...[...this.attachments.values()].filter(a => a.note_id === noteId).map(a => a.position ?? -1)) + 1
     const existing = [...this.attachments.values()].find(a => a.note_id === noteId && clientId && a.client_id === clientId)
     if (existing) return json(201, { success: true, data: { attachment_id: existing.id } })
     const bytes = await readBytes(file)
     const t = this.now()
-    const a: Attachment = { id: `att-${this.nextAttId++}`, note_id: noteId, client_id: clientId, file_name: file.name, file_type: file.type || 'image/webp', file_size: bytes.length, created_at: t, modified_at: t, data: bytes }
+    const a: Attachment = { id: `att-${this.nextAttId++}`, note_id: noteId, client_id: clientId, file_name: file.name, file_type: file.type || 'image/webp', file_size: bytes.length, created_at: t, modified_at: t, position, data: bytes }
     this.attachments.set(a.id, a)
     return json(201, { success: true, data: { attachment_id: a.id } })
   }

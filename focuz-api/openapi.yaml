@@ -1116,6 +1116,14 @@ paths:
                   format: binary
                 note_id:
                   type: integer
+                client_id:
+                  type: string
+                  format: uuid
+                  description: Makes retries idempotent per note.
+                position:
+                  type: integer
+                  minimum: 0
+                  description: Place of the image in the note. Defaults to after the note's other images.
       responses:
         '201':
           description: File uploaded
@@ -1889,6 +1897,8 @@ components:
         file_size: { type: integer, format: int64 }
         created_at: { type: string, format: date-time }
         modified_at: { type: string, format: date-time }
+        position: { type: integer, nullable: true, description: 'Place of the image in its note, from 0' }
+        is_deleted: { type: boolean, description: 'Push only' }
 
     ActivityTypeChange:
       type: object

@@ -7,7 +7,7 @@
 //    then only a manual retry (status popover) re-queues them.
 import { db } from './db'
 import { ApiError, api, apiBlob, apiMultipart, fetchBlobUrl, isNetworkError, isTransientError } from './api'
-import type { JobRecord } from './types'
+import type { AttachmentRecord, JobRecord } from './types'
 
 export const MAX_ATTEMPTS = 5
 const RUNNING_STALE_MS = 3 * 60 * 1000
@@ -58,19 +58,25 @@ async function upload(job: JobRecord): Promise<JobOutcome> {
   form.append('file', att.data as Blob, att.fileName)
   form.append('note_id', String(note.serverId))
   if (att.clientId) form.append('client_id', att.clientId)
+  if (typeof att.position === 'number') form.append('position', String(att.position))
   const resp = await apiMultipart('/upload', form)
   const serverId = (resp?.data?.attachment_id as string | undefined) || (resp?.data?.id as string | undefined)
   await db.transaction('rw', db.attachments, db.jobs, async () => {
     const current = await db.attachments.get(att.id!)
     if (!serverId) { if (current) await db.attachments.update(att.id!, { isDirty: 0 }); return }
+    // Reordered while the file was on its way: the new position still has to be pushed.
+    const moved = !!current && (current.position ?? null) !== (att.position ?? null)
     // A pull may already have created a record for this server id: keep one record with the data.
     const other = await db.attachments.where('serverId').equals(serverId).first()
     if (other && other.id !== att.id) {
-      if (!other.data && current?.data) await db.attachments.update(other.id!, { data: current.data })
+      const patch: Partial<AttachmentRecord> = {}
+      if (!other.data && current?.data) patch.data = current.data
+      if (moved) { patch.position = current!.position; patch.isDirty = 1 }
+      if (Object.keys(patch).length) await db.attachments.update(other.id!, patch)
       if (current) await db.attachments.delete(att.id!)
       await db.jobs.where('attachmentId').equals(att.id!).and(j => j.id !== job.id).delete()
     } else if (current) {
-      await db.attachments.update(att.id!, { serverId, isDirty: 0 })
+      await db.attachments.update(att.id!, { serverId, isDirty: moved ? 1 : 0 })
     }
   })
   return { kind: 'done' }

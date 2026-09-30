@@ -194,3 +194,82 @@ func (s *E2ETestSuite) Test207_Attachments_ContentEndpoint() {
 	resp3.Body.Close()
 	s.Equal(http.StatusUnauthorized, resp3.StatusCode)
 }
+
+func (s *E2ETestSuite) uploadPixel(noteID int, position string) string {
+	webp := []byte("RIFF\x1a\x00\x00\x00WEBPVP8L\x0d\x00\x00\x00\x2f\x00\x00\x00\x10\x07\x10\x11\x11\x88\x88\xfe\x07\x00")
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	fw, _ := w.CreateFormFile("file", "pixel.webp")
+	_, _ = fw.Write(webp)
+	_ = w.WriteField("note_id", fmt.Sprint(noteID))
+	_ = w.WriteField("client_id", uuid.NewString())
+	if position != "" {
+		_ = w.WriteField("position", position)
+	}
+	_ = w.Close()
+	req, _ := http.NewRequest("POST", s.baseURL+"/upload", &buf)
+	req.Header.Set("Authorization", "Bearer "+s.ownerToken)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	resp, err := (&http.Client{}).Do(req)
+	s.Require().NoError(err)
+	defer resp.Body.Close()
+	var up map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&up)
+	s.Require().Equal(http.StatusCreated, resp.StatusCode, up)
+	return up["data"].(map[string]any)["attachment_id"].(string)
+}
+
+func (s *E2ETestSuite) pulledAttachmentIDs(since time.Time, noteID int) []string {
+	for _, n := range s.pullNotes(since) {
+		if int(n["id"].(float64)) != noteID {
+			continue
+		}
+		ids := []string{}
+		atts, _ := n["attachments"].([]any)
+		for _, a := range atts {
+			ids = append(ids, a.(map[string]any)["id"].(string))
+		}
+		return ids
+	}
+	return nil
+}
+
+func (s *E2ETestSuite) Test213_Attachments_KeepTheirPosition() {
+	since := time.Now().Add(-time.Minute)
+	clientID := uuid.NewString()
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, d := s.syncPush(map[string]any{"notes": []any{map[string]any{"clientId": clientID, "space_id": s.createdSpaceID, "text": "ordered images", "tags": []string{}, "created_at": now, "modified_at": now}}})
+	noteID := mappingFor(d, clientID)
+	s.Require().NotZero(noteID)
+
+	// Uploaded out of order: the list follows the positions, not the upload time.
+	third := s.uploadPixel(noteID, "2")
+	first := s.uploadPixel(noteID, "0")
+	second := s.uploadPixel(noteID, "1")
+	s.Equal([]string{first, second, third}, s.pulledAttachmentIDs(since, noteID))
+
+	// Without a position the image goes last.
+	last := s.uploadPixel(noteID, "")
+	s.Equal([]string{first, second, third, last}, s.pulledAttachmentIDs(since, noteID))
+
+	// Reorder through sync.
+	var serverModified string
+	for _, n := range s.pullNotes(since) {
+		if int(n["id"].(float64)) == noteID {
+			serverModified, _ = n["modified_at"].(string)
+		}
+	}
+	later := time.Now().UTC().Add(time.Second).Format(time.RFC3339)
+	status, _ := s.syncPush(map[string]any{"notes": []any{map[string]any{
+		"id": noteID, "space_id": s.createdSpaceID, "text": "ordered images", "tags": []string{},
+		"created_at": now, "modified_at": later, "base_modified_at": serverModified,
+		"attachments": []any{
+			map[string]any{"id": last, "modified_at": later, "position": 0},
+			map[string]any{"id": first, "modified_at": later, "position": 1},
+			map[string]any{"id": second, "modified_at": later, "position": 2},
+			map[string]any{"id": third, "modified_at": later, "position": 3},
+		},
+	}}})
+	s.Equal(http.StatusOK, status)
+	s.Equal([]string{last, first, second, third}, s.pulledAttachmentIDs(since, noteID))
+}

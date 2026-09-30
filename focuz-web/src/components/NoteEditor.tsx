@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useObjectUrl } from '../lib/useObjectUrl'
+import { useAttachmentUrl, useObjectUrl } from '../lib/useObjectUrl'
+import UploadBadge from './UploadBadge'
+import { useUploadStates } from '../lib/useUploadStates'
 import TagsInput from './TagsInput'
 import ActivitiesInput, { type ActivityDraft } from './ActivitiesInput'
 import { featureFlags } from '../lib/feature-flags'
@@ -18,6 +20,7 @@ import ImageEditorDialog from './ImageEditorDialog'
 import { TextareaFormatBar } from './SelectionFormatBar'
 
 const MAX_ATTACHMENTS = 10
+const NO_ATTACHMENTS: AttachmentRecord[] = []
 
 export type NoteEditorMode = 'create' | 'edit' | 'reply'
 
@@ -72,7 +75,8 @@ export default function NoteEditor({
   const existingAttachments = (useLiveQuery(async () => {
     if (!noteId || mode !== 'edit') return [] as AttachmentRecord[]
     return attachmentsRepo.listActiveSortedForNote(noteId)
-  }, [noteId, mode]) ?? []) as AttachmentRecord[]
+  }, [noteId, mode]) ?? NO_ATTACHMENTS) as AttachmentRecord[]
+  const existingUploads = useUploadStates(existingAttachments)
 
   const canSubmit = useMemo(() => value.text.trim().length > 0, [value.text])
   const maxReached = attachments.length >= MAX_ATTACHMENTS
@@ -187,41 +191,42 @@ export default function NoteEditor({
     collapseIfNeeded()
   }
 
+  function moveExisting(from: number, to: number) {
+    if (!noteId) return
+    const ids = existingAttachments.map(a => a.id!)
+    const [m] = ids.splice(from, 1)
+    ids.splice(to, 0, m)
+    void reorderNoteAttachments(noteId, ids).catch(() => {})
+  }
+
+  function moveNew(from: number, to: number) {
+    setAttachments(prev => {
+      const next = prev.slice()
+      const [m] = next.splice(from, 1)
+      next.splice(to, 0, m)
+      return next
+    })
+  }
+
   const thumbnails = (
     <>
         {mode === 'edit' && existingAttachments.length > 0 && attachments.length === 0 && (
           <div className="text-xs text-neutral-400">Adding new photos will be uploaded when you click Update.</div>
         )}
         {(mode === 'edit' && existingAttachments.length > 0) && (
-          <div className="flex flex-wrap gap-2"
-            onDragOver={e => { e.preventDefault() }}
-          >
-            {existingAttachments.map((att, idx) => (
-              <div
-                key={att.id ?? idx}
-                className="relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800"
-                draggable
-                onDragStart={e => { e.dataTransfer.setData('text/plain', String(att.id)) }}
-                onDrop={async e => {
-                  e.preventDefault()
-                  const srcId = Number(e.dataTransfer.getData('text/plain'))
-                  const dstId = att.id!
-                  if (!noteId || !srcId || !dstId || srcId === dstId) return
-                  const ids = existingAttachments.map(a => a.id!)
-                  const from = ids.indexOf(srcId)
-                  const to = ids.indexOf(dstId)
-                  if (from < 0 || to < 0) return
-                  const next = ids.slice()
-                  const [m] = next.splice(from, 1)
-                  next.splice(to, 0, m)
-                  try { await reorderNoteAttachments(noteId, next) } catch {}
-                }}
-              >
+          <SortableThumbs
+            group="existing"
+            items={existingAttachments}
+            keyOf={att => `att-${att.id}`}
+            onMove={moveExisting}
+            render={(att) => (
+              <>
                 {att.data ? (
-                  <BlobImg blob={att.data} className="w-full h-full object-cover" alt={att.fileName} />
+                  <AttachmentThumb att={att} />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-neutral-500 text-xs">img</div>
                 )}
+                <UploadBadge state={existingUploads.get(att.id!)} />
                 <button
                   type="button"
                   className="absolute -top-1 -right-1 bg-neutral-900/80 hover:bg-neutral-800 text-neutral-100 rounded-full w-5 h-5 text-xs"
@@ -229,35 +234,18 @@ export default function NoteEditor({
                   aria-label="Remove attachment"
                   title="Remove"
                 >×</button>
-              </div>
-            ))}
-          </div>
+              </>
+            )}
+          />
         )}
         {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2"
-            onDragOver={e => { e.preventDefault() }}
-          >
-            {attachments.map((file, idx) => (
-              <div
-                key={`new-${idx}`}
-                className="relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800"
-                draggable
-                onDragStart={e => { e.dataTransfer.setData('text/plain', `new:${idx}`) }}
-                onDrop={e => {
-                  e.preventDefault()
-                  const data = e.dataTransfer.getData('text/plain')
-                  if (!data.startsWith('new:')) return
-                  const from = Number(data.split(':')[1])
-                  const to = idx
-                  if (isNaN(from) || from === to) return
-                  setAttachments(prev => {
-                    const next = prev.slice()
-                    const [m] = next.splice(from, 1)
-                    next.splice(to, 0, m)
-                    return next
-                  })
-                }}
-              >
+          <SortableThumbs
+            group="new"
+            items={attachments}
+            keyOf={file => `new-${fileKey(file)}`}
+            onMove={moveNew}
+            render={(file, idx) => (
+              <>
                 <BlobImg blob={file} className="w-full h-full object-cover" alt="attachment" />
                 <button
                   type="button"
@@ -273,9 +261,9 @@ export default function NoteEditor({
                   aria-label="Remove attachment"
                   title="Remove"
                 >×</button>
-              </div>
-            ))}
-          </div>
+              </>
+            )}
+          />
         )}
     </>
   )
@@ -396,5 +384,97 @@ export default function NoteEditor({
 function BlobImg({ blob, alt, className }: { blob: Blob; alt?: string; className?: string }) {
   const url = useObjectUrl(blob)
   if (!url) return null
-  return <img src={url} className={className} alt={alt || ''} />
+  return <img src={url} className={className} alt={alt || ''} draggable={false} />
+}
+
+function AttachmentThumb({ att }: { att: AttachmentRecord }) {
+  const url = useAttachmentUrl(att)
+  if (!url) return null
+  return <img src={url} className="w-full h-full object-cover" alt={att.fileName} draggable={false} />
+}
+
+// Staged files have no id; the File object itself is stable while it sits in state.
+const fileKeys = new WeakMap<File, number>()
+let nextFileKey = 1
+function fileKey(f: File): number {
+  let k = fileKeys.get(f)
+  if (k == null) { k = nextFileKey++; fileKeys.set(f, k) }
+  return k
+}
+
+// A row of thumbnails you put in order by dragging one onto another's place.
+// Pointer events rather than HTML drag-and-drop: they work with a finger too, and dragging a
+// picture can't turn into dropping a new file on the editor.
+function SortableThumbs<T>({ group, items, keyOf, render, onMove }: {
+  group: string
+  items: T[]
+  keyOf: (item: T) => string
+  render: (item: T, index: number) => React.ReactNode
+  onMove: (from: number, to: number) => void
+}) {
+  const [drag, setDrag] = useState<{ from: number; over: number; dx: number; dy: number } | null>(null)
+  const start = useRef<{ from: number; x: number; y: number; pointerId: number; active: boolean } | null>(null)
+  const dragRef = useRef(drag)
+  dragRef.current = drag
+
+  function indexAt(x: number, y: number, from: number): number {
+    for (const el of document.elementsFromPoint(x, y)) {
+      const cell = (el as HTMLElement).closest?.('[data-thumb]') as HTMLElement | null
+      if (!cell || cell.dataset.thumbGroup !== group) continue
+      const i = Number(cell.dataset.thumb)
+      if (i !== from) return i
+    }
+    return from
+  }
+
+  function finish(commit: boolean) {
+    const s = start.current
+    const d = dragRef.current
+    start.current = null
+    setDrag(null)
+    if (commit && s?.active && d && d.over !== d.from) onMove(d.from, d.over)
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item, idx) => {
+        const dragging = drag?.from === idx
+        const target = !!drag && drag.over === idx && drag.from !== idx
+        return (
+          <div
+            key={keyOf(item)}
+            data-thumb={idx}
+            data-thumb-group={group}
+            className={[
+              'relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800 select-none',
+              items.length > 1 ? 'cursor-grab touch-none' : '',
+              dragging ? 'cursor-grabbing opacity-80 shadow-lg' : '',
+              target ? 'ring-2 ring-[rgb(var(--c-accent))]' : '',
+            ].join(' ')}
+            style={dragging ? { transform: `translate(${drag!.dx}px, ${drag!.dy}px)`, zIndex: 10 } : undefined}
+            onPointerDown={e => {
+              if (items.length < 2 || e.button !== 0) return
+              if ((e.target as HTMLElement).closest('button')) return
+              start.current = { from: idx, x: e.clientX, y: e.clientY, pointerId: e.pointerId, active: false }
+              try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
+            }}
+            onPointerMove={e => {
+              const s = start.current
+              if (!s || s.pointerId !== e.pointerId) return
+              const dx = e.clientX - s.x
+              const dy = e.clientY - s.y
+              if (!s.active && Math.hypot(dx, dy) < 6) return
+              s.active = true
+              setDrag({ from: s.from, over: indexAt(e.clientX, e.clientY, s.from), dx, dy })
+            }}
+            onPointerUp={() => finish(true)}
+            onPointerCancel={() => finish(false)}
+            aria-label={`Image ${idx + 1} of ${items.length}${items.length > 1 ? ', drag to reorder' : ''}`}
+          >
+            {render(item, idx)}
+          </div>
+        )
+      })}
+    </div>
+  )
 }

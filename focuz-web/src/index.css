@@ -1838,3 +1838,19 @@ button:disabled { cursor: not-allowed; }
 .tile-size-ticks span { width: 4px; height: 4px; border-radius: 999px; background: rgba(var(--c-text) / 0.25); }
 .tile-size-ticks span.is-on { background: rgb(var(--c-accent)); }
 .tile-size-label { min-width: 5.5em; text-align: right; white-space: nowrap; }
+
+/* An image of a note that is still on its way to the server. */
+.upload-badge {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  width: 22px; height: 22px; border-radius: 999px;
+  display: grid; place-items: center; font-size: 14px;
+  color: #fff; background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.upload-badge.is-failed { color: rgb(248 113 113); }
+.upload-spinner {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: auth-spin 800ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .upload-spinner { animation-duration: 2400ms; } }

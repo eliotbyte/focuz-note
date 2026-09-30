@@ -43,7 +43,7 @@ type NoteChange struct {
 	// When present, conflicts are detected by comparing it with the current server version
 	// instead of comparing client and server clocks.
 	BaseModifiedAt *time.Time `json:"base_modified_at,omitempty"`
-	// Activities and attachments are included for pull; for push, clients may include only id, file_name, modified_at, is_deleted for attachments
+	// Activities and attachments are included for pull; for push, clients may include only id, file_name, modified_at, position, is_deleted for attachments
 	Activities  []ActivityChange   `json:"activities"`
 	Attachments []AttachmentChange `json:"attachments"`
 	// Charts are nested under the note (pull + push). Root-level charts in push are deprecated.
@@ -108,6 +108,8 @@ type AttachmentChange struct {
 	FileSize   int64     `json:"file_size"`
 	CreatedAt  time.Time `json:"created_at"`
 	ModifiedAt time.Time `json:"modified_at"`
+	// Place of the image in its note, from 0 (pull + push).
+	Position *int `json:"position,omitempty"`
 	// For push only. Server will ignore for pull.
 	IsDeleted *bool `json:"is_deleted,omitempty"`
 }

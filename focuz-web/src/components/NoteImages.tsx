@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useObjectUrl } from '../lib/useObjectUrl'
+import { useAttachmentUrl } from '../lib/useObjectUrl'
+import UploadBadge from './UploadBadge'
+import { useUploadStates, type UploadState } from '../lib/useUploadStates'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { AttachmentRecord } from '../lib/types'
 import { attachments as attachmentsRepo } from '../data'
@@ -24,6 +26,7 @@ export default function NoteImages({ noteId }: { noteId: number }) {
   const attachments = (useLiveQuery(async () => {
     return attachmentsRepo.listDisplayForNote(noteId)
   }, [noteId]) ?? NONE) as AttachmentRecord[]
+  const uploads = useUploadStates(attachments)
 
   // When viewer is open, ensure the current image is prefetched and enable keyboard navigation
   useEffect(() => {
@@ -68,10 +71,10 @@ export default function NoteImages({ noteId }: { noteId: number }) {
   return (
     <div>
       {attachments.length === 1
-        ? <SingleImage att={attachments[0]} onOpen={() => setViewerIndex(0)} />
+        ? <SingleImage att={attachments[0]} upload={uploads.get(attachments[0].id!)} onOpen={() => setViewerIndex(0)} />
         : attachments.length <= MAX_COLLAGE
-          ? <Collage attachments={attachments} onOpen={setViewerIndex} />
-          : <Carousel attachments={attachments} index={slide} onIndexChange={setSlide} onOpen={setViewerIndex} />}
+          ? <Collage attachments={attachments} uploads={uploads} onOpen={setViewerIndex} />
+          : <Carousel attachments={attachments} uploads={uploads} index={slide} onIndexChange={setSlide} onOpen={setViewerIndex} />}
 
       {viewerIndex != null && (
         createPortal(
@@ -98,8 +101,8 @@ export default function NoteImages({ noteId }: { noteId: number }) {
             <div className="absolute inset-0 bg-black/60" />
             <div className="absolute inset-0 flex items-center justify-center p-4">
               {attachments[viewerIndex]?.data ? (
-                <BlobImg
-                  blob={attachments[viewerIndex]!.data as Blob}
+                <AttImg
+                  att={attachments[viewerIndex]!}
                   alt={attachments[viewerIndex]?.fileName}
                   className="max-w-[95vw] max-h-[95vh] w-auto h-auto object-contain"
                   draggable={false}
@@ -138,7 +141,7 @@ export default function NoteImages({ noteId }: { noteId: number }) {
 }
 
 // One picture: shown at its own size, only ever scaled down to fit the card and the height cap. No cropping.
-function SingleImage({ att, onOpen }: { att: AttachmentRecord; onOpen: () => void }) {
+function SingleImage({ att, upload, onOpen }: { att: AttachmentRecord; upload?: UploadState; onOpen: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null)
   usePrefetchWhenVisible(ref, att.data ? [] : [att])
 
@@ -152,19 +155,20 @@ function SingleImage({ att, onOpen }: { att: AttachmentRecord; onOpen: () => voi
   return (
     <div
       ref={ref}
-      className="inline-block max-w-full align-top rounded-[var(--radius)] overflow-hidden media-frame cursor-pointer hover:opacity-95"
+      className="relative inline-block max-w-full align-top rounded-[var(--radius)] overflow-hidden media-frame cursor-pointer hover:opacity-95"
       onClick={onOpen}
       role="button"
       aria-label="Open image"
       tabIndex={-1}
     >
-      <BlobImg
-        blob={att.data}
+      <AttImg
+        att={att}
         alt={att.fileName}
         className="block w-auto h-auto max-w-full"
         style={{ maxHeight: `min(${MAX_MEDIA_HEIGHT}px, 60vh)` }}
         draggable={false}
       />
+      <UploadBadge state={upload} />
     </div>
   )
 }
@@ -173,7 +177,7 @@ function SingleImage({ att, onOpen }: { att: AttachmentRecord; onOpen: () => voi
 // The collage always spans the note; each row is shared out by the pictures' own proportions and
 // capped in height. A picture is never cropped or blown up past its size: whatever room is left
 // around it is filled with the picture itself, blurred and dimmed.
-function Collage({ attachments, onOpen }: { attachments: AttachmentRecord[]; onOpen: (i: number) => void }) {
+function Collage({ attachments, uploads, onOpen }: { attachments: AttachmentRecord[]; uploads: Map<number, UploadState>; onOpen: (i: number) => void }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(0)
   const dims = useImageDimensions(attachments)
@@ -226,12 +230,13 @@ function Collage({ attachments, onOpen }: { attachments: AttachmentRecord[]; onO
                 >
                   {att.data ? (
                     <>
-                      <BlobImg blob={att.data} className="media-backdrop" draggable={false} />
-                      <BlobImg blob={att.data} alt={att.fileName} className="media-fit" draggable={false} />
+                      <AttImg att={att} className="media-backdrop" draggable={false} />
+                      <AttImg att={att} alt={att.fileName} className="media-fit" draggable={false} />
                     </>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
                   )}
+                  <UploadBadge state={uploads.get(att.id!)} />
                 </div>
               )
             })}
@@ -250,8 +255,9 @@ function collageCorners(count: number, row: number, col: number): string {
 }
 
 // Several pictures: a strip you flip through, one at a time, with arrows and a position indicator.
-function Carousel({ attachments, index, onIndexChange, onOpen }: {
+function Carousel({ attachments, uploads, index, onIndexChange, onOpen }: {
   attachments: AttachmentRecord[]
+  uploads: Map<number, UploadState>
   index: number
   onIndexChange: (i: number) => void
   onOpen: (i: number) => void
@@ -345,12 +351,13 @@ function Carousel({ attachments, index, onIndexChange, onOpen }: {
           >
             {att.data ? (
               <>
-                <BlobImg blob={att.data} className="media-backdrop" draggable={false} />
-                <BlobImg blob={att.data} alt={att.fileName} className="media-fit" draggable={false} />
+                <AttImg att={att} className="media-backdrop" draggable={false} />
+                <AttImg att={att} alt={att.fileName} className="media-fit" draggable={false} />
               </>
             ) : (
               <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
             )}
+            <UploadBadge state={uploads.get(att.id!)} />
           </div>
         ))}
       </div>
@@ -457,8 +464,8 @@ function useImageDimensions(attachments: AttachmentRecord[]) {
   return dims
 }
 
-function BlobImg({ blob, alt, className, style, draggable }: { blob: Blob; alt?: string; className?: string; style?: React.CSSProperties; draggable?: boolean }) {
-  const url = useObjectUrl(blob)
+function AttImg({ att, alt, className, style, draggable }: { att: AttachmentRecord; alt?: string; className?: string; style?: React.CSSProperties; draggable?: boolean }) {
+  const url = useAttachmentUrl(att)
   if (!url) return null
   return (
     <img
@@ -477,6 +484,7 @@ function BlobImg({ blob, alt, className, style, draggable }: { blob: Blob; alt?:
 export function NoteTileImages({ attachments, className }: { attachments: AttachmentRecord[]; className?: string }) {
   const ref = useRef<HTMLDivElement | null>(null)
   const shown = attachments.slice(0, 4)
+  const uploads = useUploadStates(shown)
   usePrefetchWhenVisible(ref, shown.filter(a => !a.data))
   if (attachments.length === 0) return null
   const more = attachments.length - shown.length
@@ -484,7 +492,8 @@ export function NoteTileImages({ attachments, className }: { attachments: Attach
     <div ref={ref} className={`tile-media tile-media-${shown.length} ${className ?? ''}`}>
       {shown.map((a, i) => (
         <div key={a.id ?? i} className="tile-media-cell">
-          {a.data ? <BlobImg blob={a.data} alt={a.fileName} className="tile-media-img" draggable={false} /> : null}
+          {a.data ? <AttImg att={a} alt={a.fileName} className="tile-media-img" draggable={false} /> : null}
+          <UploadBadge state={uploads.get(a.id!)} />
           {more > 0 && i === shown.length - 1 && <span className="tile-media-more">+{more}</span>}
         </div>
       ))}

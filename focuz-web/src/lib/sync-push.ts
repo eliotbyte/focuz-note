@@ -133,7 +133,7 @@ export async function pushDirty(): Promise<PushResult> {
     }
     const atts = (attByNote.get(n.id!) ?? []).filter(a => !!a.serverId)
     if (atts.length > 0) {
-      out.attachments = atts.map(a => ({ id: a.serverId as string, modified_at: a.modifiedAt, is_deleted: !!a.deletedAt }))
+      out.attachments = atts.map(a => ({ id: a.serverId as string, modified_at: a.modifiedAt, position: a.position ?? undefined, is_deleted: !!a.deletedAt }))
     }
     const acts = actByNote.get(n.id!) ?? []
     if (acts.length > 0) {

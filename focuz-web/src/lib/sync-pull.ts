@@ -70,12 +70,19 @@ async function upsertNote(n: any): Promise<void> {
   else await db.notes.add(rec)
 }
 
+function sameAttachment(a: AttachmentRecord, b: AttachmentRecord): boolean {
+  return a.noteId === b.noteId && a.fileName === b.fileName && a.fileType === b.fileType && a.fileSize === b.fileSize &&
+    (a.position ?? null) === (b.position ?? null) && a.createdAt === b.createdAt && a.modifiedAt === b.modifiedAt &&
+    (a.deletedAt ?? null) === (b.deletedAt ?? null) && a.isDirty === b.isDirty && (a.clientId ?? null) === (b.clientId ?? null)
+}
+
 async function mergeNoteAttachments(n: any, noteLocalId: number): Promise<void> {
   const serverList: any[] = Array.isArray(n.attachments) ? n.attachments : []
   const serverIds = new Set<string>()
   for (const a of serverList) {
     serverIds.add(a.id)
     const existing = await db.attachments.where('serverId').equals(a.id).first()
+    const serverPosition = typeof a.position === 'number' ? a.position : null
     const rec: AttachmentRecord = {
       id: existing?.id,
       serverId: a.id,
@@ -85,12 +92,17 @@ async function mergeNoteAttachments(n: any, noteLocalId: number): Promise<void> 
       fileType: a.file_type,
       fileSize: a.file_size,
       data: existing?.data ?? null,
+      // A local reorder that is not pushed yet wins over the server's order.
+      position: existing?.isDirty ? (existing.position ?? serverPosition) : (serverPosition ?? existing?.position ?? null),
       createdAt: a.created_at,
       modifiedAt: existing?.isDirty ? existing.modifiedAt : a.modified_at,
       deletedAt: existing?.deletedAt ?? null,
       isDirty: existing?.isDirty ?? 0,
     }
-    const attId = existing ? (await db.attachments.put(rec)) : (await db.attachments.add(rec))
+    // Rewriting an unchanged record would still wake every view of the note (and re-read its images).
+    const attId = existing
+      ? (sameAttachment(existing, rec) ? existing.id! : await db.attachments.put(rec))
+      : await db.attachments.add(rec)
     // An upload from this device may still be mapping its record: merge local duplicates.
     const localDups = await db.attachments.where('noteId').equals(noteLocalId)
       .filter(x => !x.serverId && x.fileName === rec.fileName && x.fileSize === rec.fileSize).toArray()

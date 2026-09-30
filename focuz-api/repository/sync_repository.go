@@ -102,8 +102,9 @@ func (r *SyncRepository) GetChangesSince(userID int, accessibleSpaceIDs []int, s
               'file_type', att.file_type,
               'file_size', att.file_size,
               'created_at', to_char(att.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-              'modified_at', to_char(att.modified_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
-            ) ORDER BY att.modified_at ASC, att.id ASC)
+              'modified_at', to_char(att.modified_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+              'position', att.position
+            ) ORDER BY att.position ASC NULLS LAST, att.created_at ASC, att.id ASC)
             FROM attachments att WHERE att.note_id = n.id
           ), '[]'::json) AS attachments
         FROM note n
@@ -726,6 +727,11 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 					}
 					if attNoteID != *n.ID {
 						continue
+					}
+					if a.Position != nil && *a.Position >= 0 {
+						if _, err := r.q.Exec(`UPDATE attachments SET position = $2, modified_at = NOW() WHERE id = $1`, a.ID, *a.Position); err != nil {
+							return nil, err
+						}
 					}
 					// Rename if file_name provided
 					if a.FileName != "" {

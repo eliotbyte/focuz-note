@@ -16,7 +16,7 @@ export { isAuthRequired, onAuthRequired, getLastUsername } from './auth'
 export { validateActivityValue } from './activity-values'
 export {
   deleteNote, createOrUpdateLocalActivity, deleteLocalActivity, createFilterLocal, updateFilterLocal, deleteFilterLocal,
-  updateNoteLocal, addLocalAttachment, deleteLocalAttachment, reorderNoteAttachments,
+  updateNoteLocal, addLocalAttachment, addLocalAttachments, deleteLocalAttachment, reorderNoteAttachments,
 } from './local-writes'
 
 const env = import.meta.env

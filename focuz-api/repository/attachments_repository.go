@@ -26,32 +26,37 @@ func NewAttachmentsRepository(db *sql.DB) *AttachmentsRepository {
 	return &AttachmentsRepository{db: db}
 }
 
-func (r *AttachmentsRepository) CreateOrGetAttachment(noteID int, clientID *string, fileName, fileType string, fileSize int64) (string, error) {
+// CreateOrGetAttachment stores the attachment row. position is the image's place in the note as
+// the client sees it; without it the image goes after the note's other attachments.
+func (r *AttachmentsRepository) CreateOrGetAttachment(noteID int, clientID *string, fileName, fileType string, fileSize int64, position *int) (string, error) {
 	// If clientID is provided, make upload idempotent per (note_id, client_id).
 	// This prevents duplicates when the client retries after a timeout/network error.
 	id := uuid.NewString()
 	var outID string
 	if clientID != nil && *clientID != "" {
 		err := r.db.QueryRow(`
-			INSERT INTO attachments (id, note_id, client_id, file_name, file_type, file_size, created_at, modified_at)
-			VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+			INSERT INTO attachments (id, note_id, client_id, file_name, file_type, file_size, created_at, modified_at, position)
+			VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(),
+				COALESCE($7, (SELECT COALESCE(MAX(position) + 1, 0) FROM attachments WHERE note_id = $2)))
 			ON CONFLICT (note_id, client_id)
 			DO UPDATE SET
 				file_name = EXCLUDED.file_name,
 				file_type = EXCLUDED.file_type,
 				file_size = EXCLUDED.file_size,
+				position = COALESCE($7, attachments.position),
 				modified_at = NOW()
 			RETURNING id
-		`, id, noteID, *clientID, fileName, fileType, fileSize).Scan(&outID)
+		`, id, noteID, *clientID, fileName, fileType, fileSize, position).Scan(&outID)
 		if err != nil {
 			return "", err
 		}
 		return outID, nil
 	}
 	_, err := r.db.Exec(`
-		INSERT INTO attachments (id, note_id, file_name, file_type, file_size, created_at, modified_at)
-		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-	`, id, noteID, fileName, fileType, fileSize)
+		INSERT INTO attachments (id, note_id, file_name, file_type, file_size, created_at, modified_at, position)
+		VALUES ($1, $2, $3, $4, $5, NOW(), NOW(),
+			COALESCE($6, (SELECT COALESCE(MAX(position) + 1, 0) FROM attachments WHERE note_id = $2)))
+	`, id, noteID, fileName, fileType, fileSize, position)
 	if err != nil {
 		return "", err
 	}

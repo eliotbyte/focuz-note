@@ -4,7 +4,8 @@ import { db, getKV, wipeLocalData } from './db'
 import { MEMBERS_KV } from './sync-pull'
 import { __resetSyncEngineForTests, ensureDefaultSpace, runSync, requestAttachmentPrefetch } from './sync'
 import { getAppState } from './app-state'
-import { addLocalAttachment, updateNoteLocal, deleteLocalAttachment } from './local-writes'
+import { addLocalAttachment, addLocalAttachments, updateNoteLocal, deleteLocalAttachment, reorderNoteAttachments } from './local-writes'
+import { listDisplayForNote } from '../data/attachments'
 import { processNextJob, retryFailedJobs, MAX_ATTEMPTS } from './jobs-worker'
 import { recoverLegacyConflicts, CONFLICT_TAG } from './sync-push'
 import type { NoteRecord } from './types'
@@ -324,6 +325,59 @@ describe('attachment jobs', () => {
     const local = await db.attachments.where('noteId').equals(id).toArray()
     expect(local).toHaveLength(1)
     expect(local[0].serverId).toBe(uploaded[0].id)
+  })
+
+  it('keeps the order images were attached in while they upload one by one', async () => {
+    const space = await ensureDefaultSpace()
+    const id = await localNote(space, 'three photos')
+    const img = (name: string, n: number) => new File([new Uint8Array(n).fill(n)], name, { type: 'image/webp' })
+    await addLocalAttachments(id, [img('a.webp', 3), img('b.webp', 4), img('c.webp', 5)])
+    const names = async () => (await listDisplayForNote(id)).map(a => a.fileName)
+    expect(await names()).toEqual(['a.webp', 'b.webp', 'c.webp'])
+
+    await runSync(true)
+    await db.jobs.toCollection().modify({ nextAttemptAt: null })
+    // Upload the last one first, then pull: the order must not follow upload time.
+    const c = (await db.attachments.where('noteId').equals(id).toArray()).find(a => a.fileName === 'c.webp')!
+    await db.jobs.where('attachmentId').equals(c.id!).modify({ priority: 0 })
+    await processNextJob()
+    await runSync(true)
+    expect(await names()).toEqual(['a.webp', 'b.webp', 'c.webp'])
+
+    await drainJobs()
+    await runSync(true)
+    expect(await names()).toEqual(['a.webp', 'b.webp', 'c.webp'])
+    const sid = (await db.notes.get(id))!.serverId!
+    const onServer = [...server.attachments.values()].filter(a => a.note_id === sid).sort((x, y) => x.position! - y.position!)
+    expect(onServer.map(a => a.file_name)).toEqual(['a.webp', 'b.webp', 'c.webp'])
+
+    // Reorder and sync: the server takes the new order and a pull keeps it.
+    const ids = (await listDisplayForNote(id)).map(a => a.id!)
+    await reorderNoteAttachments(id, [ids[2], ids[0], ids[1]])
+    expect(await names()).toEqual(['c.webp', 'a.webp', 'b.webp'])
+    await runSync(true)
+    await runSync(true)
+    expect(await names()).toEqual(['c.webp', 'a.webp', 'b.webp'])
+    const reordered = [...server.attachments.values()].filter(a => a.note_id === sid).sort((x, y) => x.position! - y.position!)
+    expect(reordered.map(a => a.file_name)).toEqual(['c.webp', 'a.webp', 'b.webp'])
+  })
+
+  it('sends a reorder made while an image was still uploading', async () => {
+    const space = await ensureDefaultSpace()
+    const id = await localNote(space, 'two photos')
+    const [a, b] = await addLocalAttachments(id, [
+      new File([new Uint8Array([1, 1])], 'a.webp', { type: 'image/webp' }),
+      new File([new Uint8Array([2, 2, 2])], 'b.webp', { type: 'image/webp' }),
+    ])
+    await runSync(true)
+    await db.jobs.toCollection().modify({ nextAttemptAt: null })
+    await drainJobs()
+    // Both uploaded; now swap them before anything else syncs.
+    await reorderNoteAttachments(id, [b, a])
+    await runSync(true)
+    await runSync(true)
+    const names = (await listDisplayForNote(id)).map(x => x.fileName)
+    expect(names).toEqual(['b.webp', 'a.webp'])
   })
 
   it('does not count network errors as failures', async () => {

@@ -51,6 +51,16 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 		clientIDPtr = &clientID
 	}
 
+	var position *int
+	if posStr := strings.TrimSpace(c.PostForm("position")); posStr != "" {
+		pos, err := strconv.Atoi(posStr)
+		if err != nil || pos < 0 {
+			c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "invalid position"))
+			return
+		}
+		position = &pos
+	}
+
 	note, err := h.notesRepo.GetNoteByID(noteID)
 	if err != nil || note == nil || note.IsDeleted {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "invalid note"))
@@ -104,7 +114,7 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 	}
 
 	// Upload file to MinIO using detected content type
-	attachmentID, err := h.uploadFileToMinIO(file, noteID, clientIDPtr, detectedCT)
+	attachmentID, err := h.uploadFileToMinIO(file, noteID, clientIDPtr, detectedCT, position)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
 		return
@@ -121,9 +131,9 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 	}))
 }
 
-func (h *AttachmentsHandler) uploadFileToMinIO(file *multipart.FileHeader, noteID int, clientID *string, contentType string) (string, error) {
+func (h *AttachmentsHandler) uploadFileToMinIO(file *multipart.FileHeader, noteID int, clientID *string, contentType string, position *int) (string, error) {
 	// Create attachment record with server-detected content type
-	attachmentID, err := h.attachmentsRepo.CreateOrGetAttachment(noteID, clientID, file.Filename, contentType, file.Size)
+	attachmentID, err := h.attachmentsRepo.CreateOrGetAttachment(noteID, clientID, file.Filename, contentType, file.Size, position)
 	if err != nil {
 		return "", err
 	}

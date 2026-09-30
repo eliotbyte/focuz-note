@@ -5,9 +5,16 @@ export async function listForNote(noteLocalId: number): Promise<AttachmentRecord
   return db.attachments.where('noteId').equals(noteLocalId).toArray()
 }
 
+/** Order of images in a note: by position, then (records without one) by creation. */
+export function compareAttachments(a: AttachmentRecord, b: AttachmentRecord): number {
+  const pa = a.position ?? Number.MAX_SAFE_INTEGER
+  const pb = b.position ?? Number.MAX_SAFE_INTEGER
+  return (pa - pb) || (a.createdAt || '').localeCompare(b.createdAt || '') || ((a.id ?? 0) - (b.id ?? 0))
+}
+
 export async function listActiveSortedForNote(noteLocalId: number): Promise<AttachmentRecord[]> {
   const list = await db.attachments.where('noteId').equals(noteLocalId).toArray()
-  return list.filter(a => !a.deletedAt).sort((a, b) => (a.modifiedAt || '').localeCompare(b.modifiedAt || ''))
+  return list.filter(a => !a.deletedAt).sort(compareAttachments)
 }
 
 export async function listDisplayForNote(noteLocalId: number): Promise<AttachmentRecord[]> {
@@ -34,7 +41,6 @@ export async function listDisplayForNote(noteLocalId: number): Promise<Attachmen
     const conflict = result.some(x => x.fileName === a.fileName && x.fileSize === a.fileSize)
     if (!conflict) result.push(a)
   }
-  // Sort by modifiedAt ASC to match server ordering semantics
-  return result.sort((a, b) => (a.modifiedAt || '').localeCompare(b.modifiedAt || ''))
+  return result.sort(compareAttachments)
 }
 

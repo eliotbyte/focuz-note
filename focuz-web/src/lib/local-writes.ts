@@ -97,26 +97,40 @@ export async function updateNoteLocal(localId: number, changes: { text?: string;
 }
 
 export async function addLocalAttachment(noteId: number, file: File): Promise<number> {
+  const [id] = await addLocalAttachments(noteId, [file])
+  return id
+}
+
+/** Adds images after the note's current ones, in the given order, and queues their uploads. */
+export async function addLocalAttachments(noteId: number, files: File[]): Promise<number[]> {
+  if (files.length === 0) return []
   const now = new Date().toISOString()
-  const id = await db.transaction('rw', db.attachments, db.jobs, async () => {
-    const attId = await db.attachments.add({
-      noteId,
-      serverId: null,
-      clientId: crypto.randomUUID(),
-      fileName: file.name,
-      fileType: file.type,
-      fileSize: file.size,
-      data: file,
-      createdAt: now,
-      modifiedAt: now,
-      deletedAt: null,
-      isDirty: 1,
-    } as AttachmentRecord)
-    await db.jobs.add({ kind: 'attachment-upload', attachmentId: attId, priority: 5, status: 'pending', attempts: 0, createdAt: now, updatedAt: now, nextAttemptAt: null })
-    return attId
+  const ids = await db.transaction('rw', db.attachments, db.jobs, async () => {
+    const existing = await db.attachments.where('noteId').equals(noteId).filter(a => !a.deletedAt).toArray()
+    let next = existing.reduce((m, a) => Math.max(m, a.position ?? -1), existing.length - 1) + 1
+    const out: number[] = []
+    for (const file of files) {
+      const attId = await db.attachments.add({
+        noteId,
+        serverId: null,
+        clientId: crypto.randomUUID(),
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        data: file,
+        position: next++,
+        createdAt: now,
+        modifiedAt: now,
+        deletedAt: null,
+        isDirty: 1,
+      } as AttachmentRecord)
+      await db.jobs.add({ kind: 'attachment-upload', attachmentId: attId, priority: 5, status: 'pending', attempts: 0, createdAt: now, updatedAt: now, nextAttemptAt: null })
+      out.push(attId)
+    }
+    return out
   })
   emitLocalWrite()
-  return id
+  return ids
 }
 
 export async function deleteLocalAttachment(attachmentLocalId: number): Promise<void> {
@@ -135,21 +149,18 @@ export async function deleteLocalAttachment(attachmentLocalId: number): Promise<
 }
 
 export async function reorderNoteAttachments(noteId: number, orderedAttachmentLocalIds: number[]): Promise<void> {
-  // Assign increasing modifiedAt to reflect new order; smallest first
-  const base = Date.now()
+  const now = new Date().toISOString()
   await db.transaction('rw', db.attachments, db.notes, async () => {
+    let changed = false
     for (let i = 0; i < orderedAttachmentLocalIds.length; i++) {
-      const id = orderedAttachmentLocalIds[i]
-      const ts = new Date(base + i).toISOString()
-      const att = await db.attachments.get(id)
-      if (!att || att.deletedAt) continue
-      // Only server-backed attachments participate in server reordering; still update locals for UX
-      await db.attachments.update(id, { modifiedAt: ts, isDirty: (att.serverId ? 1 : att.isDirty) as 0 | 1 })
+      const att = await db.attachments.get(orderedAttachmentLocalIds[i])
+      if (!att || att.deletedAt || att.noteId !== noteId || att.position === i) continue
+      // Images still waiting for upload send their position with the file.
+      await db.attachments.update(att.id!, { position: i, modifiedAt: now, isDirty: (att.serverId ? 1 : att.isDirty) as 0 | 1 })
+      changed = true
     }
     const note = await db.notes.get(noteId)
-    if (note?.id) {
-      await db.notes.update(note.id, { modifiedAt: new Date(base + orderedAttachmentLocalIds.length).toISOString(), isDirty: 1 })
-    }
+    if (changed && note?.id) await db.notes.update(note.id, { modifiedAt: now, isDirty: 1 })
   })
   emitLocalWrite()
 }

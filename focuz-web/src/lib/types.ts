@@ -108,6 +108,9 @@ export interface AttachmentRecord {
   fileSize: number
   // locally cached transformed image data (WebP). May be absent until downloaded
   data?: Blob | null
+  // Place of the image in its note, from 0. Missing on records from before positions existed:
+  // those fall back to creation order.
+  position?: number | null
   createdAt: string
   modifiedAt: string
   deletedAt?: string | null

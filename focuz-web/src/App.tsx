@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { NoteRecord, FilterRecord } from './lib/types'
-import { ensureDefaultSpace, getCurrentSpaceId, runSync, scheduleAutoSync, isAuthenticated, logout, deleteNote, addLocalAttachment, teardownSync, purgeAndLogout, countUnsyncedChanges } from './lib/sync'
+import { ensureDefaultSpace, getCurrentSpaceId, runSync, scheduleAutoSync, isAuthenticated, logout, deleteNote, addLocalAttachments, teardownSync, purgeAndLogout, countUnsyncedChanges } from './lib/sync'
 import { updateNoteLocal } from './lib/sync'
 import { searchNotes, ensureNoteIndexForSpace, initSearch } from './lib/search'
 import { activityTypes as activityTypesRepo, activities as activitiesRepo, filters as filtersRepo, kv, notes as notesRepo } from './data'
@@ -172,12 +172,7 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
       }
     }
 
-    const files = (extra.attachments ?? []).slice(0, 10)
-    for (const f of files) {
-      try {
-        await addLocalAttachment(noteId, f)
-      } catch {}
-    }
+    try { await addLocalAttachments(noteId, (extra.attachments ?? []).slice(0, 10)) } catch {}
 
     setValue({ text: '', tags: [] })
   }
@@ -363,10 +358,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
         }
       }
     }
-    const files = (extra?.attachments ?? []).slice(0, 10)
-    for (const f of files) {
-      try { await addLocalAttachment(id, f) } catch {}
-    }
+    try { await addLocalAttachments(id, (extra?.attachments ?? []).slice(0, 10)) } catch {}
     window.dispatchEvent(new Event('focuz:local-write'))
     setEditingId(null)
   }
@@ -500,8 +492,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
                       try { await createOrUpdateLocalActivity(noteId, a.typeId, String(a.valueRaw ?? '')) } catch {}
                     }
                   }
-                  const files = (extra?.attachments ?? []).slice(0, 10)
-                  for (const f of files) { try { await addLocalAttachment(noteId, f) } catch {} }
+                  try { await addLocalAttachments(noteId, (extra?.attachments ?? []).slice(0, 10)) } catch {}
                   setReplyingForId(null)
                   setReplyValue({ text: '', tags: [] })
                 }}
@@ -1350,10 +1341,7 @@ function ReplyComposer({ spaceId, parentId, positiveQuickTags = [] }: { spaceId:
       serverId: null,
       clientId: crypto.randomUUID(),
     } as NoteRecord)
-    const files = (extra.attachments ?? []).slice(0, 10)
-    for (const f of files) {
-      try { await addLocalAttachment(noteId, f) } catch {}
-    }
+    try { await addLocalAttachments(noteId, (extra.attachments ?? []).slice(0, 10)) } catch {}
     setValue({ text: '', tags: [] })
   }
   return (
@@ -1374,9 +1362,7 @@ function NoteThread({ spaceId, noteId, entryKey, onBack, onOpenThread, quick, on
   async function saveEdit(extra?: { attachments?: File[] }) {
     if (!mainNote?.id) return
     await updateNoteLocal(mainNote.id, { text: editValue.text.trim(), tags: editValue.tags })
-    for (const f of (extra?.attachments ?? []).slice(0, 10)) {
-      try { await addLocalAttachment(mainNote.id, f) } catch {}
-    }
+    try { await addLocalAttachments(mainNote.id, (extra?.attachments ?? []).slice(0, 10)) } catch {}
     window.dispatchEvent(new Event('focuz:local-write'))
     setEditing(false)
   }
