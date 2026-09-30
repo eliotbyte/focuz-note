@@ -29,6 +29,16 @@ function describe(n: AppNotification): { who: string; text: ReactNode } {
   }
 }
 
+const INVITATION_OUTCOME: Record<string, string> = {
+  accepted: 'Accepted', declined: 'Declined', cancelled: 'Cancelled by the sender', expired: 'Expired',
+}
+
+// Older servers don't report the status: an answered invitation is simply marked read there.
+function isPendingInvite(n: AppNotification): boolean {
+  if (n.type !== 'space_invitation') return false
+  return n.invitationStatus ? n.invitationStatus === 'pending' : !n.isRead
+}
+
 /** Bell with the unread count; invitations can be accepted right in the list. */
 export default function NotificationsBell({ onOpenSpace }: { onOpenSpace: (localSpaceId: number) => void }) {
   const data = useLiveQuery(() => getKV<{ items: AppNotification[]; unread: number }>(NOTIFICATIONS_KV), [])
@@ -120,13 +130,14 @@ export default function NotificationsBell({ onOpenSpace }: { onOpenSpace: (local
           <ul className="bell-list">
             {items.map(n => {
               const d = describe(n)
-              const pendingInvite = n.type === 'space_invitation' && !n.isRead
+              const pendingInvite = isPendingInvite(n)
+              const outcome = n.type === 'space_invitation' && !pendingInvite ? INVITATION_OUTCOME[n.invitationStatus ?? ''] : undefined
               return (
                 <li key={n.id} className={`bell-item ${n.isRead ? '' : 'is-unread'}`}>
                   <PersonAvatar name={d.who || '?'} size={30} />
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="text-[13.5px] leading-snug">{d.text}</div>
-                    <div className="text-[11.5px] text-secondary">{formatAgo(n.createdAt)}</div>
+                    <div className="text-[11.5px] text-secondary">{formatAgo(n.createdAt)}{outcome ? ` · ${outcome}` : ''}</div>
                     {pendingInvite && (
                       <div className="flex gap-2">
                         <button type="button" className="button !h-7 !px-3 text-[13px]" disabled={busy === n.id} onClick={() => { void answer(n, true) }}>Accept</button>

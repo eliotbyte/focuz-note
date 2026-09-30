@@ -139,6 +139,8 @@ export interface AppNotification {
   payload: Record<string, any>
   isRead: boolean
   createdAt: string
+  /** space_invitation only; older servers don't send it. */
+  invitationStatus?: 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired' | string
 }
 
 export const NOTIFICATIONS_KV = 'notifications'

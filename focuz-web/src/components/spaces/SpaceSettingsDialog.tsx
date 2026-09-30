@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import PublicRoundedIcon from '@mui/icons-material/PublicRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
@@ -160,8 +160,19 @@ function MembersTab({ space, role }: { space: SpaceRecord; role: SpaceRole }) {
   const [error, setError] = useState<string | null>(null)
   const byEmail = me?.authMode === 'email'
 
-  const reload = () => { if (canManage(role)) listSentInvitations(space.id!).then(setPending).catch(() => setPending([])) }
-  useEffect(reload, [space.id, role])
+  const reload = useCallback(() => {
+    if (canManage(role)) listSentInvitations(space.id!).then(setPending).catch(() => setPending([]))
+  }, [space.id, role])
+  // Invitations are answered elsewhere: reload when someone joins, on server events and on return to the window.
+  useEffect(reload, [reload, members.length])
+  useEffect(() => {
+    window.addEventListener('focuz:server-event', reload)
+    window.addEventListener('focus', reload)
+    return () => {
+      window.removeEventListener('focuz:server-event', reload)
+      window.removeEventListener('focus', reload)
+    }
+  }, [reload])
 
   async function submit() {
     if (!who.trim()) return

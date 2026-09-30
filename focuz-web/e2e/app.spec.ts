@@ -548,6 +548,13 @@ test.describe('shared spaces', () => {
     await page.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(page.locator('li', { hasText: 'Next book: Dune' })).toBeVisible()
 
+    // Anna keeps the members tab open while Bob answers.
+    await page.getByRole('button', { name: /Space menu: Book club/ }).click()
+    await page.getByRole('menuitem', { name: 'Members' }).click()
+    const pending = settings.locator('section[aria-label="Pending invitations"]')
+    const members = settings.locator('section[aria-label="Members"]')
+    await expect(pending).toContainText(bob.username)
+
     // Bob: the bell shows the invitation, Accept opens the space with Anna's note and her name.
     const bobCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' })
     const bobPage = await bobCtx.newPage()
@@ -563,6 +570,19 @@ test.describe('shared spaces', () => {
     await expect(annasNote).toBeVisible()
     await expect(annasNote).toContainText(anna.username)
     await shot(bobPage, '31-shared-space')
+
+    // Anna's open dialog moves Bob from "Waiting for an answer" to the members, without reopening it.
+    await expect(members).toContainText(bob.username, { timeout: 15000 })
+    await expect(pending).not.toContainText(bob.username, { timeout: 15000 })
+    await expect(pending).toContainText('nobody-here-42')
+    await page.keyboard.press('Escape')
+
+    // The answered invitation stays in Bob's bell as accepted, without Accept/Decline.
+    await bobPage.getByRole('button', { name: /^Notifications/ }).click()
+    const answered = bobPage.locator('.bell-item', { hasText: `${anna.username} invited you to Book club` })
+    await expect(answered).toContainText('Accepted')
+    await expect(answered.getByRole('button', { name: 'Accept' })).toHaveCount(0)
+    await bobPage.keyboard.press('Escape')
 
     // Editors don't delete other people's notes; Details shows who wrote it.
     await annasNote.hover()

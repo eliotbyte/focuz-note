@@ -95,6 +95,7 @@ func (s *E2ETestSuite) Test300_Sharing_InvitationsDoNotRevealAccounts() {
 	p := items[0]["payload"].(map[string]any)
 	s.Equal("Team", p["spaceName"])
 	s.Equal(s.usernameOf(ownerTok), p["inviterName"])
+	s.Equal("pending", items[0]["invitationStatus"])
 
 	// Inviting the same name again does not create a second invitation or notification.
 	code, _ = s.invite(ownerTok, space, s.usernameOf(bobTok), "guest")
@@ -108,8 +109,9 @@ func (s *E2ETestSuite) Test300_Sharing_InvitationsDoNotRevealAccounts() {
 	code, acc := s.call("POST", "/invitations/"+strconv.Itoa(id)+"/accept", bobTok, nil)
 	s.Require().Equal(http.StatusOK, code)
 	s.Equal("guest", acc["data"].(map[string]any)["role"])
-	_, unread = s.notificationsOf(bobTok)
+	items, unread = s.notificationsOf(bobTok)
 	s.Equal(0, unread)
+	s.Equal("accepted", items[0]["invitationStatus"], "an answered invitation must not look pending")
 	s.eventually(func() bool {
 		items, _ := s.notificationsOf(ownerTok)
 		return len(items) > 0 && items[0]["type"] == "invitation_accepted"
@@ -121,6 +123,17 @@ func (s *E2ETestSuite) Test300_Sharing_InvitationsDoNotRevealAccounts() {
 	malloryTok, _ := s.newUser("mallory")
 	code, _ = s.call("POST", "/invitations/"+strconv.Itoa(id)+"/decline", malloryTok, nil)
 	s.Equal(http.StatusNotFound, code)
+
+	// A cancelled invitation shows as cancelled, not as waiting for an answer.
+	code, _ = s.invite(ownerTok, space, s.usernameOf(malloryTok), "editor")
+	s.Require().Equal(http.StatusOK, code)
+	mid := s.myInvitationID(malloryTok, space)
+	code, _ = s.call("DELETE", "/spaces/"+strconv.Itoa(space)+"/invitations/"+strconv.Itoa(mid), ownerTok, nil)
+	s.Require().Equal(http.StatusOK, code)
+	s.eventually(func() bool {
+		items, _ := s.notificationsOf(malloryTok)
+		return len(items) == 1 && items[0]["invitationStatus"] == "cancelled"
+	}, "cancelled invitation should be reported as cancelled")
 
 	code, _ = s.call("POST", "/notifications/read", ownerTok, map[string]any{"all": true})
 	s.Equal(http.StatusOK, code)

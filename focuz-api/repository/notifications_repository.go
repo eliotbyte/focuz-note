@@ -79,13 +79,21 @@ type NotificationItem struct {
 	Payload   json.RawMessage `json:"payload"`
 	IsRead    bool            `json:"isRead"`
 	CreatedAt time.Time       `json:"createdAt"`
+	// For space_invitation: pending | accepted | declined | cancelled | expired, so an old
+	// invitation doesn't look like it is still waiting for an answer.
+	InvitationStatus string `json:"invitationStatus,omitempty"`
 }
 
 // List returns the latest notifications (read and unread), newest first.
 func (r *NotificationsRepository) List(userID, limit int) ([]NotificationItem, int, error) {
+	// The invitation id is compared as text: payloads are JSON, a cast would fail the whole list on bad data.
 	rows, err := r.db.Query(`
-		SELECT id, type, payload, is_read, created_at FROM notifications
-		WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`, userID, limit)
+		SELECT n.id, n.type, n.payload, n.is_read, n.created_at,
+		       CASE WHEN i.status = 'pending' AND i.expires_at < NOW() THEN 'expired' ELSE COALESCE(i.status, '') END
+		FROM notifications n
+		LEFT JOIN space_invitations i
+		       ON n.type = 'space_invitation' AND i.id::text = n.payload->>'invitationId' AND i.invitee_id = n.user_id
+		WHERE n.user_id = $1 ORDER BY n.created_at DESC, n.id DESC LIMIT $2`, userID, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -94,7 +102,7 @@ func (r *NotificationsRepository) List(userID, limit int) ([]NotificationItem, i
 	for rows.Next() {
 		var n NotificationItem
 		var payload []byte
-		if err := rows.Scan(&n.ID, &n.Type, &payload, &n.IsRead, &n.CreatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.Type, &payload, &n.IsRead, &n.CreatedAt, &n.InvitationStatus); err != nil {
 			return nil, 0, err
 		}
 		n.Payload = payload
