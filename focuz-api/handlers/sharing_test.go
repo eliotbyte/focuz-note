@@ -376,9 +376,18 @@ func (s *E2ETestSuite) Test306_Sharing_AccountSettings() {
 	s.Equal(http.StatusBadRequest, code)
 	code, _ = s.call("POST", "/me/password", tok, map[string]any{"currentPassword": "Password123", "newPassword": "short"})
 	s.Equal(http.StatusBadRequest, code)
-	code, _ = s.call("POST", "/me/password", tok, map[string]any{"currentPassword": "Password123", "newPassword": "NewPassword1"})
+	username := s.usernameOf(tok)
+	code, out = s.call("POST", "/me/password", tok, map[string]any{"currentPassword": "Password123", "newPassword": "NewPassword1"})
+	s.Require().Equal(http.StatusOK, code)
+	// Tokens issued before the change (a stolen one included) stop working; this session goes on
+	// with the fresh token from the response.
+	code, _ = s.call("GET", "/me", tok, nil)
+	s.Equal(http.StatusUnauthorized, code, "old token still works after a password change")
+	fresh, _ := out["data"].(map[string]any)["token"].(string)
+	s.Require().NotEmpty(fresh)
+	code, _ = s.call("GET", "/me", fresh, nil)
 	s.Equal(http.StatusOK, code)
-	code, _ = s.call("POST", "/login", "", map[string]any{"username": s.usernameOf(tok), "password": "NewPassword1"})
+	code, _ = s.call("POST", "/login", "", map[string]any{"username": username, "password": "NewPassword1"})
 	s.Equal(http.StatusOK, code)
 }
 

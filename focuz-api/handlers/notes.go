@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"errors"
 	"focuz-api/pkg/access"
+	"focuz-api/pkg/authtoken"
 	"focuz-api/pkg/appenv"
 	"focuz-api/repository"
 	"focuz-api/types"
@@ -15,7 +17,6 @@ import (
 	"log/slog"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type NotesHandler struct {
@@ -27,7 +28,7 @@ func NewNotesHandler(repo *repository.NotesRepository, spacesRepo *repository.Sp
 	return &NotesHandler{repo: repo, spacesRepo: spacesRepo}
 }
 
-func AuthMiddleware(secret string) gin.HandlerFunc {
+func AuthMiddleware(tokens *authtoken.Tokens) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -41,44 +42,26 @@ func AuthMiddleware(secret string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		token, err := jwt.ParseWithClaims(parts[1], jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return []byte(secret), nil
-		})
-		if err != nil || !token.Valid {
+		userID, err := tokens.Verify(parts[1])
+		if errors.Is(err, authtoken.ErrInvalid) {
 			c.JSON(http.StatusUnauthorized, types.NewErrorResponse(types.ErrorCodeInvalidToken, "Invalid token"))
 			c.Abort()
 			return
 		}
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok || !token.Valid {
-			c.JSON(http.StatusUnauthorized, types.NewErrorResponse(types.ErrorCodeInvalidToken, "Invalid token claims"))
-			c.Abort()
-			return
-		}
-		// Validate issuer and audience for additional hardening
-		if claims["iss"] != "focuz-api" || claims["aud"] != "focuz-fe" {
-			c.JSON(http.StatusUnauthorized, types.NewErrorResponse(types.ErrorCodeInvalidToken, "Invalid token claims"))
-			c.Abort()
-			return
-		}
-		userID, ok := claims["userId"].(float64)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, types.NewErrorResponse(types.ErrorCodeInvalidToken, "userId not found in token"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 			c.Abort()
 			return
 		}
 
 		// Structured logging with PII guard: do not log userId in production
 		if !appenv.IsProduction() {
-			slog.Info("auth request", "path", c.Request.URL.Path, "userId", int(userID))
+			slog.Info("auth request", "path", c.Request.URL.Path, "userId", userID)
 		} else {
 			slog.Info("auth request", "path", c.Request.URL.Path)
 		}
 
-		c.Set("userId", int(userID))
+		c.Set("userId", userID)
 		c.Next()
 	}
 }

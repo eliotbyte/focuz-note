@@ -63,6 +63,7 @@ function AccountTab({ onLogout }: { onLogout: () => void }) {
   const mismatch = repeat.length > 0 && next !== repeat
   async function submit() {
     if (next.length < 8) { setError('Use at least 8 characters for the new password'); return }
+    if (new TextEncoder().encode(next).length > 72) { setError('The new password is too long (at most 72 characters)'); return }
     if (next !== repeat) { setError('The new passwords do not match'); return }
     setBusy(true); setError(null)
     try {

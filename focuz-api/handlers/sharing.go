@@ -15,6 +15,7 @@ import (
 
 	"focuz-api/pkg/access"
 	"focuz-api/pkg/authcfg"
+	"focuz-api/pkg/authtoken"
 	"focuz-api/pkg/mailer"
 	"focuz-api/pkg/notify"
 	"focuz-api/repository"
@@ -39,6 +40,7 @@ type SharingHandler struct {
 	// async runs side effects (notifications, e-mail) off the request path so a response takes
 	// the same time whether or not the invited account exists. Tests replace it.
 	async func(func())
+	tokens *authtoken.Tokens
 }
 
 func NewSharingHandler(repo *repository.SharingRepository, users *repository.UsersRepository, notes *repository.NotificationsRepository, n notify.Notifier, m mailer.Mailer, cfg authcfg.Config) *SharingHandler {
@@ -51,6 +53,12 @@ func NewSharingHandler(repo *repository.SharingRepository, users *repository.Use
 }
 
 // WithSyncRunner makes side effects synchronous (for tests).
+// WithTokens lets the handler issue a fresh login token after a password change.
+func (h *SharingHandler) WithTokens(t *authtoken.Tokens) *SharingHandler {
+	h.tokens = t
+	return h
+}
+
 func (h *SharingHandler) WithSyncRunner() *SharingHandler {
 	h.async = func(f func()) { f() }
 	return h
@@ -232,8 +240,9 @@ func (h *SharingHandler) ChangePassword(c *gin.Context) {
 		badRequest(c, "Current and new password are required")
 		return
 	}
-	if len(req.New) < 8 || len(req.New) > 128 {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "New password must be 8 to 128 characters"))
+	// bcrypt uses at most 72 bytes; sign-up has the same limit.
+	if len(req.New) < 8 || len(req.New) > 72 {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "New password must be 8 to 72 characters"))
 		return
 	}
 	u, err := h.repo.User(c.GetInt("userId"))
@@ -254,7 +263,13 @@ func (h *SharingHandler) ChangePassword(c *gin.Context) {
 		h.fail(c, "set password", err)
 		return
 	}
-	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"ok": true}))
+	// Every other session is signed out now; this one continues with a fresh token.
+	token, err := h.tokens.Issue(u.ID)
+	if err != nil {
+		h.fail(c, "issue token", err)
+		return
+	}
+	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"ok": true, "token": token}))
 }
 
 // ---- spaces ----

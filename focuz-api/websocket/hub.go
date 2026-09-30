@@ -4,14 +4,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"focuz-api/pkg/appenv"
+	"focuz-api/pkg/authtoken"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
 
@@ -86,6 +85,7 @@ func (h *Hub) NotifyUser(userID int, payload []byte) {
 }
 
 var upgrader = websocket.Upgrader{
+	Subprotocols:    []string{Subprotocol},
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	// In production, only allow origins explicitly listed in ALLOWED_ORIGINS (comma-separated).
@@ -107,33 +107,27 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// ServeWS upgrades HTTP connection to WebSocket and registers the client.
-// JWT is read from either context (if behind AuthMiddleware) or from ?token= query param.
-func ServeWS(h *Hub, secret string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.GetInt("userId")
-		if userID == 0 {
-			// Try query token fallback
-			tok := c.Query("token")
-			if tok != "" {
-				if secret != "" {
-					token, err := jwt.ParseWithClaims(tok, jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
-						if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-							return nil, jwt.ErrSignatureInvalid
-						}
-						return []byte(secret), nil
-					})
-					if err == nil && token != nil && token.Valid {
-						if claims, ok := token.Claims.(jwt.MapClaims); ok && claims["iss"] == "focuz-api" && claims["aud"] == "focuz-fe" {
-							if uid, ok2 := claims["userId"].(float64); ok2 {
-								userID = int(uid)
-							}
-						}
-					}
-				}
-			}
+// Subprotocol the web app offers next to "bearer.<token>". The server answers with it: browsers
+// cannot set an Authorization header on a WebSocket, and a token in the URL would end up in proxy
+// and server logs.
+const Subprotocol = "focuz.v1"
+
+// bearerFromProtocols returns the token offered as the "bearer.<token>" subprotocol.
+func bearerFromProtocols(r *http.Request) string {
+	for _, p := range websocket.Subprotocols(r) {
+		if strings.HasPrefix(p, "bearer.") {
+			return strings.TrimPrefix(p, "bearer.")
 		}
-		if userID == 0 {
+	}
+	return ""
+}
+
+// ServeWS upgrades HTTP connection to WebSocket and registers the client.
+// The login token comes in the Sec-WebSocket-Protocol header (see Subprotocol).
+func ServeWS(h *Hub, tokens *authtoken.Tokens) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := tokens.Verify(bearerFromProtocols(c.Request))
+		if err != nil {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
@@ -164,20 +158,27 @@ func ServeWS(h *Hub, secret string) gin.HandlerFunc {
 			}
 		}()
 
-		// Writer loop (same goroutine)
-		for msg := range client.send {
-			_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				break
+		// Writer loop (same goroutine). Pings keep the connection alive: the reader drops it after
+		// 60s without a pong.
+		ping := time.NewTicker(30 * time.Second)
+		defer ping.Stop()
+		// Closing on a write error also ends the reader, which unregisters the client.
+		defer conn.Close()
+		for {
+			select {
+			case msg, ok := <-client.send:
+				if !ok {
+					return
+				}
+				_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					return
+				}
+			case <-ping.C:
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
+					return
+				}
 			}
 		}
 	}
-}
-
-// Debug helper to send a ping message to user via HTTP
-func (h *Hub) DebugSend(c *gin.Context) {
-	uid, _ := strconv.Atoi(c.Query("userId"))
-	msg := c.Query("msg")
-	h.NotifyUser(uid, []byte(msg))
-	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

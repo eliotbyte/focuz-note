@@ -95,12 +95,23 @@ paths:
   /ws:
     get:
       summary: WebSocket connection
-      description: Upgrades to WebSocket. Requires a valid Bearer token.
+      description: >
+        Upgrades to WebSocket. Browsers cannot send an Authorization header here, so the login
+        token goes in the Sec-WebSocket-Protocol header as two subprotocols, `focuz.v1` and
+        `bearer.<token>` (in JavaScript: `new WebSocket(url, ['focuz.v1', 'bearer.' + token])`).
+        The server answers with `focuz.v1`. Tokens are not accepted in the URL.
       tags:
         - Realtime
-      security:
-        - BearerAuth: []
+      parameters:
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: true
+          schema:
+            type: string
+          example: focuz.v1, bearer.eyJhbGciOiJIUzI1NiIs...
       responses:
+        '401':
+          description: Missing, invalid or revoked token
         '200':
           description: Upgrade to WebSocket (101 Switching Protocols)
 

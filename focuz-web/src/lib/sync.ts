@@ -378,7 +378,9 @@ export function scheduleAutoSync(): { kick: () => void; cleanup: () => void } {
     try {
       const url = new URL(base)
       const wsProto = url.protocol === 'https:' ? 'wss:' : 'ws:'
-      ws = new WebSocket(`${wsProto}//${url.host}/ws?token=${encodeURIComponent(token)}`)
+      // The token goes in the subprotocol list (Sec-WebSocket-Protocol), never in the URL, where it
+      // would end up in proxy and server logs.
+      ws = new WebSocket(`${wsProto}//${url.host}/ws`, ['focuz.v1', `bearer.${token}`])
       ws.onopen = () => {
         wsRetryMs = 1000
         // The server is back: do not wait for the backoff timer.

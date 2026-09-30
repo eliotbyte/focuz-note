@@ -1,5 +1,6 @@
 // Online-only actions around spaces, members, invitations, notifications, account and sharing.
 import { api, ApiError, isNetworkError } from './api'
+import { setAuthTokenLS } from './auth'
 import { db, getKV, setKV } from './db'
 import { runSync } from './sync'
 import type { SpaceRole } from './types'
@@ -47,7 +48,10 @@ export async function updateMe(patch: { notifyEmail?: boolean }): Promise<Me> {
 }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-  await api('/me/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
+  const resp = await api('/me/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
+  // The server signs out every session on a password change and hands this one a fresh token.
+  const token = resp?.data?.token
+  if (typeof token === 'string' && token) setAuthTokenLS(token)
 }
 
 // ---- spaces ----

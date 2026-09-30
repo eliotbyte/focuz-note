@@ -66,12 +66,14 @@ func (r *UsersRepository) UsernameTaken(username string) (bool, error) {
 	return taken, err
 }
 
+// SetPassword stores a new password and invalidates all existing login tokens of the user.
 func (r *UsersRepository) SetPassword(userID int, password string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(`UPDATE users SET password_hash = $2 WHERE id = $1`, userID, string(hash))
+	// A new password signs out every session: tokens carry the old token_version.
+	_, err = r.db.Exec(`UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE id = $1`, userID, string(hash))
 	return err
 }
 

@@ -17,13 +17,13 @@ import (
 
 	"focuz-api/models"
 	"focuz-api/pkg/authcfg"
+	"focuz-api/pkg/authtoken"
 	"focuz-api/pkg/buildinfo"
 	"focuz-api/pkg/mailer"
 	"focuz-api/repository"
 	"focuz-api/types"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -42,7 +42,7 @@ type AuthHandler struct {
 	mail  mailer.Mailer
 	// onVerified runs after an e-mail address is confirmed (e.g. to deliver pending invitations).
 	onVerified func(userID int)
-	jwtSecret  string
+	tokens     *authtoken.Tokens
 }
 
 // OnEmailVerified registers a hook that runs after an address is confirmed.
@@ -51,8 +51,8 @@ func (h *AuthHandler) OnEmailVerified(f func(userID int)) *AuthHandler {
 	return h
 }
 
-func NewAuthHandler(users *repository.UsersRepository, cfg authcfg.Config, m mailer.Mailer, jwtSecret string) *AuthHandler {
-	return &AuthHandler{users: users, cfg: cfg, mail: m, jwtSecret: jwtSecret}
+func NewAuthHandler(users *repository.UsersRepository, cfg authcfg.Config, m mailer.Mailer, tokens *authtoken.Tokens) *AuthHandler {
+	return &AuthHandler{users: users, cfg: cfg, mail: m, tokens: tokens}
 }
 
 // Config is public: the web app reads it to show the right sign-in form for this server.
@@ -64,15 +64,6 @@ func (h *AuthHandler) Config(c *gin.Context) {
 		"mode":         h.cfg.Mode,
 		"registration": map[bool]string{true: "open", false: "closed"}[h.cfg.RegistrationOpen],
 	}))
-}
-
-func (h *AuthHandler) issueToken(userID int) (string, error) {
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"userId": userID,
-		"exp":    time.Now().Add(24 * time.Hour).Unix(),
-		"iss":    "focuz-api",
-		"aud":    "focuz-fe",
-	}).SignedString([]byte(h.jwtSecret))
 }
 
 // POST /register  {username, password} or, in e-mail mode, {email, password}
@@ -303,7 +294,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusForbidden, types.NewErrorResponseWithDetails(errCodeEmailNotVerified, "Confirm your email address to sign in", map[string]interface{}{"email": *user.Email}))
 		return
 	}
-	token, err := h.issueToken(user.ID)
+	token, err := h.tokens.Issue(user.ID)
 	if err != nil {
 		h.internal(c, "sign token", err)
 		return
@@ -368,7 +359,7 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	if h.onVerified != nil {
 		h.onVerified(user.ID)
 	}
-	token, err := h.issueToken(user.ID)
+	token, err := h.tokens.Issue(user.ID)
 	if err != nil {
 		h.internal(c, "sign token", err)
 		return
