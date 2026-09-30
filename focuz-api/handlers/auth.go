@@ -176,8 +176,24 @@ func (h *AuthHandler) registerWithEmail(c *gin.Context, rawEmail, password strin
 		c.JSON(http.StatusConflict, types.NewErrorResponse(types.ErrorCodeConflict, "An account with this email already exists"))
 		return
 	case existing != nil:
-		// Never confirmed: whoever confirms the address owns the account, so the new sign-up
-		// (with its password) replaces the abandoned one.
+		// Never confirmed. While its code is still valid the sign-up is not abandoned: replacing
+		// the password then would let anyone who knows the address take the account over as
+		// soon as its owner enters the code. Only resend the code.
+		v, err := h.users.GetVerification(existing.ID)
+		if err != nil {
+			h.internal(c, "get verification", err)
+			return
+		}
+		if v != nil && time.Now().Before(v.ExpiresAt) {
+			if time.Since(v.SentAt) >= verificationResendWait {
+				if err := h.sendVerification(existing, email); err != nil {
+					slog.Error("resending verification email failed", "err", err)
+				}
+			}
+			c.JSON(http.StatusCreated, types.NewSuccessResponse(gin.H{"verificationRequired": true, "email": email}))
+			return
+		}
+		// Abandoned (code expired): the new sign-up with its password replaces it.
 		if err := h.users.SetPassword(existing.ID, password); err != nil {
 			h.internal(c, "reset unverified password", err)
 			return
@@ -326,17 +342,22 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 		h.internal(c, "get verification", err)
 		return
 	}
-	switch {
-	case v == nil || time.Now().After(v.ExpiresAt):
+	if v == nil || time.Now().After(v.ExpiresAt) {
 		c.JSON(http.StatusGone, types.NewErrorResponse("CODE_EXPIRED", "This code has expired. Request a new one."))
 		return
-	case v.Attempts >= verificationMaxTries:
+	}
+	// Take one attempt atomically before comparing, so parallel guesses cannot exceed the limit.
+	allowed, err := h.users.UseAttempt(user.ID, verificationMaxTries)
+	if err != nil {
+		h.internal(c, "count attempt", err)
+		return
+	}
+	if !allowed {
 		c.JSON(http.StatusTooManyRequests, types.NewErrorResponse("TOO_MANY_ATTEMPTS", "Too many wrong codes. Request a new one."))
 		return
 	}
 	code := strings.Join(strings.Fields(req.Code), "")
 	if subtle.ConstantTimeCompare([]byte(sha256Hex(code)), []byte(v.CodeHash)) != 1 {
-		_ = h.users.CountFailedAttempt(user.ID)
 		wrong()
 		return
 	}

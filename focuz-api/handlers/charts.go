@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"focuz-api/models"
+	"focuz-api/pkg/access"
 	"focuz-api/repository"
 	"focuz-api/types"
 	"net/http"
@@ -72,8 +73,8 @@ func (h *ChartsHandler) CreateChart(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
-	if roleID == 0 {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
+	if !access.CanWrite(roleID) {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "You can only read this space"))
 		return
 	}
 
@@ -123,8 +124,8 @@ func (h *ChartsHandler) DeleteChart(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
-	if roleID == 0 {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
+	if !access.CanWrite(roleID) {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "You can only read this space"))
 		return
 	}
 
@@ -159,8 +160,8 @@ func (h *ChartsHandler) RestoreChart(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
-	if roleID == 0 {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
+	if !access.CanWrite(roleID) {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "You can only read this space"))
 		return
 	}
 
@@ -195,8 +196,8 @@ func (h *ChartsHandler) UpdateChart(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
-	if roleID == 0 {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the space"))
+	if !access.CanWrite(roleID) {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "You can only read this space"))
 		return
 	}
 

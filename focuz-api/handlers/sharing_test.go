@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -379,4 +380,55 @@ func (s *E2ETestSuite) Test306_Sharing_AccountSettings() {
 	s.Equal(http.StatusOK, code)
 	code, _ = s.call("POST", "/login", "", map[string]any{"username": s.usernameOf(tok), "password": "NewPassword1"})
 	s.Equal(http.StatusOK, code)
+}
+
+// Guests are read-only on the REST endpoints too, not only in /sync.
+func (s *E2ETestSuite) Test307_Sharing_GuestCannotWriteViaREST() {
+	ownerTok, _ := s.newUser("rog")
+	space := s.createSpace(ownerTok, "Read only")
+	guestTok := s.join(ownerTok, space, "guestr", "guest")
+
+	code, out := s.call("POST", "/notes", ownerTok, map[string]any{"text": "owner note", "date": time.Now().UTC().Format(time.RFC3339), "spaceId": space})
+	s.Require().Equal(http.StatusCreated, code, out)
+	noteID := int(out["data"].(map[string]any)["id"].(float64))
+
+	code, out = s.call("GET", "/spaces/"+strconv.Itoa(space)+"/activity-types", ownerTok, nil)
+	s.Require().Equal(http.StatusOK, code)
+	var typeID int
+	for _, it := range out["data"].(map[string]any)["data"].([]any) {
+		if m := it.(map[string]any); m["valueType"] == "integer" || m["value_type"] == "integer" {
+			typeID = int(m["id"].(float64))
+			break
+		}
+	}
+	s.Require().NotZero(typeID)
+
+	code, _ = s.call("POST", "/activities", guestTok, map[string]any{"typeId": typeID, "value": "5", "note_id": noteID})
+	s.Equal(http.StatusForbidden, code, "guest created an activity")
+	code, _ = s.call("POST", "/charts", guestTok, map[string]any{"spaceId": space, "kindId": 1, "activityTypeId": typeID, "periodId": 1, "name": "x"})
+	s.Equal(http.StatusForbidden, code, "guest created a chart")
+
+	code, _ = s.call("POST", "/activities", ownerTok, map[string]any{"typeId": typeID, "value": "5", "note_id": noteID})
+	s.Require().Equal(http.StatusCreated, code)
+	code, out = s.call("GET", "/sync?since=1970-01-01T00:00:00Z", ownerTok, nil)
+	s.Require().Equal(http.StatusOK, code)
+	var activityID int
+	for _, n := range out["data"].(map[string]any)["notes"].([]any) {
+		if nm := n.(map[string]any); int(nm["id"].(float64)) == noteID {
+			for _, a := range nm["activities"].([]any) {
+				activityID = int(a.(map[string]any)["id"].(float64))
+			}
+		}
+	}
+	s.Require().NotZero(activityID)
+	code, _ = s.call("PATCH", "/activities/"+strconv.Itoa(activityID)+"/delete", guestTok, nil)
+	s.Equal(http.StatusForbidden, code, "guest deleted an activity")
+
+	req, _ := http.NewRequest("POST", s.baseURL+"/upload", strings.NewReader("note_id="+strconv.Itoa(noteID)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+guestTok)
+	resp, err := http.DefaultClient.Do(req)
+	s.Require().NoError(err)
+	resp.Body.Close()
+	s.Equal(http.StatusForbidden, resp.StatusCode, "guest uploaded a file")
 }

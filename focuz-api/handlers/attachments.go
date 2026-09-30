@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"focuz-api/initializers"
+	"focuz-api/pkg/access"
 	"focuz-api/repository"
 	"focuz-api/types"
 	"net/http"
@@ -72,7 +73,7 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
-	if roleID == 0 {
+	if !access.CanEditNote(roleID) {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "no access"))
 		return
 	}

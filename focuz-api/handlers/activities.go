@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"focuz-api/models"
+	"focuz-api/pkg/access"
 	"focuz-api/repository"
 	"focuz-api/types"
 	"net/http"
@@ -74,8 +75,8 @@ func (h *ActivitiesHandler) CreateActivity(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, types.InternalError(c, rerr))
 		return
 	}
-	if roleID == 0 {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to this space"))
+	if !access.CanEditNote(roleID) {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "You can only read this space"))
 		return
 	}
 
@@ -204,7 +205,7 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, types.InternalError(c, rerr))
 			return
 		}
-		if roleID == 0 || !typeUsableInSpace(activityType, target.SpaceID) {
+		if !access.CanEditNote(roleID) || !typeUsableInSpace(activityType, target.SpaceID) {
 			c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to the target note"))
 			return
 		}
@@ -222,8 +223,8 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Activity updated successfully"}))
 }
 
-// authorizeActivity allows access to an activity attached to a note in a space the user belongs
-// to, or to a note-less activity the user created. It writes the error response otherwise.
+// authorizeActivity allows changing an activity attached to a note in a space the user may edit
+// notes in, or to a note-less activity the user created. It writes the error response otherwise.
 func (h *ActivitiesHandler) authorizeActivity(c *gin.Context, activity *models.Activity, userID int) bool {
 	spaceID, err := h.getSpaceIDForActivity(activity)
 	if err != nil {
@@ -242,7 +243,7 @@ func (h *ActivitiesHandler) authorizeActivity(c *gin.Context, activity *models.A
 		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return false
 	}
-	if roleID == 0 {
+	if !access.CanEditNote(roleID) {
 		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No access to this activity"))
 		return false
 	}

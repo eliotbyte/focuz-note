@@ -58,6 +58,9 @@ func loadUploadsConfig() (*uploadsConfigYAML, error) {
 }
 
 func InitMinio() error {
+	if os.Getenv("MINIO_ACCESS_KEY") == "minioadmin" || os.Getenv("MINIO_SECRET_KEY") == "minioadmin" {
+		log.Printf("SECURITY WARNING: MinIO uses the default minioadmin credentials. Anyone who can reach MinIO can read all files: set MINIO_ROOT_USER / MINIO_ROOT_PASSWORD and keep port 9000 private.")
+	}
 	Conf = MinioConfig{
 		Endpoint:         os.Getenv("MINIO_ENDPOINT"),
 		AccessKey:        os.Getenv("MINIO_ACCESS_KEY"),

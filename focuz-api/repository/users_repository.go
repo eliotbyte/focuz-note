@@ -112,9 +112,14 @@ func (r *UsersRepository) GetVerificationByToken(tokenHash string) (*EmailVerifi
 	return scanVerification(r.db.QueryRow(`SELECT user_id, code_hash, token_hash, attempts, expires_at, sent_at FROM email_verifications WHERE token_hash = $1`, tokenHash))
 }
 
-func (r *UsersRepository) CountFailedAttempt(userID int) error {
-	_, err := r.db.Exec(`UPDATE email_verifications SET attempts = attempts + 1 WHERE user_id = $1`, userID)
-	return err
+// UseAttempt counts one code attempt; false when the limit was already reached.
+func (r *UsersRepository) UseAttempt(userID, max int) (bool, error) {
+	res, err := r.db.Exec(`UPDATE email_verifications SET attempts = attempts + 1 WHERE user_id = $1 AND attempts < $2`, userID, max)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // MarkVerified confirms the e-mail and removes the pending verification.

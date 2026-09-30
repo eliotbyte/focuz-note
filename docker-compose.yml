@@ -28,9 +28,10 @@ services:
     volumes:
       - minio-data:/data
     ports:
-      # 9000 (S3 API) stays reachable for presigned URLs from older clients; the web app now
-      # downloads files through the API. The admin console is localhost only.
-      - "9000:9000"
+      # Localhost only: with the default root credentials anyone reaching the S3 API could read
+      # every user's files. The web app downloads files through the API, which reaches MinIO over
+      # the compose network.
+      - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     networks:
       - focuz-network

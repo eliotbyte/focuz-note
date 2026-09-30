@@ -149,6 +149,23 @@ func TestEmailAccounts(t *testing.T) {
 	if code, _ := call("POST", "/auth/verify-email", map[string]any{"email": email3, "code": real3}); code != 429 {
 		t.Fatalf("after 5 wrong codes the right one must be refused until a new code: %d", code)
 	}
+	// Someone who knows a pending address must not be able to set its password before the owner
+	// confirms it.
+	email4 := fmt.Sprintf("pending.%d@example.org", time.Now().UnixNano())
+	call("POST", "/register", map[string]any{"email": email4, "password": "Password123"})
+	if code, _ := call("POST", "/register", map[string]any{"email": email4, "password": "Attacker123"}); code != 201 {
+		t.Fatalf("second sign-up of a pending address: %d", code)
+	}
+	code4, _ := lastMail(email4)
+	if code, _ := call("POST", "/auth/verify-email", map[string]any{"email": email4, "code": code4}); code != 200 {
+		t.Fatalf("verify pending: %d", code)
+	}
+	if code, _ := call("POST", "/login", map[string]any{"email": email4, "password": "Attacker123"}); code != 401 {
+		t.Fatalf("second sign-up replaced the password of a pending account: %d", code)
+	}
+	if code, _ := call("POST", "/login", map[string]any{"email": email4, "password": "Password123"}); code != 200 {
+		t.Fatalf("owner login: %d", code)
+	}
 	// Resend answers the same for unknown addresses.
 	c1, _ := call("POST", "/auth/resend-verification", map[string]any{"email": "nobody@example.org"})
 	c2, _ := call("POST", "/auth/resend-verification", map[string]any{"email": email3})

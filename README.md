@@ -92,7 +92,8 @@ filters now also shows their notes; "Only this folder" shows just its own.
 - `JWT_SECRET`: leave it empty and the API generates a random one on first start (kept in the
   database), or set your own (e.g. `openssl rand -hex 32`). The API refuses to start with a publicly
   known value such as the old compose default. Changing it signs everyone out once.
-- Postgres and the MinIO console are bound to localhost. Keep it that way unless you need them remotely.
+- Postgres and MinIO (S3 API and console) are bound to localhost: the web app gets files through the
+  API. Keep it that way; with the default MinIO credentials an exposed port 9000 gives away every file.
 - `TRUSTED_PROXIES` (default: loopback only): if you put a reverse proxy in front of the API, set it
   to that proxy's address only. Never list whole private ranges without a real proxy: clients could
   then spoof their IP via `X-Forwarded-For`, fake it in the logs and bypass per-IP rate limits.
