@@ -66,7 +66,7 @@ services:
   # Test runner - executes Go tests inside API module
   test-runner:
     container_name: focuz-test-runner
-    image: golang:1.24-alpine
+    image: golang:1.27-alpine
     environment:
       DATABASE_URL: postgres://postgres:password@test-db:5432/focuz_test?sslmode=disable
       API_URL: http://test-api:8080

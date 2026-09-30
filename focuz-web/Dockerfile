@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-ARG NODE_VERSION=20.19.0
-ARG NGINX_IMAGE=nginx:1.27-alpine
+ARG NODE_VERSION=24
+ARG NGINX_IMAGE=nginx:1.30-alpine
 
 # 1) Dependencies layer
 FROM node:${NODE_VERSION}-alpine AS deps
