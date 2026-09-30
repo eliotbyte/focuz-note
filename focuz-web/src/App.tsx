@@ -10,7 +10,6 @@ import { db } from './lib/db'
 import { featureFlags } from './lib/feature-flags'
 import { SystemStatusInline, SystemStatusLayer } from './components/SystemStatus'
 import { notifyUndoable } from './ui/notify'
-import { AppToaster } from './ui/toaster'
 import NoteEditor, { type NoteEditorValue } from './components/NoteEditor'
 import NoteCard from './components/NoteCard'
 import FolderTree, { type FeedView } from './components/FolderTree'
@@ -1228,7 +1227,6 @@ function App() {
           onLogout={() => { void handleLogout() }}
         />
       )}
-      <AppToaster />
     </div>
     </SpaceContext.Provider>
   )
