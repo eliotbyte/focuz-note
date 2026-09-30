@@ -87,14 +87,21 @@ filters now also shows their notes; "Only this folder" shows just its own.
 
 ## Security checklist for a self-hosted install
 
-- Set your own secrets in `.env` (see `env.example`): `JWT_SECRET` (e.g. `openssl rand -hex 32`),
-  `POSTGRES_PASSWORD`, `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`. The compose defaults are public;
-  with the default `JWT_SECRET` anyone can forge a login token (the API logs a warning at startup).
-  Changing `JWT_SECRET` signs everyone out once.
+- Set your own secrets in `.env` (see `env.example`): `POSTGRES_PASSWORD`, `MINIO_ROOT_USER` /
+  `MINIO_ROOT_PASSWORD`. The compose defaults are public.
+- `JWT_SECRET`: leave it empty and the API generates a random one on first start (kept in the
+  database), or set your own (e.g. `openssl rand -hex 32`). The API refuses to start with a publicly
+  known value such as the old compose default. Changing it signs everyone out once.
 - Postgres and the MinIO console are bound to localhost. Keep it that way unless you need them remotely.
-- If the API is not behind a reverse proxy, set `TRUSTED_PROXIES` to an empty value or to your proxy's
-  address only: with the default private ranges, clients can spoof their IP via `X-Forwarded-For`
-  and bypass per-IP rate limits (logins are additionally limited per account).
+- `TRUSTED_PROXIES` (default: loopback only): if you put a reverse proxy in front of the API, set it
+  to that proxy's address only. Never list whole private ranges without a real proxy: clients could
+  then spoof their IP via `X-Forwarded-For`, fake it in the logs and bypass per-IP rate limits.
+- `RATE_LIMIT_WHITELIST` is empty by default. Don't add the Docker network or other ranges all
+  traffic may arrive from, or the global rate limit stops applying to everyone.
+- Without a reverse proxy, Docker Desktop (Windows/macOS) shows every client to the API as the same
+  gateway address, so per-IP limits are shared by all clients. For a public server, run the API
+  behind a reverse proxy that sets `X-Forwarded-For`, and trust only that proxy.
+- `REGISTRATION=closed` for a private instance, once your accounts exist.
 
 ## Accounts and e-mail
 

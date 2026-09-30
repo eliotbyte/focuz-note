@@ -49,7 +49,7 @@ func (h *SpacesHandler) CreateSpace(c *gin.Context) {
 	// Create the space with the current user as owner
 	space, err := h.spacesRepo.CreateSpace(req.Name, userID, req.Personal)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -65,7 +65,7 @@ func (h *SpacesHandler) RestoreSpace(c *gin.Context) {
 	userID := c.GetInt("userId")
 	userRoleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if userRoleID == 0 || userRoleID != globals.DefaultOwnerRoleID {
@@ -74,7 +74,7 @@ func (h *SpacesHandler) RestoreSpace(c *gin.Context) {
 	}
 	err = h.spacesRepo.SetSpaceDeleted(spaceID, false)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Space restored successfully"}))
@@ -88,7 +88,7 @@ func (h *SpacesHandler) GetAccessibleSpaces(c *gin.Context) {
 
 	spaces, total, err := h.spacesRepo.GetSpacesForUserPaginated(userID, pagination.Offset, pagination.PageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 

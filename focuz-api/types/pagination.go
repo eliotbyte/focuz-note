@@ -54,16 +54,15 @@ func NewPaginationHelper(page, pageSize int) *PaginationHelper {
 		}
 	}
 	if !validSize {
-		// If size is not allowed, use the nearest smaller one or 10
+		// If size is not allowed, use the nearest smaller one, or the smallest (also for negatives)
+		nearest := AllowedPageSizes[0]
 		for i := len(AllowedPageSizes) - 1; i >= 0; i-- {
 			if AllowedPageSizes[i] <= pageSize {
-				pageSize = AllowedPageSizes[i]
+				nearest = AllowedPageSizes[i]
 				break
 			}
 		}
-		if pageSize == 0 {
-			pageSize = 10
-		}
+		pageSize = nearest
 	}
 
 	return &PaginationHelper{

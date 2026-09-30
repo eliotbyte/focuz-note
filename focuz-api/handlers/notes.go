@@ -99,7 +99,7 @@ func (h *NotesHandler) CreateNote(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, req.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if !access.CanWrite(roleID) {
@@ -119,7 +119,7 @@ func (h *NotesHandler) CreateNote(c *gin.Context) {
 	dateStr := req.Date.Format(time.RFC3339)
 	note, err := h.repo.CreateNote(userID, req.Text, req.Tags, req.ParentID, &dateStr, req.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *NotesHandler) DeleteNote(c *gin.Context) {
 	}
 	note, err := h.repo.GetNoteByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if note == nil {
@@ -144,7 +144,7 @@ func (h *NotesHandler) DeleteNote(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, note.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -156,7 +156,7 @@ func (h *NotesHandler) DeleteNote(c *gin.Context) {
 		return
 	}
 	if err := h.repo.UpdateNoteDeleted(id, true); err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Note deleted successfully"}))
@@ -170,7 +170,7 @@ func (h *NotesHandler) RestoreNote(c *gin.Context) {
 	}
 	note, err := h.repo.GetNoteByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if note == nil {
@@ -180,7 +180,7 @@ func (h *NotesHandler) RestoreNote(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, note.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -192,7 +192,7 @@ func (h *NotesHandler) RestoreNote(c *gin.Context) {
 		return
 	}
 	if err := h.repo.UpdateNoteDeleted(id, false); err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Note restored successfully"}))
@@ -206,7 +206,7 @@ func (h *NotesHandler) GetNote(c *gin.Context) {
 	}
 	note, err := h.repo.GetNoteByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if note == nil {
@@ -216,7 +216,7 @@ func (h *NotesHandler) GetNote(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, note.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -241,7 +241,7 @@ func (h *NotesHandler) GetNotes(c *gin.Context) {
 	}
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -322,7 +322,7 @@ func (h *NotesHandler) GetNotes(c *gin.Context) {
 	}
 	notes, total, err := h.repo.GetNotes(userID, spaceID, filters)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -342,7 +342,7 @@ func (h *NotesHandler) GetTagAutocomplete(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -352,7 +352,7 @@ func (h *NotesHandler) GetTagAutocomplete(c *gin.Context) {
 
 	tags, err := h.repo.GetTagAutocomplete(text, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 

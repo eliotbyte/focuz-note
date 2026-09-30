@@ -69,7 +69,7 @@ func (h *ChartsHandler) CreateChart(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, req.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -93,7 +93,7 @@ func (h *ChartsHandler) CreateChart(c *gin.Context) {
 
 	chart, err := h.chartsRepo.CreateChart(userID, req.SpaceID, req.KindID, req.ActivityTypeID, req.PeriodID, req.Name, req.Description, req.NoteID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -109,7 +109,7 @@ func (h *ChartsHandler) DeleteChart(c *gin.Context) {
 
 	chart, err := h.chartsRepo.GetChartByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if chart == nil || chart.IsDeleted {
@@ -120,7 +120,7 @@ func (h *ChartsHandler) DeleteChart(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, chart.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -129,7 +129,7 @@ func (h *ChartsHandler) DeleteChart(c *gin.Context) {
 	}
 
 	if err := h.chartsRepo.UpdateChartDeleted(id, true); err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -145,7 +145,7 @@ func (h *ChartsHandler) RestoreChart(c *gin.Context) {
 
 	chart, err := h.chartsRepo.GetChartByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if chart == nil || !chart.IsDeleted {
@@ -156,7 +156,7 @@ func (h *ChartsHandler) RestoreChart(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, chart.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -165,7 +165,7 @@ func (h *ChartsHandler) RestoreChart(c *gin.Context) {
 	}
 
 	if err := h.chartsRepo.UpdateChartDeleted(id, false); err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -181,7 +181,7 @@ func (h *ChartsHandler) UpdateChart(c *gin.Context) {
 
 	chart, err := h.chartsRepo.GetChartByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if chart == nil || chart.IsDeleted {
@@ -192,7 +192,7 @@ func (h *ChartsHandler) UpdateChart(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, chart.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -278,7 +278,7 @@ func (h *ChartsHandler) UpdateChart(c *gin.Context) {
 
 	err = h.chartsRepo.UpdateChart(id, kindID, activityTypeID, periodID, name, description, noteID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -301,7 +301,7 @@ func (h *ChartsHandler) GetCharts(c *gin.Context) {
 
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -319,7 +319,7 @@ func (h *ChartsHandler) GetCharts(c *gin.Context) {
 
 	charts, total, err := h.chartsRepo.GetCharts(spaceID, filters)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -337,7 +337,7 @@ func (h *ChartsHandler) GetChartData(c *gin.Context) {
 
 	chart, err := h.chartsRepo.GetChartByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if chart == nil || chart.IsDeleted {
@@ -348,7 +348,7 @@ func (h *ChartsHandler) GetChartData(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, chart.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -358,7 +358,7 @@ func (h *ChartsHandler) GetChartData(c *gin.Context) {
 
 	data, err := h.chartsRepo.GetChartData(chart)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 

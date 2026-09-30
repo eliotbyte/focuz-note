@@ -40,7 +40,7 @@ func (h *FiltersHandler) Create(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, req.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -55,7 +55,7 @@ func (h *FiltersHandler) Create(c *gin.Context) {
 
 	filter, err := h.repo.CreateFilter(userID, req.SpaceID, req.Name, req.ParentID, req.Params)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusCreated, types.NewSuccessResponse(filter))
@@ -77,7 +77,7 @@ func (h *FiltersHandler) Update(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, existing.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	// Folders are personal: only their author sees and changes them.
@@ -109,7 +109,7 @@ func (h *FiltersHandler) Update(c *gin.Context) {
 	}
 
 	if err := h.repo.UpdateFilter(id, req.Name, req.ParentID, req.Params); err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Filter updated successfully"}))
@@ -129,7 +129,7 @@ func (h *FiltersHandler) Delete(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, existing.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	// Folders are personal: only their author sees and changes them.
@@ -138,7 +138,7 @@ func (h *FiltersHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.repo.SetDeleted(id, true); err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Filter deleted successfully"}))
@@ -158,7 +158,7 @@ func (h *FiltersHandler) Restore(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, existing.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	// Folders are personal: only their author sees and changes them.
@@ -167,7 +167,7 @@ func (h *FiltersHandler) Restore(c *gin.Context) {
 		return
 	}
 	if err := h.repo.SetDeleted(id, false); err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Filter restored successfully"}))
@@ -188,7 +188,7 @@ func (h *FiltersHandler) List(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -199,7 +199,7 @@ func (h *FiltersHandler) List(c *gin.Context) {
 	pagination := types.ParsePaginationParams(c)
 	items, total, err := h.repo.List(spaceID, userID, pagination.Page, pagination.PageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	response := pagination.BuildResponse(items, total)

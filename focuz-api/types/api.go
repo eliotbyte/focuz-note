@@ -1,5 +1,11 @@
 package types
 
+import (
+	"log"
+
+	"github.com/gin-gonic/gin"
+)
+
 // APIResponse represents a standardized API response
 type APIResponse struct {
 	Success bool        `json:"success"`
@@ -56,3 +62,10 @@ const (
 	ErrorCodeInvalidToken   = "INVALID_TOKEN"
 	ErrorCodeInvalidRequest = "INVALID_REQUEST"
 )
+
+// InternalError logs err with the request ID and returns a generic 500 body: driver and SQL
+// messages (e.g. "pq: ...") must not reach clients.
+func InternalError(c *gin.Context, err error) *APIResponse {
+	log.Printf("internal error: requestId=%s %s %s: %v", c.GetString("requestId"), c.Request.Method, c.Request.URL.Path, err)
+	return NewErrorResponse(ErrorCodeInternal, "Something went wrong, try again")
+}

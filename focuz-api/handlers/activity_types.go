@@ -30,7 +30,7 @@ func (h *ActivityTypesHandler) CreateActivityType(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if !access.CanManage(roleID) {
@@ -111,7 +111,7 @@ func (h *ActivityTypesHandler) CreateActivityType(c *gin.Context) {
 		if strings.Contains(err.Error(), "name conflict in this space") {
 			c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeConflict, "type name already exists in this space"))
 		} else {
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+			c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		}
 		return
 	}
@@ -132,7 +132,7 @@ func (h *ActivityTypesHandler) DeleteActivityType(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if !access.CanManage(roleID) {
@@ -142,7 +142,7 @@ func (h *ActivityTypesHandler) DeleteActivityType(c *gin.Context) {
 
 	activityType, err := h.repo.GetActivityTypeByID(typeID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	// The type must belong to the space the caller is owner of (not just any type id).
@@ -157,7 +157,7 @@ func (h *ActivityTypesHandler) DeleteActivityType(c *gin.Context) {
 
 	err = h.repo.UpdateActivityTypeDeleted(typeID, true)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Activity type deleted successfully"}))
@@ -177,7 +177,7 @@ func (h *ActivityTypesHandler) RestoreActivityType(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if !access.CanManage(roleID) {
@@ -186,7 +186,7 @@ func (h *ActivityTypesHandler) RestoreActivityType(c *gin.Context) {
 	}
 	activityType, err := h.repo.GetActivityTypeByID(typeID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if activityType == nil || (!activityType.IsDefault && activityType.SpaceID != spaceID) {
@@ -199,14 +199,14 @@ func (h *ActivityTypesHandler) RestoreActivityType(c *gin.Context) {
 	}
 	err = h.repo.UpdateActivityTypeDeleted(typeID, false)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
 	// Get the restored activity type to return in response
 	restoredActivityType, err := h.repo.GetActivityTypeByID(typeID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -222,7 +222,7 @@ func (h *ActivityTypesHandler) GetActivityTypesBySpace(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -235,7 +235,7 @@ func (h *ActivityTypesHandler) GetActivityTypesBySpace(c *gin.Context) {
 
 	activityTypes, total, err := h.repo.GetActivityTypesBySpacePaginated(spaceID, pagination.Offset, pagination.PageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 

@@ -47,7 +47,7 @@ func (h *ActivitiesHandler) CreateActivity(c *gin.Context) {
 	}
 	activityType, err := h.activityTypesRepo.GetActivityTypeByID(req.TypeID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if activityType == nil || activityType.IsDeleted {
@@ -71,7 +71,7 @@ func (h *ActivitiesHandler) CreateActivity(c *gin.Context) {
 
 	roleID, rerr := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if rerr != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, rerr.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, rerr))
 		return
 	}
 	if roleID == 0 {
@@ -95,7 +95,7 @@ func (h *ActivitiesHandler) CreateActivity(c *gin.Context) {
 		if strings.Contains(err.Error(), "activity with this type already exists for the given note") {
 			c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeConflict, err.Error()))
 		} else {
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+			c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		}
 		return
 	}
@@ -110,7 +110,7 @@ func (h *ActivitiesHandler) DeleteActivity(c *gin.Context) {
 	}
 	activity, err := h.activitiesRepo.GetActivityByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if activity == nil || activity.IsDeleted {
@@ -123,7 +123,7 @@ func (h *ActivitiesHandler) DeleteActivity(c *gin.Context) {
 	}
 	err = h.activitiesRepo.SetActivityDeleted(id, true)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Activity deleted successfully"}))
@@ -137,7 +137,7 @@ func (h *ActivitiesHandler) RestoreActivity(c *gin.Context) {
 	}
 	activity, err := h.activitiesRepo.GetActivityByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if activity == nil || !activity.IsDeleted {
@@ -150,7 +150,7 @@ func (h *ActivitiesHandler) RestoreActivity(c *gin.Context) {
 	}
 	err = h.activitiesRepo.SetActivityDeleted(id, false)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Activity restored successfully"}))
@@ -164,7 +164,7 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 	}
 	activity, err := h.activitiesRepo.GetActivityByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if activity == nil || activity.IsDeleted {
@@ -185,7 +185,7 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 	}
 	activityType, err := h.activityTypesRepo.GetActivityTypeByID(activity.TypeID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if activityType == nil || activityType.IsDeleted {
@@ -201,7 +201,7 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 		}
 		roleID, rerr := h.spacesRepo.GetUserRoleIDInSpace(userID, target.SpaceID)
 		if rerr != nil {
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, rerr.Error()))
+			c.JSON(http.StatusInternalServerError, types.InternalError(c, rerr))
 			return
 		}
 		if roleID == 0 || !typeUsableInSpace(activityType, target.SpaceID) {
@@ -216,7 +216,7 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 	}
 	err = h.activitiesRepo.UpdateActivity(id, checkedValue, req.NoteID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Activity updated successfully"}))
@@ -239,7 +239,7 @@ func (h *ActivitiesHandler) authorizeActivity(c *gin.Context, activity *models.A
 	}
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return false
 	}
 	if roleID == 0 {
@@ -352,7 +352,7 @@ func (h *ActivitiesHandler) GetActivitiesAnalysis(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -361,7 +361,7 @@ func (h *ActivitiesHandler) GetActivitiesAnalysis(c *gin.Context) {
 	}
 	at, err := h.activityTypesRepo.GetActivityTypeByID(typeID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if at == nil || at.IsDeleted {
@@ -401,7 +401,7 @@ func (h *ActivitiesHandler) GetActivitiesAnalysis(c *gin.Context) {
 		periodID,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(results))

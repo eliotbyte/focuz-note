@@ -41,9 +41,12 @@ services:
       dockerfile: Dockerfile
     environment:
       - DATABASE_URL=postgres://${POSTGRES_USER:-focuz_user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-focuz_db}?sslmode=${DB_SSLMODE:-disable}
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-me-please-0123456789abcdef}
+      # Empty: the API generates a random secret on first start and keeps it in the database
+      - JWT_SECRET=${JWT_SECRET:-}
       - APP_ENV=${APP_ENV:-production}
-      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # Only the address of your reverse proxy, if any. Clients can spoof X-Forwarded-For from any
+      # address trusted here, so the default trusts loopback only.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081,http://localhost:8082,http://127.0.0.1:8082,http://localhost:5173,http://127.0.0.1:5173}
       - ALLOW_CREDENTIALS=${ALLOW_CREDENTIALS:-false}
       - MINIO_ENDPOINT=minio:9000
@@ -69,7 +72,8 @@ services:
       - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-1}
       - RATE_LIMIT_RPS=${RATE_LIMIT_RPS:-5}
       - RATE_LIMIT_BURST=${RATE_LIMIT_BURST:-20}
-      - RATE_LIMIT_WHITELIST=${RATE_LIMIT_WHITELIST:-127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # Never list the Docker network or other ranges all incoming traffic may come from
+      - RATE_LIMIT_WHITELIST=${RATE_LIMIT_WHITELIST:-}
     depends_on:
       db:
         condition: service_healthy

@@ -12,7 +12,7 @@ Backend API for a note-taking application with workspaces, notes, charts, and ac
 POSTGRES_USER=focuz_user
 POSTGRES_PASSWORD=focuz_password
 POSTGRES_DB=focuz_db
-JWT_SECRET=your_secret_key_here
+# JWT_SECRET: leave unset to let the API generate one, or `openssl rand -hex 32`
 MINIO_EXTERNAL_ENDPOINT=http://localhost:9000
 MINIO_EXTERNAL_USE_SSL=false
 ```
@@ -184,7 +184,7 @@ Saved note filters with nested grouping and JSON parameters.
   - In `test`, some protections/toggles are relaxed for faster test runs (e.g. rate limiting is disabled).
   - `/health` includes the effective `environment` value.
 - `ALLOWED_ORIGINS`: comma-separated origins allowed in production for CORS and WebSocket (e.g. `https://app.example.com,https://staging.example.com`).
-- `TRUSTED_PROXIES`: comma-separated proxy CIDRs or IPs for correct client IP; defaults to `127.0.0.1, ::1` when unset.
+- `TRUSTED_PROXIES`: comma-separated IPs/CIDRs of your reverse proxy (only those: any trusted address can set the client IP via `X-Forwarded-For`); defaults to `127.0.0.1, ::1` when unset.
 - `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`, `RATE_LIMIT_WHITELIST`, `RATE_LIMIT_ENABLED`: tune/disable rate limiting.
 - `MINIO_EXTERNAL_ENDPOINT`: external hostname:port for presigned URLs; if empty, internal endpoint is used.
 - `MINIO_EXTERNAL_USE_SSL`: optional bool for presigned URL scheme when using `MINIO_EXTERNAL_ENDPOINT`. If unset, inferred from the endpoint scheme (`http://`/`https://`) or falls back to `MINIO_USE_SSL`.

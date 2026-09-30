@@ -69,7 +69,7 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, note.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -116,7 +116,7 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 	// Upload file to MinIO using detected content type
 	attachmentID, err := h.uploadFileToMinIO(file, noteID, clientIDPtr, detectedCT, position)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 
@@ -175,7 +175,7 @@ func (h *AttachmentsHandler) authorizedAttachment(c *gin.Context) *repository.At
 
 	att, err := h.attachmentsRepo.GetAttachmentByID(attID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return nil
 	}
 	if att == nil {
@@ -191,7 +191,7 @@ func (h *AttachmentsHandler) authorizedAttachment(c *gin.Context) *repository.At
 
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, note.SpaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return nil
 	}
 	if roleID == 0 {

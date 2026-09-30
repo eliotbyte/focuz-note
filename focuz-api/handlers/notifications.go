@@ -21,7 +21,7 @@ func (h *NotificationsHandler) ListUnread(c *gin.Context) {
 	userID := c.GetInt("userId")
 	notifs, err := h.repo.ListUnread(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	// Marshal payload back to JSON
@@ -48,7 +48,7 @@ func (h *NotificationsHandler) MarkRead(c *gin.Context) {
 		return
 	}
 	if err := h.repo.MarkRead(userID, req.IDs); err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Notifications marked read"}))

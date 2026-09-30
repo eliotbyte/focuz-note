@@ -87,7 +87,7 @@ func (h *SyncHandler) Pull(c *gin.Context) {
 		}
 		roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, id)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+			c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 			return
 		}
 		if roleID == 0 {
@@ -98,7 +98,7 @@ func (h *SyncHandler) Pull(c *gin.Context) {
 	} else {
 		spaces, err := h.spacesRepo.GetSpacesForUser(userID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+			c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 			return
 		}
 		for _, s := range spaces {
@@ -107,12 +107,12 @@ func (h *SyncHandler) Pull(c *gin.Context) {
 	}
 	changes, err := h.syncRepo.GetChangesSince(userID, spaceIDs, since)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if h.sharing != nil {
 		if err := h.addSpaceState(userID, changes); err != nil {
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+			c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 			return
 		}
 	}
@@ -157,7 +157,7 @@ func (h *SyncHandler) Push(c *gin.Context) {
 	userID := c.GetInt("userId")
 	res, err := h.syncRepo.ApplyChanges(userID, req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(res))
@@ -241,7 +241,7 @@ func (h *SyncHandler) GetTagsBySpace(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -250,7 +250,7 @@ func (h *SyncHandler) GetTagsBySpace(c *gin.Context) {
 	}
 	tags, err := h.tagsRepo.GetTagsBySpace(spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(tags))
@@ -266,7 +266,7 @@ func (h *SyncHandler) GetFiltersBySpace(c *gin.Context) {
 	userID := c.GetInt("userId")
 	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	if roleID == 0 {
@@ -276,7 +276,7 @@ func (h *SyncHandler) GetFiltersBySpace(c *gin.Context) {
 	// Reuse filters repo list with default pagination
 	items, total, err := h.filtersRepo.List(spaceID, userID, 1, 1000)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(types.ErrorCodeInternal, err.Error()))
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 		return
 	}
 	_ = total

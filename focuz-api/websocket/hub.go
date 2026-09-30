@@ -109,14 +109,13 @@ var upgrader = websocket.Upgrader{
 
 // ServeWS upgrades HTTP connection to WebSocket and registers the client.
 // JWT is read from either context (if behind AuthMiddleware) or from ?token= query param.
-func ServeWS(h *Hub) gin.HandlerFunc {
+func ServeWS(h *Hub, secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetInt("userId")
 		if userID == 0 {
 			// Try query token fallback
 			tok := c.Query("token")
 			if tok != "" {
-				secret := os.Getenv("JWT_SECRET")
 				if secret != "" {
 					token, err := jwt.ParseWithClaims(tok, jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
 						if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
