@@ -1,7 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from './db'
 import { blobBytes, exportSpace, importIntoSpace } from './data-transfer'
 import { readExport } from './export-format'
+
+// Pictures that are not on this device are fetched from the server; the tests answer for it.
+const fetchMock = vi.hoisted(() => vi.fn())
+vi.mock('./jobs-worker', () => ({ fetchAttachmentBlob: fetchMock }))
 
 // fake-indexeddb is the database here: pictures and files are real Blobs and Files.
 function bytesBlob(bytes: Uint8Array): Blob {
@@ -74,5 +78,31 @@ describe('export and import of a space', () => {
     const back = readExport(await zipBytes(exported.blob))
     expect(back.doc.space.name).toBe('A')
     expect(back.doc.notes.map(n => n.text)).toEqual(['plain'])
+  })
+})
+
+describe('export waits for every picture', () => {
+  it('downloads the pictures that are not on this device, then exports them', async () => {
+    const parent = await db.notes.add({ spaceId: 1, text: 'remote', tags: [], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 11, clientId: 'm' } as never)
+    await db.attachments.add({ noteId: parent as number, serverId: 'srv-1', clientId: 'c1', fileName: 'remote.webp', fileType: 'image/webp', fileSize: 3, data: null, position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
+    fetchMock.mockResolvedValueOnce(bytesBlob(new Uint8Array([7, 8, 9])))
+
+    const progress: Array<[number, number]> = []
+    const exported = await exportSpace(1, 'A', true, (d, t) => progress.push([d, t]))
+
+    expect(fetchMock).toHaveBeenCalledWith('srv-1')
+    expect(exported.pictureCount).toBe(1)
+    expect(exported.missingPictures).toBe(0)
+    expect(progress).toEqual([[0, 1], [1, 1]])
+    const stored = await db.attachments.where('noteId').equals(parent as number).first()
+    expect(stored?.data).toBeTruthy()
+  })
+
+  it('stops the export when a picture cannot be downloaded', async () => {
+    const parent = await db.notes.add({ spaceId: 1, text: 'offline', tags: [], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 12, clientId: 'o' } as never)
+    await db.attachments.add({ noteId: parent as number, serverId: 'srv-2', clientId: 'c2', fileName: 'x.webp', fileType: 'image/webp', fileSize: 3, data: null, position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
+    fetchMock.mockRejectedValueOnce(new Error('offline'))
+
+    await expect(exportSpace(1, 'A', true)).rejects.toThrow(/Could not download all pictures/)
   })
 })

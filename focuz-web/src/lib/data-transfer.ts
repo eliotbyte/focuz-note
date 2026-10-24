@@ -1,7 +1,9 @@
-// Export and import of one space's notes. Both work on this device only: the server is not asked.
+// Export and import of one space's notes. The export first downloads every picture to this device;
+// the import works on this device and is synced like any other note.
 import { db } from './db'
 import { activities as activitiesRepo, attachments as attachmentsRepo, notes as notesRepo } from '../data'
 import { createOrUpdateLocalActivity, addLocalAttachments } from './local-writes'
+import { fetchAttachmentBlob } from './jobs-worker'
 import type { NoteRecord } from './types'
 import {
   EXPORT_FORMAT,
@@ -53,11 +55,33 @@ function extensionOf(fileName: string): string {
   return m ? m[1].toLowerCase() : 'bin'
 }
 
-/** Exports the live notes of a space. Pictures are included only when withPictures is set. */
-export async function exportSpace(spaceId: number, spaceName: string, withPictures: boolean): Promise<ExportResult> {
+/**
+ * Downloads every picture of these notes that is not on this device yet. An export needs all of them,
+ * so it waits here. A picture that cannot be fetched stops the export instead of being left out.
+ */
+async function loadMissingPictures(noteIds: number[], onProgress?: (done: number, total: number) => void): Promise<void> {
+  const missing = await db.attachments.where('noteId').anyOf(noteIds).filter(a => !a.deletedAt && !a.data && !!a.serverId).toArray()
+  let done = 0
+  onProgress?.(done, missing.length)
+  for (const a of missing) {
+    let blob: Blob
+    try {
+      blob = await fetchAttachmentBlob(a.serverId!)
+    } catch {
+      throw new Error(`Could not download all pictures: ${missing.length - done} still missing. Check the connection and try again.`)
+    }
+    await db.attachments.update(a.id!, { data: blob })
+    done++
+    onProgress?.(done, missing.length)
+  }
+}
+
+/** Exports the live notes of a space. With withPictures, every picture is downloaded first. */
+export async function exportSpace(spaceId: number, spaceName: string, withPictures: boolean, onProgress?: (done: number, total: number) => void): Promise<ExportResult> {
   const live = (await db.notes.where('spaceId').equals(spaceId).filter(n => !n.deletedAt).toArray())
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const ids = new Set(live.map(n => n.id!))
+  if (withPictures) await loadMissingPictures(live.map(n => n.id!), onProgress)
   const pictures = new Map<string, Uint8Array>()
   const notes: ExportNote[] = []
   let missingPictures = 0

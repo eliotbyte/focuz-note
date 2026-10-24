@@ -8,14 +8,17 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
   const [busy, setBusy] = useState<'export' | 'import' | null>(null)
   const [report, setReport] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const ready = spaceId != null && busy === null
 
   async function doExport() {
     if (spaceId == null) return
-    setBusy('export'); setError(null); setReport(null)
+    setBusy('export'); setError(null); setReport(null); setProgress(null)
     try {
-      const res = await exportSpace(spaceId, spaceName || 'space', withPictures)
+      const res = await exportSpace(spaceId, spaceName || 'space', withPictures, (done, total) => {
+        if (total > 0) setProgress(`Downloading pictures ${done} of ${total}…`)
+      })
       downloadBlob(res.blob, res.fileName)
       const parts = [`${res.noteCount} ${res.noteCount === 1 ? 'note' : 'notes'}`]
       if (withPictures) parts.push(`${res.pictureCount} ${res.pictureCount === 1 ? 'picture' : 'pictures'}`)
@@ -53,14 +56,14 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
         <div className="settings-label">Export</div>
         <p className="settings-note">
           Saves the notes of {spaceName ? <b>{spaceName}</b> : 'this space'}: text, tags, dates, activities and, if you tick it, the pictures.
-          Works without a connection; the server is not asked.
+          With pictures, every picture is downloaded to this device first, so the export waits for all of them.
         </p>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={withPictures} onChange={e => setWithPictures(e.target.checked)} />
           Include pictures (saved as a zip)
         </label>
         <button type="button" className="button" disabled={!ready} onClick={() => { void doExport() }}>
-          {busy === 'export' ? 'Exporting…' : 'Export notes'}
+          {busy === 'export' ? (progress ?? 'Exporting…') : 'Export notes'}
         </button>
       </section>
 

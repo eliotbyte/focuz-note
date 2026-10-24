@@ -82,20 +82,24 @@ async function upload(job: JobRecord): Promise<JobOutcome> {
   return { kind: 'done' }
 }
 
-async function download(job: JobRecord): Promise<JobOutcome> {
-  const att = await db.attachments.get(job.attachmentId)
-  if (!att?.serverId || att.data || att.deletedAt) return { kind: 'done' }
-  let blob: Blob
+/** The picture's bytes from the server. Used by the download job and by export (which needs them all). */
+export async function fetchAttachmentBlob(serverId: string): Promise<Blob> {
   try {
-    blob = await apiBlob(`/files/${encodeURIComponent(att.serverId)}/content`)
+    return await apiBlob(`/files/${encodeURIComponent(serverId)}/content`)
   } catch (e) {
     // Older API without the content endpoint answers with a plain 404 page: fall back to a presigned URL.
     if (!(e instanceof ApiError && e.status === 404 && (e.body as any)?.success === undefined)) throw e
-    const meta = await api(`/files/${encodeURIComponent(att.serverId)}`, { method: 'GET' })
+    const meta = await api(`/files/${encodeURIComponent(serverId)}`, { method: 'GET' })
     const url = meta?.data?.url || meta?.data?.URL || meta?.data?.signedUrl || meta?.data?.signed_url
     if (!url) throw new Error('No download URL')
-    blob = await fetchBlobUrl(url)
+    return fetchBlobUrl(url)
   }
+}
+
+async function download(job: JobRecord): Promise<JobOutcome> {
+  const att = await db.attachments.get(job.attachmentId)
+  if (!att?.serverId || att.data || att.deletedAt) return { kind: 'done' }
+  const blob = await fetchAttachmentBlob(att.serverId)
   // Do not touch modifiedAt: it defines the order of images in a note.
   await db.attachments.update(att.id!, { data: blob })
   return { kind: 'done' }
