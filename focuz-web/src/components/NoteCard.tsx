@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { NoteRecord } from '../lib/types'
 import { activities as activitiesRepo, notes as notesRepo } from '../data'
-import { useAppState } from '../lib/app-state'
 // import HighlightedText from './HighlightedText'
 import NoteBody from './NoteBody'
 import { notePreviewText } from '../lib/note-format/render'
@@ -12,8 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Pill } from './ui/pill'
 import { SurfaceNoPad } from './ui/surface'
 import SubdirectoryArrowRightRoundedIcon from '@mui/icons-material/SubdirectoryArrowRightRounded'
-import DoneRoundedIcon from '@mui/icons-material/DoneRounded'
-import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded'
+import SyncMark from './SyncMark'
 import PublicRoundedIcon from '@mui/icons-material/PublicRounded'
 import { useSpaceView } from '../lib/space-context'
 import { canDeleteNote, canEditNotes, canWrite } from '../lib/roles'
@@ -58,7 +56,6 @@ export default function NoteCard({
   const mayWrite = canWrite(view.role)
   const mayEdit = canEditNotes(view.role)
   const mayDelete = canDeleteNote(view.role, note.authorId, view.meId)
-  const syncing = useAppState(s => s.syncing)
   const parentNote = useLiveQuery(
     () => (showParentPreview && note.parentId ? notesRepo.getByLocalId(note.parentId) : Promise.resolve(undefined)),
     [showParentPreview, note.parentId],
@@ -72,12 +69,6 @@ export default function NoteCard({
   const author = view.shared ? (note.authorName ?? view.meName ?? 'you') : null
   const editedBy = view.shared && note.modifiedByName && note.modifiedById != null && note.modifiedById !== note.authorId ? note.modifiedByName : null
   const hasReplies = Number.isFinite(repliesCount) && repliesCount > 0
-  // Sync status rules:
-  // - Done: created/edited locally but not yet synced (no serverId or isDirty=1)
-  // - DoneAll: synced at least once successfully (serverId exists and isDirty=0), regardless of current network/server availability
-  const isSynced = note.serverId != null && note.isDirty === 0
-  const syncStage: 'pending' | 'syncing' | 'synced' = isSynced ? (syncing ? 'syncing' : 'synced') : 'pending'
-
   return (
     <SurfaceNoPad className="relative group">
       {(pub.direct || pub.inherited) && (
@@ -175,13 +166,7 @@ export default function NoteCard({
                 </NoteDateTip>
               )}
             {editedBy && <span className="truncate hidden sm:inline">· edited by {editedBy}</span>}
-            <span aria-label={syncStage === 'pending' ? 'Not synced yet' : syncStage === 'syncing' ? 'Syncing' : 'Synced'}>
-              {syncStage === 'pending'
-                ? <DoneRoundedIcon fontSize="inherit" className="icon-sm text-secondary" />
-                : syncStage === 'syncing'
-                  ? <DoneRoundedIcon fontSize="inherit" className="icon-sm text-secondary" />
-                  : <DoneAllRoundedIcon fontSize="inherit" className="icon-sm text-secondary" />}
-            </span>
+            <SyncMark pending={note.isDirty === 1} />
           </div>
         </div>
       </div>
