@@ -88,6 +88,7 @@ func main() {
 	chartsRepo := repository.NewChartsRepository(db)
 	notificationsRepo := repository.NewNotificationsRepository(db)
 	filtersRepo := repository.NewFiltersRepository(db)
+	apiTokensRepo := repository.NewAPITokensRepository(db)
 
 	// New repos for sync and tags
 	syncRepo := repository.NewSyncRepository(db)
@@ -133,6 +134,8 @@ func main() {
 
 	// Handlers
 	notesHandler := handlers.NewNotesHandler(notesRepo, spacesRepo)
+	notesAPIHandler := handlers.NewNotesAPIHandler(notesRepo, spacesRepo, syncRepo)
+	apiTokensHandler := handlers.NewAPITokensHandler(apiTokensRepo)
 	spacesHandler := handlers.NewSpacesHandler(spacesRepo, rolesRepo).WithNotifier(notifier).WithNotificationsRepo(notificationsRepo)
 	activityTypesHandler := handlers.NewActivityTypesHandler(activityTypesRepo, spacesRepo)
 	activitiesHandler := handlers.NewActivitiesHandler(
@@ -184,7 +187,7 @@ func main() {
 	r.GET("/public/:token", sharingHandler.PublicView)
 	r.GET("/public/:token/files/:fileId", sharingHandler.PublicFile)
 
-	auth := r.Group("/", handlers.AuthMiddleware(tokens))
+	auth := r.Group("/", handlers.AuthMiddleware(tokens, apiTokensRepo))
 	{
 		auth.GET("/spaces", spacesHandler.GetAccessibleSpaces)
 		auth.POST("/spaces", spacesHandler.CreateSpace)
@@ -269,6 +272,13 @@ func main() {
 		auth.POST("/sync", syncHandler.Push)
 		auth.GET("/spaces/:spaceId/tags", syncHandler.GetTagsBySpace)
 		auth.GET("/spaces/:spaceId/filters", syncHandler.GetFiltersBySpace)
+
+		// Personal API tokens and agents (MCP). Token management needs a sign-in, not a token.
+		auth.GET("/me/api-tokens", apiTokensHandler.List)
+		auth.POST("/me/api-tokens", apiTokensHandler.Create)
+		auth.DELETE("/me/api-tokens/:id", apiTokensHandler.Revoke)
+		auth.PATCH("/notes/:id", notesAPIHandler.UpdateNote)
+		auth.POST("/mcp", notesAPIHandler.MCP)
 	}
 
 	port := strings.TrimSpace(os.Getenv("PORT"))

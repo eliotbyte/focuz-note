@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"focuz-api/pkg/access"
+	"focuz-api/pkg/apitoken"
 	"focuz-api/pkg/authtoken"
 	"focuz-api/pkg/appenv"
 	"focuz-api/repository"
@@ -28,7 +29,10 @@ func NewNotesHandler(repo *repository.NotesRepository, spacesRepo *repository.Sp
 	return &NotesHandler{repo: repo, spacesRepo: spacesRepo}
 }
 
-func AuthMiddleware(tokens *authtoken.Tokens) gin.HandlerFunc {
+// mcpPath is the one POST route that read-only API tokens may use: the tools check scope themselves.
+const mcpPath = "/mcp"
+
+func AuthMiddleware(tokens *authtoken.Tokens, apiTokens *repository.APITokensRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -40,6 +44,10 @@ func AuthMiddleware(tokens *authtoken.Tokens) gin.HandlerFunc {
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			c.JSON(http.StatusUnauthorized, types.NewErrorResponse(types.ErrorCodeUnauthorized, "Invalid authorization header"))
 			c.Abort()
+			return
+		}
+		if apitoken.IsAPIToken(parts[1]) {
+			authenticateAPIToken(c, apiTokens, parts[1])
 			return
 		}
 		userID, err := tokens.Verify(parts[1])
@@ -64,6 +72,33 @@ func AuthMiddleware(tokens *authtoken.Tokens) gin.HandlerFunc {
 		c.Set("userId", userID)
 		c.Next()
 	}
+}
+
+// scopeKey holds the scope ("read" or "write") of the API token that made the request. It is empty
+// for login sessions, so handlers can tell the two apart.
+const scopeKey = "apiTokenScope"
+
+func authenticateAPIToken(c *gin.Context, apiTokens *repository.APITokensRepository, raw string) {
+	userID, scope, err := apiTokens.Authenticate(apitoken.Hash(raw))
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(types.ErrorCodeInvalidToken, "Invalid token"))
+		c.Abort()
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
+		c.Abort()
+		return
+	}
+	isRead := c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead
+	if scope == "read" && !isRead && c.FullPath() != mcpPath {
+		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "This token is read-only"))
+		c.Abort()
+		return
+	}
+	c.Set("userId", userID)
+	c.Set(scopeKey, scope)
+	c.Next()
 }
 
 func (h *NotesHandler) CreateNote(c *gin.Context) {

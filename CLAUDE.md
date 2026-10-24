@@ -42,6 +42,11 @@ A security review (2026-10) fixed these; keep them when changing code:
   request ID and never sent to clients.
 - Login tokens are issued and checked only through `pkg/authtoken` (HTTP middleware and WebSocket).
   They carry `token_version`; `UsersRepository.SetPassword` bumps it, which signs out every session.
+- API tokens (`fct_…`, for agents and `/mcp`) are stored only as SHA-256 hashes (`pkg/apitoken`,
+  `APITokensRepository`). A read-scope token may only use GET/HEAD and `/mcp` (the tools check the
+  scope themselves). Token management needs a sign-in, never a token. `SetPassword` revokes them all.
+  Keep MCP tools on the same functions as the REST handlers (`handlers/notes_api.go`) so role rules
+  stay in one place.
 - The WebSocket takes the token as the `bearer.<token>` subprotocol next to `focuz.v1`, never in the
   URL. The access log writes the URL path only.
 - An e-mail sign-up whose code is still valid can't be replaced by a new sign-up (account takeover);

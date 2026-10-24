@@ -74,6 +74,11 @@ func (r *UsersRepository) SetPassword(userID int, password string) error {
 	}
 	// A new password signs out every session: tokens carry the old token_version.
 	_, err = r.db.Exec(`UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE id = $1`, userID, string(hash))
+	if err != nil {
+		return err
+	}
+	// API tokens are not login sessions, but they were also made with the old password: revoke them too.
+	_, err = r.db.Exec(`UPDATE api_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`, userID)
 	return err
 }
 

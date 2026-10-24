@@ -127,3 +127,20 @@ the default. For a web app on another domain to connect, the server needs that o
 To lock the web app to your own server, build it with `VITE_ALLOW_CUSTOM_SERVER=false` (in `.env`,
 then `docker compose up -d --build web`): the "Change" link disappears and a server chosen earlier
 in a browser is ignored.
+
+## Agents (MCP)
+
+focuz answers the Model Context Protocol on `POST /mcp`, so an agent such as Claude can list, read,
+create, edit and delete your notes. Serve it over HTTPS, like the sign-in (see the security checklist).
+
+1. Create a personal token while signed in: `POST /me/api-tokens` with `{"name": "Claude", "scope": "write"}`.
+   The token (`fct_…`) is shown once. Use `"scope": "read"` for an agent that should only read.
+2. Connect Claude Code to your server:
+
+   ```bash
+   claude mcp add --transport http focuz https://your-server/mcp --header "Authorization: Bearer fct_..."
+   ```
+
+3. Revoke a token with `DELETE /me/api-tokens/:id`. Changing your password revokes all of them.
+
+Not yet: a token form in the web app, and sign-in through OAuth for the claude.ai connector screen.
