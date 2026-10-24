@@ -4,8 +4,10 @@ import (
 	"context"
 	"focuz-api/initializers"
 	"focuz-api/pkg/access"
+	"focuz-api/pkg/imagegeom"
 	"focuz-api/repository"
 	"focuz-api/types"
+	"image"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,7 +18,25 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
+	_ "golang.org/x/image/webp"
 )
+
+// checkPictureSize reads the picture's dimensions from its header and applies the note picture rules.
+func checkPictureSize(file *multipart.FileHeader) error {
+	f, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return &clientError{status: http.StatusBadRequest, code: types.ErrorCodeValidation, message: "The picture could not be read"}
+	}
+	if err := imagegeom.Check(cfg.Width, cfg.Height); err != nil {
+		return &clientError{status: http.StatusBadRequest, code: types.ErrorCodeValidation, message: "The picture is not accepted: " + err.Error()}
+	}
+	return nil
+}
 
 type AttachmentsHandler struct {
 	attachmentsRepo *repository.AttachmentsRepository
@@ -112,6 +132,12 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 	if err := initializers.CheckFileAllowed(file.Size, detectedCT); err != nil {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, err.Error()))
 		return
+	}
+	if detectedCT == "image/webp" {
+		if err := checkPictureSize(file); err != nil {
+			respondAPIError(c, err)
+			return
+		}
 	}
 
 	// Upload file to MinIO using detected content type

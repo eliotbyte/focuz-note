@@ -158,8 +158,8 @@ func (s *E2ETestSuite) Test207_Attachments_ContentEndpoint() {
 	_, d := s.syncPush(map[string]any{"notes": []any{map[string]any{"clientId": clientID, "space_id": s.createdSpaceID, "text": "with file", "tags": []string{}, "created_at": now, "modified_at": now}}})
 	noteID := mappingFor(d, clientID)
 
-	// 1x1 lossless WebP
-	webp := []byte("RIFF\x1a\x00\x00\x00WEBPVP8L\x0d\x00\x00\x00\x2f\x00\x00\x00\x10\x07\x10\x11\x11\x88\x88\xfe\x07\x00")
+	// A 1280x720 WebP, so it passes the note picture size rules
+	webp := testPictureWebP(1280, 720)
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	fw, _ := w.CreateFormFile("file", "pixel.webp")
@@ -196,7 +196,7 @@ func (s *E2ETestSuite) Test207_Attachments_ContentEndpoint() {
 }
 
 func (s *E2ETestSuite) uploadPixel(noteID int, position string) string {
-	webp := []byte("RIFF\x1a\x00\x00\x00WEBPVP8L\x0d\x00\x00\x00\x2f\x00\x00\x00\x10\x07\x10\x11\x11\x88\x88\xfe\x07\x00")
+	webp := testPictureWebP(1280, 720)
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	fw, _ := w.CreateFormFile("file", "pixel.webp")

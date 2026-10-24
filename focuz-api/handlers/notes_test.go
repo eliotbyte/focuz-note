@@ -160,21 +160,35 @@ func (s *E2ETestSuite) Test26B_DeclineInvitationPreventsAccess() {
 }
 
 func (s *E2ETestSuite) Test27_EditNote() {
-	reqBody := map[string]interface{}{
-		"text":    "Edited note text",
-		"tags":    []string{"important"},
-		"spaceId": s.createdSpaceID,
-	}
-	jsonBody, _ := json.Marshal(reqBody)
-	req, _ := http.NewRequest("PATCH", s.baseURL+"/notes/"+strconv.Itoa(s.createdNoteID), bytes.NewBuffer(jsonBody))
+	// A note of its own, so the edit does not change the notes the other tests read.
+	createBody, _ := json.Marshal(map[string]interface{}{"text": "To be edited", "spaceId": s.createdSpaceID, "date": time.Now().Format(time.RFC3339)})
+	req, _ := http.NewRequest("POST", s.baseURL+"/notes", bytes.NewBuffer(createBody))
 	req.Header.Set("Authorization", "Bearer "+s.ownerToken)
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := (&http.Client{}).Do(req)
 	s.NoError(err)
-	defer resp.Body.Close()
-	// Endpoint may not exist; ensure it's 404 as before
-	s.Equal(http.StatusNotFound, resp.StatusCode)
+	var created struct {
+		Data struct {
+			ID int `json:"id"`
+		} `json:"data"`
+	}
+	s.NoError(json.NewDecoder(resp.Body).Decode(&created))
+	resp.Body.Close()
+	s.Equal(http.StatusCreated, resp.StatusCode)
+
+	patch := func(token string) int {
+		body, _ := json.Marshal(map[string]interface{}{"text": "Edited note text", "tags": []string{"important"}})
+		r, _ := http.NewRequest("PATCH", s.baseURL+"/notes/"+strconv.Itoa(created.Data.ID), bytes.NewBuffer(body))
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.Header.Set("Content-Type", "application/json")
+		res, err := (&http.Client{}).Do(r)
+		s.NoError(err)
+		res.Body.Close()
+		return res.StatusCode
+	}
+	// A guest reads the space but may not edit in it; the owner may.
+	s.Equal(http.StatusForbidden, patch(s.guestToken))
+	s.Equal(http.StatusOK, patch(s.ownerToken))
 }
 
 func (s *E2ETestSuite) Test28_GetSingleNote() {
