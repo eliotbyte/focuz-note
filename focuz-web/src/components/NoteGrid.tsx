@@ -8,7 +8,7 @@ import ViewAgendaRoundedIcon from '@mui/icons-material/ViewAgendaRounded'
 import type { AttachmentRecord, NoteRecord } from '../lib/types'
 import { activities as activitiesRepo, attachments as attachmentsRepo, notes as notesRepo } from '../data'
 import { notePreviewText, renderNoteHtml } from '../lib/note-format/render'
-import { formatExactDateTime, formatRelativeShort } from '../lib/time'
+import { formatRelativeShort } from '../lib/time'
 import { colsOptions, fitCols, TILE_GAP, type FeedLayout } from '../lib/feed-layout'
 import { useSpaceView } from '../lib/space-context'
 import { canDeleteNote, canEditNotes } from '../lib/roles'
@@ -17,6 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { NoteTileImages } from './NoteImages'
 import NoteShareDialog from './NoteShareDialog'
 import NoteDetailsDialog from './NoteDetailsDialog'
+import NoteDateTip from './NoteDateTip'
 
 const NO_ATTACHMENTS: AttachmentRecord[] = []
 
@@ -221,7 +222,7 @@ function NoteTile({
         </div>
       )}
 
-      <div className="tile-foot" title={formatExactDateTime(note.createdAt)}>
+      <div className="tile-foot">
         {repliesCount > 0 && (
           <span className="tile-replies" aria-label={`${repliesCount} ${repliesCount === 1 ? 'reply' : 'replies'}`}>
             <SubdirectoryArrowRightRoundedIcon fontSize="inherit" aria-hidden />
@@ -229,7 +230,9 @@ function NoteTile({
           </span>
         )}
         {(pub.direct || pub.inherited) && <PublicRoundedIcon fontSize="inherit" aria-label="Public" />}
-        <span className="tile-date">{formatRelativeShort(note.createdAt)}</span>
+        <NoteDateTip note={note}>
+          <span className="tile-date">{formatRelativeShort(note.createdAt)}</span>
+        </NoteDateTip>
       </div>
 
       <div className={`tile-menu ${menuOpen ? 'is-open' : ''}`} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>

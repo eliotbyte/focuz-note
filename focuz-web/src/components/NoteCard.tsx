@@ -7,7 +7,7 @@ import { useAppState } from '../lib/app-state'
 import NoteBody from './NoteBody'
 import { notePreviewText } from '../lib/note-format/render'
 import NoteImages from './NoteImages'
-import { formatExactDateTime, formatRelativeShort, formatDurationShort, parseDurationToMs } from '../lib/time'
+import { formatRelativeShort, formatDurationShort, parseDurationToMs } from '../lib/time'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
 import { Pill } from './ui/pill'
 import { SurfaceNoPad } from './ui/surface'
@@ -21,6 +21,7 @@ import { useNotePublicState } from '../lib/useSpaces'
 import NoteShareDialog from './NoteShareDialog'
 import NoteDetailsDialog from './NoteDetailsDialog'
 import { PersonAvatar } from './ui/avatar'
+import NoteDateTip from './NoteDateTip'
 
 export default function NoteCard({
   note,
@@ -150,7 +151,7 @@ export default function NoteCard({
         ) : null}
 
         {/* Footer */}
-        <div className="relative z-0 flex items-baseline justify-between">
+        <div className="relative z-20 flex items-baseline justify-between">
           <div className="min-w-0">
             {hasReplies && (
               <button className="note-footer inline-flex items-baseline gap-2 text-primary hover:underline" type="button" onClick={() => onOpenThread && onOpenThread(note.id!)}>
@@ -160,10 +161,12 @@ export default function NoteCard({
             )}
           </div>
 
-          <div className="note-footer flex items-baseline gap-2 text-secondary min-w-0" title={formatExactDateTime(note.createdAt) + (editedBy ? ` · edited by ${editedBy}` : '')}>
+          <div className="note-footer flex items-baseline gap-2 text-secondary min-w-0">
             {author && <span className="inline-flex items-center gap-1.5 min-w-0 self-center"><PersonAvatar userId={note.authorId ?? view.meId} name={author} size={16} /><span className="truncate">{author}</span></span>}
             {author && <span aria-hidden style={{ fontWeight: 700 }}>·</span>}
-            <span>{formatRelativeShort(note.createdAt)}</span>
+            <NoteDateTip note={note} extra={editedBy ? `Edited by ${editedBy}` : undefined}>
+              <span>{formatRelativeShort(note.createdAt)}</span>
+            </NoteDateTip>
             {editedBy && <span className="truncate hidden sm:inline">· edited by {editedBy}</span>}
             <span aria-label={syncStage === 'pending' ? 'Not synced yet' : syncStage === 'syncing' ? 'Syncing' : 'Synced'}>
               {syncStage === 'pending'
