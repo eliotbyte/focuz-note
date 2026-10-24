@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded'
 import PaletteRoundedIcon from '@mui/icons-material/PaletteRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
+import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Avatar } from './ui/avatar'
 import { useMe } from '../lib/useSpaces'
@@ -14,10 +15,12 @@ import { getThemePreference, setThemePreference, type ThemePreference } from '..
 import { getServer, serverLabel } from '../lib/server'
 import { useAppState } from '../lib/app-state'
 import { notify } from '../ui/notify'
+import { createApiToken, listApiTokens, revokeApiToken, type ApiTokenInfo, type ApiTokenScope } from '../lib/api-tokens'
 
-type Tab = 'account' | 'notifications' | 'appearance' | 'about'
+type Tab = 'account' | 'agents' | 'notifications' | 'appearance' | 'about'
 const TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
   { id: 'account', label: 'Account', icon: <PersonRoundedIcon fontSize="inherit" /> },
+  { id: 'agents', label: 'Agents', icon: <SmartToyRoundedIcon fontSize="inherit" /> },
   { id: 'notifications', label: 'Notifications', icon: <NotificationsRoundedIcon fontSize="inherit" /> },
   { id: 'appearance', label: 'Appearance', icon: <PaletteRoundedIcon fontSize="inherit" /> },
   { id: 'about', label: 'Server', icon: <DnsRoundedIcon fontSize="inherit" /> },
@@ -42,6 +45,7 @@ export default function SettingsDialog({ open, onOpenChange, onLogout }: { open:
           </div>
           <div className="settings-body" role="tabpanel">
             {tab === 'account' && <AccountTab onLogout={onLogout} />}
+            {tab === 'agents' && <AgentsTab />}
             {tab === 'notifications' && <NotificationsTab />}
             {tab === 'appearance' && <AppearanceTab />}
             {tab === 'about' && <AboutTab />}
@@ -102,6 +106,101 @@ function AccountTab({ onLogout }: { onLogout: () => void }) {
       <div className="settings-danger">
         <div><b>Sign out</b><p>Signs you out on this device. Your notes stay on the server; if something is not synced yet, you will be asked first.</p></div>
         <button type="button" className="filter-btn" onClick={onLogout}>Sign out</button>
+      </div>
+    </div>
+  )
+}
+
+function AgentsTab() {
+  const [tokens, setTokens] = useState<ApiTokenInfo[] | null>(null)
+  const [name, setName] = useState('')
+  const [scope, setScope] = useState<ApiTokenScope>('write')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // The secret of a token just created. It is not stored anywhere on the page and is gone after "Done".
+  const [secret, setSecret] = useState<string | null>(null)
+  const mcpUrl = `${getServer() ?? ''}/mcp`
+  const command = secret ? `claude mcp add --transport http focuz ${mcpUrl} --header "Authorization: Bearer ${secret}"` : ''
+
+  const load = useCallback(async () => {
+    try { setTokens(await listApiTokens()) } catch (e) { setError(errorText(e)) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  async function create() {
+    const trimmed = name.trim()
+    if (!trimmed) { setError('Give the token a name'); return }
+    setBusy(true); setError(null)
+    try {
+      const created = await createApiToken(trimmed, scope)
+      setSecret(created.token)
+      setName('')
+      await load()
+    } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+  }
+
+  async function revoke(t: ApiTokenInfo) {
+    if (!window.confirm(`Revoke "${t.name}"? Agents that use it stop working at once.`)) return
+    try {
+      await revokeApiToken(t.id)
+      notify('Token revoked', 'success')
+      await load()
+    } catch (e) { notify(errorText(e), 'error') }
+  }
+
+  async function copyCommand() {
+    try {
+      await navigator.clipboard.writeText(command)
+      notify('Command copied', 'success')
+    } catch { notify('Could not copy: select the text and copy it yourself', 'error') }
+  }
+
+  return (
+    <div className="space-y-6">
+      <p className="settings-note">
+        Let an agent such as Claude read or edit your notes. A token acts as you: the agent can do only what you
+        can do in the spaces you share. Use a read-only token for an agent that should only look.
+      </p>
+
+      {secret && (
+        <div className="space-y-2">
+          <div className="settings-label">New token</div>
+          <p className="settings-note">Copy this command now. The token is shown only once; if you lose it, revoke it and make a new one.</p>
+          <code className="block break-all text-xs p-2 rounded bg-black/5 dark:bg-white/5">{command}</code>
+          <div className="flex gap-2">
+            <button type="button" className="button" onClick={() => { void copyCommand() }}>Copy command</button>
+            <button type="button" className="filter-btn" onClick={() => setSecret(null)}>Done</button>
+          </div>
+        </div>
+      )}
+
+      <form className="space-y-2 max-w-sm" onSubmit={e => { e.preventDefault(); void create() }}>
+        <div className="settings-label">New token</div>
+        <input className="input" placeholder="Name, for example Claude" aria-label="Token name" maxLength={100} value={name} onChange={e => setName(e.target.value)} />
+        <select className="input" aria-label="Access" value={scope} onChange={e => setScope(e.target.value as ApiTokenScope)}>
+          <option value="write">Read and write notes</option>
+          <option value="read">Read only</option>
+        </select>
+        {error && <p className="settings-error" role="alert">{error}</p>}
+        <button type="submit" className="button" disabled={busy || !name.trim()}>Create token</button>
+      </form>
+
+      <div className="space-y-2">
+        <div className="settings-label">Active tokens</div>
+        {tokens === null && !error && <p className="settings-note">Loading…</p>}
+        {tokens?.length === 0 && <p className="settings-note">No tokens yet.</p>}
+        {tokens?.map(t => (
+          <div key={t.id} className="settings-danger">
+            <div className="min-w-0">
+              <b className="truncate block">{t.name} <span className="text-xs font-normal text-secondary">· {t.scope === 'read' ? 'read only' : 'read and write'}</span></b>
+              <p className="font-mono text-xs">{t.prefix}…</p>
+              <p>
+                Created {new Date(t.createdAt).toLocaleDateString()} · {t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleString()}` : 'never used'}
+              </p>
+            </div>
+            <button type="button" className="filter-btn" onClick={() => { void revoke(t) }}>Revoke</button>
+          </div>
+        ))}
       </div>
     </div>
   )
