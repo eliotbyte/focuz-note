@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { downloadBlob, exportSpace, importIntoSpace } from '../lib/data-transfer'
+import { downloadBlob, exportSpace, importIntoSpace, MissingPicturesError } from '../lib/data-transfer'
 import { notify } from '../ui/notify'
 
 /** Settings → Data: export the open space to a file, or add the notes of a file to it. Works offline. */
@@ -12,21 +12,25 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
   const fileInput = useRef<HTMLInputElement>(null)
   const ready = spaceId != null && busy === null
 
-  async function doExport() {
+  const [failedPictures, setFailedPictures] = useState<number | null>(null)
+
+  async function doExport(skipUnavailable = false) {
     if (spaceId == null) return
-    setBusy('export'); setError(null); setReport(null); setProgress(null)
+    setBusy('export'); setError(null); setReport(null); setProgress(null); setFailedPictures(null)
     try {
-      const res = await exportSpace(spaceId, spaceName || 'space', withPictures, (done, total) => {
-        if (total > 0) setProgress(`Downloading pictures ${done} of ${total}…`)
+      const res = await exportSpace(spaceId, spaceName || 'space', withPictures, {
+        skipUnavailable,
+        onProgress: (done, total) => { if (total > 0) setProgress(`Downloading pictures ${done} of ${total}…`) },
       })
       downloadBlob(res.blob, res.fileName)
       const parts = [`${res.noteCount} ${res.noteCount === 1 ? 'note' : 'notes'}`]
       if (withPictures) parts.push(`${res.pictureCount} ${res.pictureCount === 1 ? 'picture' : 'pictures'}`)
       let text = `Exported ${parts.join(' and ')}.`
-      if (res.missingPictures > 0) text += ` ${res.missingPictures} ${res.missingPictures === 1 ? 'picture is' : 'pictures are'} not on this device and ${res.missingPictures === 1 ? 'is' : 'are'} not in the file.`
+      if (res.missingPictures > 0) text += ` ${res.missingPictures} ${res.missingPictures === 1 ? 'picture is' : 'pictures are'} not in the file.`
       setReport(text)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Export failed')
+      if (e instanceof MissingPicturesError) setFailedPictures(e.count)
+      else setError(e instanceof Error ? e.message : 'Export failed')
     } finally {
       setBusy(null)
     }
@@ -87,6 +91,17 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
       </section>
 
       {report && <p className="settings-ok" role="status">{report}</p>}
+      {failedPictures !== null && (
+        <div className="space-y-2" role="alert">
+          <p className="settings-error">
+            {failedPictures} {failedPictures === 1 ? 'picture' : 'pictures'} could not be downloaded. The server may be unreachable, or the {failedPictures === 1 ? 'file is' : 'files are'} damaged there.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="button" disabled={busy !== null} onClick={() => { void doExport() }}>Try again</button>
+            <button type="button" className="button button-secondary" disabled={busy !== null} onClick={() => { void doExport(true) }}>Export without them</button>
+          </div>
+        </div>
+      )}
       {error && <p className="settings-error" role="alert">{error}</p>}
     </div>
   )

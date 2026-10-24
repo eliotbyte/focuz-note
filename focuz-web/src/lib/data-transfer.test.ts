@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from './db'
-import { blobBytes, exportSpace, importIntoSpace } from './data-transfer'
+import { blobBytes, exportSpace, importIntoSpace, MissingPicturesError } from './data-transfer'
 import { readExport } from './export-format'
 
 // Pictures that are not on this device are fetched from the server; the tests answer for it.
@@ -88,7 +88,7 @@ describe('export waits for every picture', () => {
     fetchMock.mockResolvedValueOnce(bytesBlob(new Uint8Array([7, 8, 9])))
 
     const progress: Array<[number, number]> = []
-    const exported = await exportSpace(1, 'A', true, (d, t) => progress.push([d, t]))
+    const exported = await exportSpace(1, 'A', true, { onProgress: (d, t) => progress.push([d, t]) })
 
     expect(fetchMock).toHaveBeenCalledWith('srv-1')
     expect(exported.pictureCount).toBe(1)
@@ -98,11 +98,22 @@ describe('export waits for every picture', () => {
     expect(stored?.data).toBeTruthy()
   })
 
-  it('stops the export when a picture cannot be downloaded', async () => {
+  it('asks before exporting when a picture cannot be downloaded', async () => {
     const parent = await db.notes.add({ spaceId: 1, text: 'offline', tags: [], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 12, clientId: 'o' } as never)
     await db.attachments.add({ noteId: parent as number, serverId: 'srv-2', clientId: 'c2', fileName: 'x.webp', fileType: 'image/webp', fileSize: 3, data: null, position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
     fetchMock.mockRejectedValueOnce(new Error('offline'))
 
-    await expect(exportSpace(1, 'A', true)).rejects.toThrow(/Could not download all pictures/)
+    await expect(exportSpace(1, 'A', true)).rejects.toBeInstanceOf(MissingPicturesError)
+  })
+
+  it('exports without the pictures that cannot be downloaded when asked to', async () => {
+    const parent = await db.notes.add({ spaceId: 1, text: 'broken pic', tags: [], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 13, clientId: 'b' } as never)
+    await db.attachments.add({ noteId: parent as number, serverId: 'srv-3', clientId: 'c3', fileName: 'bad.webp', fileType: 'image/webp', fileSize: 3, data: null, position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
+    fetchMock.mockRejectedValueOnce(new Error('500'))
+
+    const exported = await exportSpace(1, 'A', true, { skipUnavailable: true })
+    expect(exported.noteCount).toBe(1)
+    expect(exported.pictureCount).toBe(0)
+    expect(exported.missingPictures).toBe(1)
   })
 })
