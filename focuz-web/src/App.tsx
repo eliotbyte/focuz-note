@@ -1295,7 +1295,7 @@ function App() {
 // Thread view components
 function SingleNoteCard({ note, onEdit, onDelete, onOpenThread }: { note: NoteRecord; onEdit: () => void; onDelete: () => void; onOpenThread: (nid: number) => void }) {
   return (
-    <NoteCard note={note} onEdit={onEdit} onDelete={onDelete} onOpenThread={onOpenThread} showParentPreview />
+    <NoteCard note={note} onEdit={onEdit} onDelete={onDelete} onOpenThread={onOpenThread} showParentPreview showFullDate />
   )
 }
 

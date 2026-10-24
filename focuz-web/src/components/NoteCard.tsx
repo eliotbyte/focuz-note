@@ -7,7 +7,7 @@ import { useAppState } from '../lib/app-state'
 import NoteBody from './NoteBody'
 import { notePreviewText } from '../lib/note-format/render'
 import NoteImages from './NoteImages'
-import { formatRelativeShort, formatDurationShort, parseDurationToMs } from '../lib/time'
+import { formatExactDateTime, formatRelativeShort, formatDurationShort, parseDurationToMs } from '../lib/time'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
 import { Pill } from './ui/pill'
 import { SurfaceNoPad } from './ui/surface'
@@ -29,6 +29,7 @@ export default function NoteCard({
   onDelete,
   onOpenThread,
   showParentPreview = false,
+  showFullDate = false,
   onTagClick,
   onActivityClick,
   hiddenTags,
@@ -41,6 +42,8 @@ export default function NoteCard({
   onDelete?: () => void
   onOpenThread?: (nid: number) => void
   showParentPreview?: boolean
+  /** Write the note's full date out, for the note on its own (not in a feed). */
+  showFullDate?: boolean
   onTagClick?: (tag: string) => void
   onActivityClick?: (name: string) => void
   hiddenTags?: Set<string>
@@ -149,6 +152,14 @@ export default function NoteCard({
             ))}
           </div>
         ) : null}
+
+        {/* Opened note: its full date, in words, not only "3w ago" */}
+        {showFullDate && (
+          <div className="relative z-20 text-xs text-secondary">
+            Date: {formatExactDateTime(note.date ?? note.createdAt)}
+            {Math.abs(new Date(note.date ?? note.createdAt).getTime() - new Date(note.createdAt).getTime()) > 60_000 && ` · created ${formatExactDateTime(note.createdAt)}`}
+          </div>
+        )}
 
         {/* Footer */}
         <div className="relative z-20 flex items-baseline justify-between">
