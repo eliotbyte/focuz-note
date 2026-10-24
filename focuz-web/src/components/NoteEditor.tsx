@@ -18,6 +18,7 @@ import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import ImageEditorDialog from './ImageEditorDialog'
 import { TextareaFormatBar } from './SelectionFormatBar'
+import { dayOf, withDay } from '../lib/note-date'
 
 const MAX_ATTACHMENTS = 10
 const NO_ATTACHMENTS: AttachmentRecord[] = []
@@ -27,6 +28,8 @@ export type NoteEditorMode = 'create' | 'edit' | 'reply'
 export interface NoteEditorValue {
   text: string
   tags: string[]
+  /** ISO timestamp of the note's date. Undefined on create means the creation time. */
+  date?: string
   activities?: ActivityDraft[]
 }
 
@@ -79,6 +82,19 @@ export default function NoteEditor({
   const existingUploads = useUploadStates(existingAttachments)
 
   const canSubmit = useMemo(() => value.text.trim().length > 0, [value.text])
+  // The day the note is about. Clearing the field is ignored: a note always has a day.
+  const dateInput = mode === 'reply' ? null : (
+    <label className="flex items-center gap-2 text-xs text-secondary">
+      <span>Date</span>
+      <input
+        type="date"
+        aria-label="Note date"
+        className="input !w-auto !py-1"
+        value={dayOf(value.date ?? new Date())}
+        onChange={e => { if (e.target.value) onChange({ ...value, date: withDay(value.date ?? new Date(), e.target.value) }) }}
+      />
+    </label>
+  )
   const maxReached = attachments.length >= MAX_ATTACHMENTS
   const attachmentsCountRef = useRef(0)
   attachmentsCountRef.current = attachments.length
@@ -308,6 +324,7 @@ export default function NoteEditor({
           onEditRequestHandled={() => setEditRequestTypeId(null)}
         />
       ) : null}
+      {dateInput}
       {tagsInput}
       {thumbnails}
       <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={async e => {
@@ -362,7 +379,7 @@ export default function NoteEditor({
         imagesDisabled={maxReached}
         placeholder={mode === 'reply' ? 'Reply…' : 'Write a note… Type "[ ] " for a checklist, "# " for a heading'}
         // Paste/drop of images inside the dialog bubbles (through the React portal) to this editor's handlers.
-        footer={<div className="fse-meta">{tagsInput}{thumbnails}</div>}
+        footer={<div className="fse-meta">{dateInput}{tagsInput}{thumbnails}</div>}
       />
       {editingIdx != null && attachments[editingIdx] && (
         <ImageEditorDialog

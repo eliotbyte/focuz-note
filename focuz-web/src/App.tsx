@@ -127,7 +127,7 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
       tags: mergedTags,
       createdAt: now,
       modifiedAt: now,
-      date: now,
+      date: value.date ?? now,
       parentId: null,
       deletedAt: null,
       isDirty: 1,
@@ -157,7 +157,7 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
       tags: mergedTags,
       createdAt: now,
       modifiedAt: now,
-      date: now,
+      date: value.date ?? now,
       parentId: null,
       deletedAt: null,
       isDirty: 1,
@@ -188,7 +188,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
   const searchQ = (quick.text || '').trim()
   const idsBySearch = search && search.q === searchQ ? search.ids : null
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [editingValue, setEditingValue] = useState<{ text: string; tags: string[]; activities?: any[] }>({ text: '', tags: [], activities: [] })
+  const [editingValue, setEditingValue] = useState<{ text: string; tags: string[]; activities?: any[]; date?: string }>({ text: '', tags: [], activities: [] })
   const [replyingForId, setReplyingForId] = useState<number | null>(null)
 
   useEffect(() => {
@@ -205,7 +205,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
   useEffect(() => {
     if (editingId != null) {
       const n = notes.find(x => x.id === editingId)
-      if (n) setEditingValue({ text: n.text, tags: n.tags || [] })
+      if (n) setEditingValue({ text: n.text, tags: n.tags || [], date: n.date ?? n.createdAt })
     }
   }, [editingId])
 
@@ -317,8 +317,8 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
     notifyUndoable('Note deleted', { label: 'Undo', onClick: () => notesRepo.restoreDeleted(id) })
   }
 
-  async function saveEdit(id: number, value: { text: string; tags: string[]; activities?: any[] }) {
-    await updateNoteLocal(id, { text: value.text.trim(), tags: value.tags })
+  async function saveEdit(id: number, value: { text: string; tags: string[]; activities?: any[]; date?: string }) {
+    await updateNoteLocal(id, { text: value.text.trim(), tags: value.tags, ...(value.date ? { date: value.date } : {}) })
     // Persist activities edits locally: upsert new/edited and mark removed as deleted
     if (Array.isArray(value.activities)) {
       const { createOrUpdateLocalActivity, deleteLocalActivity } = await import('./lib/sync')
@@ -341,8 +341,8 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
     setEditingId(null)
   }
 
-  async function saveEditWithAttachments(id: number, value: { text: string; tags: string[]; activities?: any[] }, extra?: { attachments?: File[] }) {
-    await updateNoteLocal(id, { text: value.text.trim(), tags: value.tags })
+  async function saveEditWithAttachments(id: number, value: { text: string; tags: string[]; activities?: any[]; date?: string }, extra?: { attachments?: File[] }) {
+    await updateNoteLocal(id, { text: value.text.trim(), tags: value.tags, ...(value.date ? { date: value.date } : {}) })
     if (Array.isArray(value.activities)) {
       const { createOrUpdateLocalActivity, deleteLocalActivity } = await import('./lib/sync')
       const existing = await activitiesRepo.listForNote(id)
@@ -443,7 +443,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
             ) : (
               <NoteCard
                 note={n}
-                onEdit={() => { setEditingId(n.id!); setEditingValue({ text: n.text, tags: n.tags || [] }) }}
+                onEdit={() => { setEditingId(n.id!); setEditingValue({ text: n.text, tags: n.tags || [], date: n.date ?? n.createdAt }) }}
                 onDelete={() => { removeNote(n.id!) }}
                 onOpenThread={onOpenThread}
                 showParentPreview={parentId == null && (n.parentId ?? null) != null}
@@ -1356,12 +1356,12 @@ function NoteThread({ spaceId, noteId, entryKey, onBack, onOpenThread, quick, on
   const [editValue, setEditValue] = useState<NoteEditorValue>({ text: '', tags: [] })
 
   useEffect(() => {
-    if (mainNote) setEditValue({ text: mainNote.text, tags: mainNote.tags || [] })
+    if (mainNote) setEditValue({ text: mainNote.text, tags: mainNote.tags || [], date: mainNote.date ?? mainNote.createdAt })
   }, [mainNote])
 
   async function saveEdit(extra?: { attachments?: File[] }) {
     if (!mainNote?.id) return
-    await updateNoteLocal(mainNote.id, { text: editValue.text.trim(), tags: editValue.tags })
+    await updateNoteLocal(mainNote.id, { text: editValue.text.trim(), tags: editValue.tags, ...(editValue.date ? { date: editValue.date } : {}) })
     try { await addLocalAttachments(mainNote.id, (extra?.attachments ?? []).slice(0, 10)) } catch {}
     window.dispatchEvent(new Event('focuz:local-write'))
     setEditing(false)

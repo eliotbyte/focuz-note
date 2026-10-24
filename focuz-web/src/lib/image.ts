@@ -116,11 +116,18 @@ export async function getImageDimensions(file: File): Promise<{ width: number; h
   }
 }
 
+// Criteria for note pictures, agreed in the to-do list: not too small, not too narrow or too tall,
+// not absurdly long. 16:9 (1.78) and 21:9 (2.33) pass; 1:3 banners and tiny thumbnails do not.
+export const IMAGE_MIN_SHORT_SIDE = 480
+export const IMAGE_MAX_RATIO = 2.4
+export const IMAGE_MAX_LONG_SIDE = 8000
+
 export function validateImageGeometry(dim: { width: number; height: number }): { ok: boolean; reason?: string } {
   const minSide = Math.min(dim.width, dim.height)
   const maxSide = Math.max(dim.width, dim.height)
-  if (minSide < 256) return { ok: false, reason: 'each side must be at least 256 px' }
-  if (maxSide / minSide > 2) return { ok: false, reason: 'the long side can be at most twice the short side' }
+  if (minSide < IMAGE_MIN_SHORT_SIDE) return { ok: false, reason: `the short side must be at least ${IMAGE_MIN_SHORT_SIDE} px` }
+  if (maxSide / minSide > IMAGE_MAX_RATIO) return { ok: false, reason: `the long side can be at most ${IMAGE_MAX_RATIO} times the short side` }
+  if (maxSide > IMAGE_MAX_LONG_SIDE) return { ok: false, reason: `the long side can be at most ${IMAGE_MAX_LONG_SIDE} px` }
   return { ok: true }
 }
 

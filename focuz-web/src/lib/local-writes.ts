@@ -90,7 +90,7 @@ export async function deleteFilterLocal(localId: number): Promise<void> {
   emitLocalWrite()
 }
 
-export async function updateNoteLocal(localId: number, changes: { text?: string; tags?: string[] }): Promise<void> {
+export async function updateNoteLocal(localId: number, changes: { text?: string; tags?: string[]; date?: string }): Promise<void> {
   const now = new Date().toISOString()
   await db.notes.update(localId, { ...changes, modifiedAt: now, isDirty: 1 })
   emitLocalWrite()
