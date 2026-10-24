@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Focuz API
   description: API for a note-taking application with workspaces, notes, charts, and activities
-  version: 0.1.1
+  version: 0.1.2
   contact:
     name: Focuz Team
 servers:

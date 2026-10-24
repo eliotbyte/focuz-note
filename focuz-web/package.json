@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -39,6 +39,7 @@
     "browser-image-compression": "^2.0.2",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^1.1.7",
+    "fflate": "0.8.3",
     "flexsearch": "^0.8.205",
     "markdown-it": "^15.0.2",
     "react": "^19.1.1",

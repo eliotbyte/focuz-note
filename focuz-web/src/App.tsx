@@ -1265,7 +1265,14 @@ function App() {
           {tree}
         </MobileDrawer>
       )}
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} onLogout={() => { setSettingsOpen(false); void handleLogout() }} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onLogout={() => { setSettingsOpen(false); void handleLogout() }}
+        spaceId={currentSpaceId}
+        spaceName={currentSpace?.name ?? ''}
+        canWrite={canWrite(spaceView.role)}
+      />
       {createSpaceOpen && (
         <CreateSpaceDialog
           onClose={() => setCreateSpaceOpen(false)}

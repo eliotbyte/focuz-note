@@ -5,6 +5,8 @@ import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded'
 import PaletteRoundedIcon from '@mui/icons-material/PaletteRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded'
+import ImportExportRoundedIcon from '@mui/icons-material/ImportExportRounded'
+import DataTab from './DataTab'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Avatar } from './ui/avatar'
 import { useMe } from '../lib/useSpaces'
@@ -17,16 +19,17 @@ import { useAppState } from '../lib/app-state'
 import { notify } from '../ui/notify'
 import { createApiToken, listApiTokens, revokeApiToken, type ApiTokenInfo, type ApiTokenScope } from '../lib/api-tokens'
 
-type Tab = 'account' | 'agents' | 'notifications' | 'appearance' | 'about'
+type Tab = 'account' | 'agents' | 'data' | 'notifications' | 'appearance' | 'about'
 const TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
   { id: 'account', label: 'Account', icon: <PersonRoundedIcon fontSize="inherit" /> },
   { id: 'agents', label: 'Agents', icon: <SmartToyRoundedIcon fontSize="inherit" /> },
+  { id: 'data', label: 'Data', icon: <ImportExportRoundedIcon fontSize="inherit" /> },
   { id: 'notifications', label: 'Notifications', icon: <NotificationsRoundedIcon fontSize="inherit" /> },
   { id: 'appearance', label: 'Appearance', icon: <PaletteRoundedIcon fontSize="inherit" /> },
   { id: 'about', label: 'Server', icon: <DnsRoundedIcon fontSize="inherit" /> },
 ]
 
-export default function SettingsDialog({ open, onOpenChange, onLogout }: { open: boolean; onOpenChange: (o: boolean) => void; onLogout: () => void }) {
+export default function SettingsDialog({ open, onOpenChange, onLogout, spaceId, spaceName, canWrite }: { open: boolean; onOpenChange: (o: boolean) => void; onLogout: () => void; /** The space open in the app: export and import work on it. */ spaceId: number | null; spaceName: string; canWrite: boolean }) {
   const [tab, setTab] = useState<Tab>('account')
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -46,6 +49,7 @@ export default function SettingsDialog({ open, onOpenChange, onLogout }: { open:
           <div className="settings-body" role="tabpanel">
             {tab === 'account' && <AccountTab onLogout={onLogout} />}
             {tab === 'agents' && <AgentsTab />}
+            {tab === 'data' && <DataTab spaceId={spaceId} spaceName={spaceName} canWrite={canWrite} />}
             {tab === 'notifications' && <NotificationsTab />}
             {tab === 'appearance' && <AppearanceTab />}
             {tab === 'about' && <AboutTab />}
