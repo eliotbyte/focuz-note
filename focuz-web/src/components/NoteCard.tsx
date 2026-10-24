@@ -42,7 +42,7 @@ export default function NoteCard({
   onDelete?: () => void
   onOpenThread?: (nid: number) => void
   showParentPreview?: boolean
-  /** Write the note's full date out, for the note on its own (not in a feed). */
+  /** The note on its own: show its date in full in place of "3w" (plain text, no tooltip). */
   showFullDate?: boolean
   onTagClick?: (tag: string) => void
   onActivityClick?: (name: string) => void
@@ -153,14 +153,6 @@ export default function NoteCard({
           </div>
         ) : null}
 
-        {/* Opened note: its full date, in words, not only "3w ago" */}
-        {showFullDate && (
-          <div className="relative z-20 text-xs text-secondary">
-            Date: {formatExactDateTime(note.date ?? note.createdAt)}
-            {Math.abs(new Date(note.date ?? note.createdAt).getTime() - new Date(note.createdAt).getTime()) > 60_000 && ` · created ${formatExactDateTime(note.createdAt)}`}
-          </div>
-        )}
-
         {/* Footer */}
         <div className="relative z-20 flex items-baseline justify-between">
           <div className="min-w-0">
@@ -175,9 +167,13 @@ export default function NoteCard({
           <div className="note-footer flex items-baseline gap-2 text-secondary min-w-0">
             {author && <span className="inline-flex items-center gap-1.5 min-w-0 self-center"><PersonAvatar userId={note.authorId ?? view.meId} name={author} size={16} /><span className="truncate">{author}</span></span>}
             {author && <span aria-hidden style={{ fontWeight: 700 }}>·</span>}
-            <NoteDateTip note={note} extra={editedBy ? `Edited by ${editedBy}` : undefined}>
-              <span>{formatRelativeShort(note.createdAt)}</span>
-            </NoteDateTip>
+            {showFullDate
+              ? <span>{formatExactDateTime(note.date ?? note.createdAt)}</span>
+              : (
+                <NoteDateTip note={note} extra={editedBy ? `Edited by ${editedBy}` : undefined}>
+                  <span>{formatRelativeShort(note.createdAt)}</span>
+                </NoteDateTip>
+              )}
             {editedBy && <span className="truncate hidden sm:inline">· edited by {editedBy}</span>}
             <span aria-label={syncStage === 'pending' ? 'Not synced yet' : syncStage === 'syncing' ? 'Syncing' : 'Synced'}>
               {syncStage === 'pending'
