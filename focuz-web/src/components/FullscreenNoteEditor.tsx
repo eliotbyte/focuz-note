@@ -42,7 +42,7 @@ function Kbd({ spec }: { spec: string }) {
   return <span className="fse-kbd">{keys(spec)}</span>
 }
 
-function ToolButton({ label, shortcut, active, disabled, onClick, children }: {
+export function ToolButton({ label, shortcut, active, disabled, onClick, children }: {
   label: string
   shortcut?: string
   active?: boolean
@@ -67,7 +67,7 @@ function ToolButton({ label, shortcut, active, disabled, onClick, children }: {
   )
 }
 
-function useToolbarState(editor: Editor | null) {
+export function useToolbarState(editor: Editor | null) {
   return useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -89,7 +89,7 @@ function useToolbarState(editor: Editor | null) {
   })
 }
 
-function LinkButton({ editor, active, href, inputId = 'fse-link-input', onOpenChange }: {
+export function LinkButton({ editor, active, href, inputId = 'fse-link-input', onOpenChange }: {
   editor: Editor
   active: boolean
   href: string
@@ -139,9 +139,9 @@ function LinkButton({ editor, active, href, inputId = 'fse-link-input', onOpenCh
   )
 }
 
-const TOGGLE = { bold: 'toggleBold', italic: 'toggleItalic', strike: 'toggleStrike', code: 'toggleCode' } as const
+export const TOGGLE = { bold: 'toggleBold', italic: 'toggleItalic', strike: 'toggleStrike', code: 'toggleCode' } as const
 // Under the selection on touch screens: the system's copy/paste menu takes the space above it.
-const BUBBLE_OPTIONS = { placement: touchScreen() ? 'bottom' : 'top', offset: 8, flip: true, shift: { padding: 8 } } as const
+export const BUBBLE_OPTIONS = { placement: touchScreen() ? 'bottom' : 'top', offset: 8, flip: true, shift: { padding: 8 } } as const
 
 export interface FullscreenNoteEditorProps {
   open: boolean

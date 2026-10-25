@@ -233,10 +233,10 @@ export default function ImageEditorDialog({
             <button type="button" className="filter-btn !h-8 !px-2.5" aria-label="Rotate left" title="Rotate left" onClick={rotateLeft}>
               <RotateLeftRoundedIcon fontSize="inherit" className="icon-sm" />
             </button>
-            <button type="button" className="filter-btn !h-8 !px-2.5" aria-label="Flip horizontally" title="Flip horizontally" onClick={() => flipSeen(true)}>
+            <button type="button" className="filter-btn !h-8 !px-2.5" aria-label="Flip horizontally" aria-pressed={turned ? flipV : flipH} title="Flip horizontally" onClick={() => flipSeen(true)}>
               <FlipRoundedIcon fontSize="inherit" className="icon-sm" />
             </button>
-            <button type="button" className="filter-btn !h-8 !px-2.5" aria-label="Flip vertically" title="Flip vertically" onClick={() => flipSeen(false)}>
+            <button type="button" className="filter-btn !h-8 !px-2.5" aria-label="Flip vertically" aria-pressed={turned ? flipH : flipV} title="Flip vertically" onClick={() => flipSeen(false)}>
               <FlipRoundedIcon fontSize="inherit" className="icon-sm" style={{ transform: 'rotate(90deg)' }} />
             </button>
             <button type="button" className="filter-btn filter-btn-ghost !h-8" onClick={reset}>Reset</button>

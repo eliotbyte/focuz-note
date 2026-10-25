@@ -98,7 +98,7 @@ test('paste an image from the clipboard into a new note', async ({ page }) => {
   const webp = await makeWebp(page, 800, 600)
 
   await page.getByRole('button', { name: 'Add note…' }).click()
-  const textarea = page.getByPlaceholder(/Add note/)
+  const textarea = page.getByRole('textbox', { name: 'Add note' })
   await textarea.fill('Скриншот из буфера обмена')
   await textarea.evaluate((el, b64) => {
     const bin = atob(b64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
@@ -127,7 +127,7 @@ test('server loss: data stays local, status explains it, sync resumes', async ({
   await page.route(`${API}/**`, r => r.abort('connectionrefused'))
   await page.routeWebSocket(/\/ws/, ws => ws.close())
   await page.getByRole('button', { name: 'Add note…' }).click()
-  await page.getByPlaceholder(/Add note/).fill('Написано без сервера')
+  await page.getByRole('textbox', { name: 'Add note' }).fill('Написано без сервера')
   await page.getByRole('button', { name: 'Create' }).click()
   await expect(page.getByText('Написано без сервера')).toBeVisible()
   await expect(page.getByRole('button', { name: /Sync status: Server unreachable/ })).toBeVisible({ timeout: 15000 })
@@ -151,7 +151,7 @@ test('replies stay attached to their parent on another device', async ({ page, b
   // Reply to a note on device A.
   await page.locator('li', { hasText: 'Купить: молоко' }).filter({ hasNot: page.locator('.pill-reply-preview') }).getByRole('button', { name: 'Open note' }).click({ force: true })
   await page.getByRole('button', { name: 'Reply…' }).click()
-  await page.getByPlaceholder('Reply…').fill('И ещё сыр')
+  await page.getByRole('textbox', { name: 'Reply', exact: true }).fill('И ещё сыр')
   await page.getByRole('button', { name: 'Reply', exact: true }).click()
   await expect(page.getByRole('button', { name: /Sync status: Synced/ })).toBeVisible({ timeout: 20000 })
 
@@ -284,7 +284,7 @@ test.describe('custom server with e-mail accounts', () => {
     await expect(page.getByRole('button', { name: /Sync status/ })).toBeVisible({ timeout: 20000 })
     // Notes go to the chosen server.
     await page.getByRole('button', { name: 'Add note…' }).click()
-    await page.getByPlaceholder(/Add note/).fill('stored on the custom server')
+    await page.getByRole('textbox', { name: 'Add note' }).fill('stored on the custom server')
     await page.getByRole('button', { name: 'Create' }).click()
     const token = await page.evaluate(() => localStorage.getItem('authToken'))
     await expect.poll(async () => {
@@ -369,7 +369,7 @@ test.describe('full-screen editor', () => {
     await expect(page.getByRole('textbox', { name: 'Note text' })).toContainText('Купить: молоко')
     await page.keyboard.press('Escape')
     await expect(page.getByRole('textbox', { name: 'Note text' })).toHaveCount(0)
-    await expect(page.locator('textarea').first()).toHaveValue('Купить: молоко, хлеб, кофе в зёрнах, батарейки AA.')
+    await expect(page.getByRole('textbox', { name: 'Edit note' })).toHaveText('Купить: молоко, хлеб, кофе в зёрнах, батарейки AA.')
   })
 })
 
@@ -401,7 +401,7 @@ test.describe('folders', () => {
 
     // A note written inside gets the folder's tag.
     await page.getByRole('button', { name: 'Add note…' }).click()
-    await page.getByPlaceholder(/Add note/).fill('Выбрать плитку для фартука')
+    await page.getByRole('textbox', { name: 'Add note' }).fill('Выбрать плитку для фартука')
     await page.getByRole('button', { name: 'Create' }).click()
     await expect(page.locator('li', { hasText: 'Выбрать плитку' })).toBeVisible()
     await expect(tree(page).getByRole('treeitem', { name: 'Ремонт кухни' })).toContainText('1')
@@ -413,7 +413,7 @@ test.describe('folders', () => {
     await page.getByRole('button', { name: 'All notes' }).click()
     await expect(page.locator('li', { hasText: 'Выбрать плитку' })).toContainText('ремонт-кухни')
     await page.getByRole('button', { name: 'Add note…' }).click()
-    await page.getByPlaceholder(/Add note/).fill('Позвонить в сервис')
+    await page.getByRole('textbox', { name: 'Add note' }).fill('Позвонить в сервис')
     await page.getByRole('button', { name: 'Create' }).click()
     await page.getByRole('button', { name: 'Unsorted' }).click()
     await expect(page.getByRole('heading', { name: 'Unsorted' })).toBeVisible()
@@ -544,7 +544,7 @@ test.describe('shared spaces', () => {
 
     await expect(page.getByRole('button', { name: /Space menu: Book club/ })).toBeVisible()
     await page.getByRole('button', { name: 'Add note…' }).click()
-    await page.getByPlaceholder(/Add note/).fill('Next book: Dune')
+    await page.getByRole('textbox', { name: 'Add note' }).fill('Next book: Dune')
     await page.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(page.locator('li', { hasText: 'Next book: Dune' })).toBeVisible()
 
@@ -680,7 +680,8 @@ test.describe('shared spaces', () => {
     await settings.getByLabel('Your picture: choose a file').setInputFiles({ name: 'me.webp', mimeType: 'image/webp', buffer: webp })
     const editor = page.getByRole('dialog', { name: 'Your picture' })
     await expect(editor).toBeVisible()
-    await editor.getByLabel('Zoom').fill('1.6')
+    // The crop frame: Shift+arrows resize it from the keyboard.
+    await editor.getByRole('group', { name: 'Crop frame' }).press('Shift+ArrowLeft')
     await shot(page, '35-avatar-editor')
     await editor.getByRole('button', { name: 'Save' }).click()
     await expect(editor).toHaveCount(0)
@@ -714,7 +715,7 @@ test.describe('shared spaces', () => {
     await signIn(page, s.token)
     const webp = await makeWebp(page, 900, 600)
     await page.getByRole('button', { name: 'Add note…' }).click()
-    const textarea = page.getByPlaceholder(/Add note/)
+    const textarea = page.getByRole('textbox', { name: 'Add note' })
     await textarea.fill('Картинка после редактора')
     await textarea.evaluate((el, b64) => {
       const bin = atob(b64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)

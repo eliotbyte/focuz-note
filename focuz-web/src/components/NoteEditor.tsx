@@ -10,15 +10,18 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import type { AttachmentRecord } from '../lib/types'
 import { activities as activitiesRepo, attachments as attachmentsRepo } from '../data'
 import { deleteLocalAttachment, reorderNoteAttachments } from '../lib/sync'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from './ui/dropdown-menu'
 import { notify } from '../ui/notify'
 import { filesFromDataTransfer, hasFiles, isImageFile } from '../lib/clipboard'
 import FullscreenNoteEditor from './FullscreenNoteEditor'
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
+import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ImageEditorDialog from './ImageEditorDialog'
-import { TextareaFormatBar } from './SelectionFormatBar'
+import InlineNoteEditor, { type InlineNoteEditorHandle } from './InlineNoteEditor'
 import { dayOf, withDay } from '../lib/note-date'
 
 const MAX_ATTACHMENTS = 10
@@ -62,7 +65,7 @@ export default function NoteEditor({
   const [expanded, setExpanded] = useState<boolean>(
     typeof defaultExpanded === 'boolean' ? defaultExpanded : (mode !== 'create' ? true : false)
   )
-  const textRef = useRef<HTMLTextAreaElement | null>(null)
+  const textRef = useRef<InlineNoteEditorHandle | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [attachments, setAttachments] = useState<File[]>([])
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
@@ -87,36 +90,13 @@ export default function NoteEditor({
     () => value.text.trim().length > 0 || attachments.length > 0 || (mode === 'edit' && existingAttachments.length > 0),
     [value.text, attachments.length, mode, existingAttachments.length],
   )
-  // The day the note is about. Clearing the field is ignored: a note always has a day.
+  // The day the note is about: a calendar button that shows the day only when it is not today.
   const dateInput = mode === 'reply' ? null : (
-    <label className="flex items-center gap-2 text-xs text-secondary">
-      <span>Date</span>
-      <input
-        type="date"
-        aria-label="Note date"
-        className="input !w-auto !py-1"
-        value={dayOf(value.date ?? new Date())}
-        onChange={e => { if (e.target.value) onChange({ ...value, date: withDay(value.date ?? new Date(), e.target.value) }) }}
-      />
-    </label>
+    <NoteDateButton date={value.date} onChange={date => onChange({ ...valueRef.current, date })} />
   )
   const maxReached = attachments.length >= MAX_ATTACHMENTS
   const attachmentsCountRef = useRef(0)
   attachmentsCountRef.current = attachments.length
-
-  useEffect(() => {
-    if (expanded) textRef.current?.focus()
-  }, [expanded])
-
-  function autoResize(target: HTMLTextAreaElement | null) {
-    if (!target) return
-    target.style.height = 'auto'
-    target.style.height = `${target.scrollHeight}px`
-  }
-
-  useEffect(() => {
-    autoResize(textRef.current)
-  }, [value.text, expanded])
 
   // Hard gate: never keep activities drafts in production for create/reply.
   useEffect(() => {
@@ -298,15 +278,14 @@ export default function NoteEditor({
       onDragOver={e => { if (hasFiles(e.dataTransfer)) e.preventDefault() }}
       onDrop={onDrop}
     >
-      <div className="relative">
-        <textarea
-          ref={textRef}
-          className="input min-h-20 text-primary resize-none overflow-hidden pr-10"
+      <div className="relative input text-primary pr-10">
+        <InlineNoteEditor
+          handle={textRef}
+          text={value.text}
+          onChange={text => onChange({ ...valueRef.current, text })}
+          onSubmit={submit}
           placeholder={mode === 'reply' ? 'Reply…' : 'Add note… (paste or drop images here)'}
-          value={value.text}
-          onChange={e => onChange({ ...value, text: e.target.value })}
-          onInput={e => autoResize(e.currentTarget)}
-          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit() } }}
+          label={mode === 'reply' ? 'Reply' : mode === 'edit' ? 'Edit note' : 'Add note'}
         />
         <button
           type="button"
@@ -317,7 +296,6 @@ export default function NoteEditor({
         >
           <OpenInFullRoundedIcon fontSize="inherit" />
         </button>
-        <TextareaFormatBar textareaRef={textRef} />
       </div>
       {allowActivitiesInline ? (
         <ActivitiesInput
@@ -329,7 +307,6 @@ export default function NoteEditor({
           onEditRequestHandled={() => setEditRequestTypeId(null)}
         />
       ) : null}
-      {dateInput}
       {tagsInput}
       {thumbnails}
       <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={async e => {
@@ -337,23 +314,18 @@ export default function NoteEditor({
         try { if (fileInputRef.current) fileInputRef.current.value = '' } catch {}
         await addImageFiles(files)
       }} />
-      <div className="flex justify-end gap-2">
-        <div className="flex-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" className="button button-secondary">Add</button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44">
-              <DropdownMenuItem
-                disabled={maxReached}
-                className="disabled:opacity-50"
-                onSelect={() => { fileInputRef.current?.click() }}
-              >
-                Photo
-              </DropdownMenuItem>
-              {allowActivitiesInAddMenu ? (
-                <>
-                  <DropdownMenuSeparator />
+      <div className="flex items-center justify-end gap-2">
+        <div className="flex-1 flex items-center gap-1 min-w-0">
+          <button type="button" className="composer-tool" aria-label="Add photo" title="Add photo" disabled={maxReached} onClick={() => fileInputRef.current?.click()}>
+            <ImageOutlinedIcon fontSize="inherit" />
+          </button>
+          {dateInput}
+          {allowActivitiesInAddMenu ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="composer-tool" aria-label="Add activity" title="Add activity"><AddRoundedIcon fontSize="inherit" /></button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-44">
                 <ActivitiesInput
                   value={activities}
                   onChange={(acts) => { setActivities(acts); onChange({ ...value, activities: acts }); }}
@@ -361,10 +333,9 @@ export default function NoteEditor({
                   menuOnly
                   onAddedType={(tid) => { setEditRequestTypeId(tid) }}
                 />
-                </>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
         {onCancel && (
           <button className="button button-secondary" onClick={() => { onCancel(); setAttachments([]); collapseIfNeeded() }}>Cancel</button>
@@ -402,6 +373,39 @@ export default function NoteEditor({
     </div>
   )
 } 
+
+/** The note's day as a calendar button; the day is written next to it only when it is not today. */
+function NoteDateButton({ date, onChange }: { date?: string; onChange: (date: string) => void }) {
+  const input = useRef<HTMLInputElement | null>(null)
+  const day = dayOf(date ?? new Date())
+  const isToday = day === dayOf(new Date())
+  const [y, m, d] = day.split('-').map(Number)
+  const shown = new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(y !== new Date().getFullYear() ? { year: 'numeric' } : {}) })
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        className={`composer-tool ${isToday ? '' : 'has-label'}`}
+        aria-label={`Note date: ${shown}`}
+        title="Note date"
+        onClick={() => { try { input.current?.showPicker() } catch { input.current?.focus() } }}
+      >
+        <CalendarTodayRoundedIcon fontSize="inherit" />
+        {!isToday && <span className="composer-tool-label">{shown}</span>}
+      </button>
+      {/* The browser's own date picker, opened from the button. Clearing it is ignored: a note always has a day. */}
+      <input
+        ref={input}
+        type="date"
+        className="composer-date-input"
+        tabIndex={-1}
+        aria-hidden
+        value={day}
+        onChange={e => { if (e.target.value) onChange(withDay(date ?? new Date(), e.target.value)) }}
+      />
+    </span>
+  )
+}
 
 function BlobImg({ blob, alt, className }: { blob: Blob; alt?: string; className?: string }) {
   const url = useObjectUrl(blob)

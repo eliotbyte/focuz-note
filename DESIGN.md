@@ -355,6 +355,8 @@ static stripes under reduced motion. Spinners: `.auth-spinner` (16px), `.upload-
 | Part | Class | Look |
 |---|---|---|
 | Collapsed composer ("Add note…") | `.composer-collapsed` inside `.card` | Muted text button, primary on hover |
+| Composer text | `.inline-editor` in an `.input` well | Rich text (tiptap, stored as Markdown): typed Markdown turns into formatting, a `.sel-bar` appears over selected text |
+| Composer tools | `.composer-tool` (photo, date) | 34px icon buttons in the bottom row, no material until hover; the date shows its day (`.has-label`) only when it is not today |
 | Picture thumbnail while writing | `.thumb-cell` (`.is-target` while dragging over) | `--c-media-bg`, `--r-md`, well shadow |
 | Control on a picture | `.thumb-remove`, `.thumb-edit` | 24px dark disc with `CloseRounded` / `EditRounded` |
 | Remove × inside a pill | `.pill-x` | 18px round, muted |

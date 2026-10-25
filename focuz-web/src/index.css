@@ -365,7 +365,7 @@ body::after {
 /* Rows inside scrolling lists would have the ring clipped: draw it inside. */
 .filter-row:focus-visible, .folder-row:focus-visible, .settings-nav-item:focus-visible, .settings-tab:focus-visible,
 .auth-tab:focus-visible, .filter-pop-item:focus-visible, .filter-pop-row button:focus-visible, .folder-pick:focus-visible,
-.fse-tool:focus-visible, .auth-reveal:focus-visible, .look-icon:focus-visible, .note-expand-btn:focus-visible {
+.fse-tool:focus-visible, .auth-reveal:focus-visible, .look-icon:focus-visible, .note-expand-btn:focus-visible, .composer-tool:focus-visible {
   outline-offset: -2px;
 }
 /* Menus show the highlighted item with the selection glow; panels that take focus programmatically show nothing. */
@@ -1246,6 +1246,39 @@ button:disabled { cursor: not-allowed; }
 }
 .note-expand-btn:hover { color: var(--text-primary); background: rgba(var(--c-text) / 0.07); }
 
+/* The composer's text: rich text in the well (tiptap), stored as Markdown. */
+.inline-editor { cursor: text; }
+.inline-editor-content { outline: none; min-height: 3em; max-height: 50vh; overflow-y: auto; overflow-wrap: anywhere; }
+.inline-editor-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--text-faint);
+}
+.inline-editor-content ::selection { background: rgb(var(--c-accent) / 0.28); }
+
+/* Icon buttons in the composer's bottom row (photo, date): no material until you point at them. */
+.composer-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  font-size: 20px;
+  color: var(--text-muted);
+  transition: color var(--dur-micro) var(--ease-standard), background-color var(--dur-micro) var(--ease-standard);
+}
+@media (hover: hover) { .composer-tool:not(:disabled):hover { color: var(--text-primary); background: rgba(var(--c-text) / 0.07); } }
+.composer-tool:disabled { opacity: 0.45; cursor: default; }
+.composer-tool.has-label { padding: 0 10px 0 8px; color: var(--text-primary); background: rgba(var(--c-text) / 0.06); }
+.composer-tool-label { font-size: var(--fs-small); font-weight: 600; white-space: nowrap; }
+/* The browser's date picker opens from the button; the field itself is never seen. */
+.composer-date-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+
 /* Picture thumbnails while writing. */
 .thumb-cell { border-radius: var(--r-md); background: rgb(var(--c-media-bg)); box-shadow: var(--shadow-field); }
 .thumb-cell.is-target { box-shadow: 0 0 0 2px rgb(var(--c-accent)); }
@@ -1355,8 +1388,6 @@ button:disabled { cursor: not-allowed; }
   backdrop-filter: var(--blur-float);
   animation: fade-in var(--dur-micro) var(--ease-enter);
 }
-.sel-bar-anchored { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; }
-.sel-bar-anchored[data-below] { transform: translate(-50%, 0); }
 .sel-bar-sep { width: 1px; height: 20px; margin: 0 3px; background: var(--line-strong); }
 @media (pointer: coarse) {
   .sel-bar .fse-tool { width: 40px; height: 38px; }
