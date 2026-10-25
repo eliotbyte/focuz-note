@@ -14,7 +14,7 @@ export const DialogOverlay = React.forwardRef<
   return (
     <DialogPrimitive.Overlay
       ref={ref}
-      className={cn('fixed inset-0 bg-black/55 backdrop-blur-[3px]', /z-\[/.test(className ?? '') ? '' : 'z-[90]', className)}
+      className={cn('fixed inset-0 dialog-scrim', /layer-/.test(className ?? '') ? '' : 'layer-overlay', className)}
       {...props}
     />
   )
@@ -26,14 +26,14 @@ export const DialogContent = React.forwardRef<
 >(function DialogContent({ className, stacked, ...props }, ref) {
   return (
     <DialogPortal>
-      <DialogOverlay className={stacked ? 'z-[110]' : undefined} />
+      <DialogOverlay className={stacked ? 'layer-overlay-stacked' : undefined} />
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
           'fixed left-1/2 top-1/2 w-[min(92vw,32rem)] -translate-x-1/2 -translate-y-1/2',
-          stacked ? 'z-[120]' : 'z-[100]',
-          'rounded-[var(--radius)] p-0',
-          'surface glass-float',
+          stacked ? 'layer-modal-stacked' : 'layer-modal',
+          'rounded-[var(--r-lg)] p-0',
+          'surface glass-float dialog-sheet',
           className,
         )}
         {...props}
@@ -46,7 +46,7 @@ export const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(function DialogTitle({ className, ...props }, ref) {
-  return <DialogPrimitive.Title ref={ref} className={cn('text-title text-muted', className)} {...props} />
+  return <DialogPrimitive.Title ref={ref} className={cn('dialog-title', className)} {...props} />
 })
 
 export const DialogDescription = React.forwardRef<

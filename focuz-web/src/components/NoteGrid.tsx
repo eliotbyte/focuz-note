@@ -5,6 +5,8 @@ import PublicRoundedIcon from '@mui/icons-material/PublicRounded'
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import ViewAgendaRoundedIcon from '@mui/icons-material/ViewAgendaRounded'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import type { AttachmentRecord, NoteRecord } from '../lib/types'
 import { activities as activitiesRepo, attachments as attachmentsRepo, notes as notesRepo } from '../data'
 import { notePreviewText, renderNoteHtml } from '../lib/note-format/render'
@@ -14,6 +16,7 @@ import { useSpaceView } from '../lib/space-context'
 import { canDeleteNote, canEditNotes } from '../lib/roles'
 import { useNotePublicState } from '../lib/useSpaces'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { NoteTileImages } from './NoteImages'
 import NoteShareDialog from './NoteShareDialog'
 import NoteDetailsDialog from './NoteDetailsDialog'
@@ -21,25 +24,65 @@ import NoteDateTip from './NoteDateTip'
 
 const NO_ATTACHMENTS: AttachmentRecord[] = []
 
-/** List / tiles switch for the feed's toolbar. */
+/**
+ * List / tiles switch for the feed's toolbar. In tiles, the tiles button also opens a − n + stepper for how
+ * many tiles fit in a row, within what the feed's width allows.
+ */
 export function FeedLayoutToggle({ layout, onChange }: { layout: FeedLayout; onChange: (next: FeedLayout) => void }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  // The tiles fill the feed column the toolbar sits in, so its width says how many fit in a row.
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const feed = ref.current?.closest('.filter-bar') as HTMLElement | null
+    if (!feed) return
+    const update = () => setWidth(feed.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(feed)
+    return () => ro.disconnect()
+  }, [])
+  const grid = layout.mode === 'grid'
+  const options = useMemo(() => (width > 0 ? colsOptions(width) : []), [width])
+  const current = width > 0 ? fitCols(layout.cols, width) : layout.cols
+  const idx = options.indexOf(current)
+  const tilesIcon = <GridViewRoundedIcon fontSize="inherit" />
   return (
-    <div className="seg seg-icons" role="group" aria-label="Layout">
+    <div ref={ref} className="seg seg-icons" role="group" aria-label="Layout">
       <button type="button" aria-pressed={layout.mode === 'list'} onClick={() => onChange({ ...layout, mode: 'list' })} aria-label="List" title="List">
         <ViewAgendaRoundedIcon fontSize="inherit" />
       </button>
-      <button type="button" aria-pressed={layout.mode === 'grid'} onClick={() => onChange({ ...layout, mode: 'grid' })} aria-label="Tiles" title="Tiles">
-        <GridViewRoundedIcon fontSize="inherit" />
-      </button>
+      {grid
+        ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button type="button" aria-pressed aria-label={`Tiles, ${current} per row`} title="Tiles per row">
+                {tilesIcon}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="tile-stepper" aria-label="Tiles per row">
+              <button type="button" className="tile-stepper-btn" aria-label="Fewer per row" disabled={idx <= 0} onClick={() => onChange({ ...layout, cols: options[idx - 1] })}>
+                <RemoveRoundedIcon fontSize="inherit" />
+              </button>
+              <span className="tile-stepper-value" aria-live="polite">{current}</span>
+              <button type="button" className="tile-stepper-btn" aria-label="More per row" disabled={idx < 0 || idx >= options.length - 1} onClick={() => onChange({ ...layout, cols: options[idx + 1] })}>
+                <AddRoundedIcon fontSize="inherit" />
+              </button>
+            </PopoverContent>
+          </Popover>
+        )
+        : (
+          <button type="button" aria-pressed={false} onClick={() => onChange({ ...layout, mode: 'grid' })} aria-label="Tiles" title="Tiles">
+            {tilesIcon}
+          </button>
+        )}
     </div>
   )
 }
 
-/** The feed as same-size tiles, with a slider for how many fit in a row. */
+/** The feed as same-size tiles; how many fit in a row is picked from the tiles button. */
 export default function NoteGrid({
   notes,
   layout,
-  onLayoutChange,
   onOpenThread,
   onDelete,
   onManageFolders,
@@ -50,7 +93,6 @@ export default function NoteGrid({
 }: {
   notes: NoteRecord[]
   layout: FeedLayout
-  onLayoutChange: (next: FeedLayout) => void
   onOpenThread?: (noteId: number) => void
   onDelete: (noteId: number) => void
   onManageFolders?: (note: NoteRecord) => void
@@ -76,7 +118,6 @@ export default function NoteGrid({
 
   return (
     <div ref={ref} className="space-y-3">
-      {width > 0 && <TileSizeSlider width={width} cols={cols} onChange={c => onLayoutChange({ ...layout, cols: c })} />}
       {notes.length === 0
         ? <div className="feed-empty">{emptyText ?? 'No notes'}</div>
         : (
@@ -96,39 +137,6 @@ export default function NoteGrid({
             ))}
           </ul>
         )}
-    </div>
-  )
-}
-
-/**
- * Tile size as a slider that snaps to whole tiles per row. Left is many small tiles, right is a few
- * big ones; how many steps there are depends on how wide the feed is.
- */
-function TileSizeSlider({ width, cols, onChange }: { width: number; cols: number; onChange: (cols: number) => void }) {
-  // Bigger tiles to the right: the slider runs over the options from most to fewest per row.
-  const options = useMemo(() => colsOptions(width).slice().reverse(), [width])
-  if (options.length < 2) return null
-  const pos = Math.max(0, options.indexOf(cols))
-  return (
-    <div className="tile-size">
-      <GridViewRoundedIcon fontSize="inherit" className="tile-size-icon is-small" aria-hidden />
-      <div className="tile-size-track">
-        <input
-          type="range"
-          min={0}
-          max={options.length - 1}
-          step={1}
-          value={pos}
-          onChange={e => onChange(options[Number(e.target.value)])}
-          aria-label="Tile size"
-          aria-valuetext={`${cols} per row`}
-        />
-        <div className="tile-size-ticks" aria-hidden>
-          {options.map((c, i) => <span key={c} className={i === pos ? 'is-on' : undefined} />)}
-        </div>
-      </div>
-      <GridViewRoundedIcon fontSize="inherit" className="tile-size-icon" aria-hidden />
-      <span className="tile-size-label">{cols} per row</span>
     </div>
   )
 }

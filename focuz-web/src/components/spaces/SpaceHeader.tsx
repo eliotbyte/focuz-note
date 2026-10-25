@@ -27,7 +27,7 @@ export default function SpaceHeader({ space, onOpen, onCreateShared }: {
                 <span className="truncate font-semibold">{space.name}</span>
                 {isPublic && <PublicRoundedIcon fontSize="inherit" className="icon-sm text-[rgb(var(--c-accent))] shrink-0" titleAccess="Public" />}
               </span>
-              <span className="block text-[11.5px] text-secondary truncate">
+              <span className="block text-caption text-secondary truncate">
                 {space.isPersonal ? 'Personal · only you' : `${ROLE_LABEL[role]} · ${space.memberCount ?? members.length} member${(space.memberCount ?? members.length) === 1 ? '' : 's'}`}
               </span>
             </span>
@@ -58,7 +58,7 @@ export default function SpaceHeader({ space, onOpen, onCreateShared }: {
           <span className="flex -space-x-1.5">
             {shown.map(m => <PersonAvatar key={m.userId} userId={m.userId} name={m.username} size={22} className="ring-2 ring-[rgb(var(--c-surface))]" title={m.username} />)}
           </span>
-          {members.length > shown.length && <span className="text-[11.5px] text-secondary">+{members.length - shown.length}</span>}
+          {members.length > shown.length && <span className="text-caption text-secondary">+{members.length - shown.length}</span>}
         </button>
       )}
     </div>

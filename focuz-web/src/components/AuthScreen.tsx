@@ -121,7 +121,7 @@ function PasswordChecklist({ password, id }: { password: string; id: string }) {
 
 function SubmitButton({ loading, label, loadingLabel }: { loading: boolean; label: string; loadingLabel: string }) {
   return (
-    <button type="submit" className="button auth-submit" disabled={loading} aria-busy={loading || undefined}>
+    <button type="submit" className="button button-default auth-submit" disabled={loading} aria-busy={loading || undefined}>
       {loading ? <span className="auth-spinner" aria-hidden /> : null}
       <span>{loading ? loadingLabel : label}</span>
       {!loading && <ArrowForwardRoundedIcon fontSize="inherit" className="icon-sm" />}
@@ -647,9 +647,9 @@ export function ReauthDialog({ onDone, onLogout }: { onDone: () => void; onLogou
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby={`${uid}-title`}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <form className="relative w-full max-w-[380px] surface auth-dialog" onSubmit={onSubmit} noValidate>
+    <div className="fixed inset-0 layer-modal-stacked flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby={`${uid}-title`}>
+      <div className="absolute inset-0 dialog-scrim" />
+      <form className="relative w-full max-w-[380px] surface glass-float dialog-sheet auth-dialog" onSubmit={onSubmit} noValidate>
         <header className="auth-heading">
           <h1 id={`${uid}-title`}>Session expired</h1>
           <p>Sign in again to continue syncing. Your notes on this device are safe.</p>

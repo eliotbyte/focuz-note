@@ -225,7 +225,7 @@ export default function TagsInput({ value, onChange, placeholder, className, spa
             )}
             <button
               type="button"
-              className="text-secondary hover:text-primary"
+              className="pill-x"
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeTag(idx) }}
               aria-label="Remove tag"
               title="Remove"
@@ -249,7 +249,7 @@ export default function TagsInput({ value, onChange, placeholder, className, spa
       </div>
       {menuOpen && menuRect && createPortal(
         <div
-          className="dropdown-menu z-[200]"
+          className="dropdown-menu layer-popover"
           style={{ position: 'fixed', left: menuRect.left, top: menuRect.top, width: menuRect.width }}
         >
           <div className="max-h-60 overflow-auto">

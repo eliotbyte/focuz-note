@@ -121,7 +121,7 @@ export default function NotificationsBell({ onOpenSpace }: { onOpenSpace: (local
         <div className="bell-head">
           <span className="font-semibold">Notifications</span>
           {items.some(n => !n.isRead && n.type !== 'space_invitation') && (
-            <button type="button" className="link-btn text-[13px]" onClick={() => { markNotificationsRead('all').catch(() => {}) }}>Mark all read</button>
+            <button type="button" className="link-btn text-small" onClick={() => { markNotificationsRead('all').catch(() => {}) }}>Mark all read</button>
           )}
         </div>
         {items.length === 0 ? (
@@ -136,12 +136,12 @@ export default function NotificationsBell({ onOpenSpace }: { onOpenSpace: (local
                 <li key={n.id} className={`bell-item ${n.isRead ? '' : 'is-unread'}`}>
                   <PersonAvatar name={d.who || '?'} size={30} />
                   <div className="min-w-0 flex-1 space-y-1.5">
-                    <div className="text-[13.5px] leading-snug">{d.text}</div>
-                    <div className="text-[11.5px] text-secondary">{formatAgo(n.createdAt)}{outcome ? ` · ${outcome}` : ''}</div>
+                    <div className="text-small leading-snug">{d.text}</div>
+                    <div className="text-caption text-secondary">{formatAgo(n.createdAt)}{outcome ? ` · ${outcome}` : ''}</div>
                     {pendingInvite && (
                       <div className="flex gap-2">
-                        <button type="button" className="button !h-7 !px-3 text-[13px]" disabled={busy === n.id} onClick={() => { void answer(n, true) }}>Accept</button>
-                        <button type="button" className="filter-btn !h-7" disabled={busy === n.id} onClick={() => { void answer(n, false) }}>Decline</button>
+                        <button type="button" className="button !h-7 !px-3 text-small" disabled={busy === n.id} onClick={() => { void answer(n, true) }}>Accept</button>
+                        <button type="button" className="button button-secondary !h-7 !px-3 text-small" disabled={busy === n.id} onClick={() => { void answer(n, false) }}>Decline</button>
                       </div>
                     )}
                   </div>

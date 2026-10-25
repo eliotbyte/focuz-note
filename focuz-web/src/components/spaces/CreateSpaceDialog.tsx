@@ -16,7 +16,7 @@ export default function CreateSpaceDialog({ onClose, onCreated }: { onClose: () 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="p-5 space-y-4">
-        <DialogTitle className="!text-primary !text-[17px] font-semibold">Create a space</DialogTitle>
+        <DialogTitle>Create a space</DialogTitle>
         <DialogDescription className="text-sm">
           A space is a separate set of notes you can share: invite people, give them roles, publish it. Your personal space stays private.
         </DialogDescription>
@@ -25,7 +25,7 @@ export default function CreateSpaceDialog({ onClose, onCreated }: { onClose: () 
           <input id="new-space-name" className="input" autoFocus maxLength={100} placeholder="For example “Family” or “Book club”" value={name} onChange={e => setName(e.target.value)} />
           {error && <p className="settings-error" role="alert">{error}</p>}
           <div className="flex justify-end gap-2">
-            <button type="button" className="filter-btn" onClick={onClose}>Cancel</button>
+            <button type="button" className="button button-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="button" disabled={busy || !name.trim()}>Create</button>
           </div>
         </form>

@@ -23,7 +23,7 @@ export default function SyncMark({ pending }: { pending: boolean }) {
     <TooltipProvider delayDuration={250}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className={`icon-sm inline-flex self-center ${offline ? 'text-amber-500' : 'text-secondary'}`} aria-label={label}>{icon}</span>
+          <span className={`icon-sm inline-flex self-center ${offline ? 'text-warn' : 'text-secondary'}`} aria-label={label}>{icon}</span>
         </TooltipTrigger>
         <TooltipContent side="top">{label}</TooltipContent>
       </Tooltip>

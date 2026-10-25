@@ -75,13 +75,13 @@ function TopBar({
             <MenuRoundedIcon fontSize="inherit" />
           </button>
         )}
-        <h1 className="text-title text-primary hidden md:block">focuz</h1>
+        <h1 className="brand text-title text-primary hidden md:block">focuz</h1>
         {!isThread && viewTitle ? (
           <button type="button" className="topbar-view" onClick={onOpenSpaces} aria-label={`Folders. Current: ${viewTitle}`}>
             <span className="truncate">{viewTitle}</span>
             <span aria-hidden className="text-secondary">▾</span>
           </button>
-        ) : <h1 className="text-title text-primary md:hidden">focuz</h1>}
+        ) : <h1 className="brand text-title text-primary md:hidden">focuz</h1>}
       </div>
       <div className="flex items-center justify-end gap-2">
         <SystemStatusInline />
@@ -97,11 +97,10 @@ function TopBar({
 /** Phones: spaces on the left, the open space's folders on the right (like Discord). */
 function MobileDrawer({ open, onClose, rail, children }: { open: boolean; onClose: () => void; rail: ReactNode; children?: ReactNode }) {
   return (
-    <div className={`fixed inset-0 z-[80] transition md:hidden ${open ? '' : 'pointer-events-none'}`}>
-      <div className={`absolute inset-0 bg-black/60 ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
+    <div className={`fixed inset-0 layer-drawer md:hidden ${open ? '' : 'pointer-events-none'}`}>
+      <div className={`absolute inset-0 drawer-scrim ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <aside
-        className={`absolute left-0 top-0 h-full w-[21rem] max-w-[92vw] flex ${open ? '' : '-translate-x-full'} transition-transform`}
-        style={{ background: 'var(--glass-strong)', boxShadow: 'var(--shadow-surface)', backdropFilter: 'blur(18px)' }}
+        className={`absolute left-0 top-0 h-full w-[21rem] max-w-[92vw] flex drawer-sheet ${open ? '' : '-translate-x-full'}`}
         aria-label="Spaces and folders"
       >
         <div className="py-3 pl-2">{rail}</div>
@@ -404,7 +403,6 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
         <NoteGrid
           notes={notes}
           layout={layout}
-          onLayoutChange={onLayoutChange}
           onOpenThread={onOpenThread}
           onDelete={(id) => { void removeNote(id) }}
           onManageFolders={folderIndex ? setFoldersFor : undefined}
@@ -1174,10 +1172,10 @@ function App() {
     <div className="h-dvh">
       <header
         ref={topbarRef}
-        className="fixed left-0 right-0 top-0 z-50"
+        className="fixed left-0 right-0 top-0 layer-topbar"
         style={{
           transform: headerHidden ? 'translateY(-100%)' : 'translateY(0)',
-          transition: 'transform 180ms ease',
+          transition: 'transform var(--dur-small) var(--ease-standard)',
           willChange: 'transform',
         }}
       >
@@ -1212,7 +1210,7 @@ function App() {
         className="fixed inset-0 overflow-y-auto"
         style={{
           paddingTop: 'var(--topbar-effective-h, var(--topbar-h, 96px))',
-          transition: 'padding-top 180ms ease',
+          transition: 'padding-top var(--dur-small) var(--ease-standard)',
           // Keep the scrollbar's room even when a short feed needs no scrolling, so the layout does not shift sideways.
           scrollbarGutter: 'stable',
         }}
@@ -1387,8 +1385,8 @@ function NoteThread({ spaceId, noteId, entryKey, onBack, onOpenThread, quick, on
   if (!mainNote || mainNote.spaceId !== spaceId || mainNote.deletedAt) {
     return (
       <div className="space-y-5">
-        <div className="card p-4">
-          <div className="mb-3">Note not found</div>
+        <div className="feed-empty space-y-3">
+          <div className="text-primary font-semibold">Note not found</div>
           <button className="button button-secondary" onClick={onBack}>Back</button>
         </div>
       </div>

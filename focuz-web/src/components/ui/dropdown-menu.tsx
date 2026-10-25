@@ -1,6 +1,7 @@
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import * as React from 'react'
 import { cn } from '../../lib/cn'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 
 export const DropdownMenu = DropdownMenuPrimitive.Root
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
@@ -17,7 +18,7 @@ export const DropdownMenuContent = React.forwardRef<
       <DropdownMenuPrimitive.Content
         ref={ref}
         sideOffset={sideOffset}
-        className={cn('dropdown-menu z-50 min-w-40', className)}
+        className={cn('dropdown-menu layer-popover min-w-40', className)}
         {...props}
       />
     </DropdownMenuPortal>
@@ -33,7 +34,7 @@ export const DropdownMenuSubContent = React.forwardRef<
       <DropdownMenuPrimitive.SubContent
         ref={ref}
         sideOffset={sideOffset}
-        className={cn('dropdown-menu z-50 min-w-40', className)}
+        className={cn('dropdown-menu layer-popover min-w-40', className)}
         {...props}
       />
     </DropdownMenuPortal>
@@ -51,7 +52,7 @@ export const DropdownMenuSubTrigger = React.forwardRef<
       {...props}
     >
       <span className="truncate">{children}</span>
-      <span aria-hidden>▸</span>
+      <ChevronRightRoundedIcon aria-hidden fontSize="inherit" className="icon-sm" />
     </DropdownMenuPrimitive.SubTrigger>
   )
 })

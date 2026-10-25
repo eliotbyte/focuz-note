@@ -79,7 +79,7 @@ export default function NoteImages({ noteId }: { noteId: number }) {
       {viewerIndex != null && (
         createPortal(
           <div
-            className="fixed inset-0 z-[200]"
+            className="fixed inset-0 layer-popover"
             onClick={() => setViewerIndex(null)}
             onWheel={(e) => {
               e.preventDefault()
@@ -108,7 +108,7 @@ export default function NoteImages({ noteId }: { noteId: number }) {
                   draggable={false}
                 />
               ) : (
-                <div className="text-neutral-400">Loading…</div>
+                <div className="text-secondary">Loading…</div>
               )}
             </div>
 

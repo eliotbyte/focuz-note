@@ -70,7 +70,7 @@ export default function PublicPage({ token }: { token: string }) {
   return (
     <div className="public-page">
       <header className="public-head">
-        <a className="text-title text-primary" href="/">focuz</a>
+        <a className="brand text-title text-primary" href="/">focuz</a>
         <span className="public-badge"><PublicRoundedIcon fontSize="inherit" /> Public, read-only</span>
       </header>
       <main className="public-main">
@@ -121,7 +121,7 @@ function PublicNoteItem({ note, childrenOf, depth, fileUrl, collapseReplies }: {
         <div className="note-prose public-prose" dangerouslySetInnerHTML={{ __html: html }} />
         {files.length > 0 && <ul className="text-sm">{files.map(a => <li key={a.id}><a className="link-btn" href={fileUrl(a.id)}>{a.fileName}</a></li>)}</ul>}
         {note.tags.length > 0 && <div className="flex flex-wrap gap-1.5">{note.tags.map(t => <span key={t} className="pill pill-tag">{t}</span>)}</div>}
-        <footer className="flex items-center justify-between gap-3 text-[13px] text-secondary">
+        <footer className="flex items-center justify-between gap-3 text-small text-secondary">
           {replies.length > 0 ? (
             <button type="button" className="inline-flex items-center gap-1.5 text-primary hover:underline" onClick={() => setOpen(o => !o)} aria-expanded={open}>
               <SubdirectoryArrowRightRoundedIcon fontSize="inherit" /> {replies.length} {replies.length === 1 ? 'reply' : 'replies'}

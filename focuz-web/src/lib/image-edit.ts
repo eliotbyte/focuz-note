@@ -1,7 +1,7 @@
 // Applies crop / rotation / flips to an image and encodes the result.
 export interface PixelArea { x: number; y: number; width: number; height: number }
 export interface ImageEdits {
-  /** Crop in pixels of the rotated and flipped image (react-easy-crop's croppedAreaPixels). */
+  /** Crop in pixels of the rotated and flipped image (the editor's crop frame). */
   area: PixelArea
   /** Degrees, multiples of 90. */
   rotation: number

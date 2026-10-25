@@ -170,7 +170,7 @@ export default function FolderTree({
     <div className="min-w-0 h-full">
       <div className="card h-full flex flex-col !px-2 !py-3">
         {header}
-        <div className="text-[14px] space-y-0.5">
+        <div className="text-sm space-y-0.5">
           <div
             role="button"
             tabIndex={0}
@@ -198,7 +198,7 @@ export default function FolderTree({
         </div>
 
         <div className="mt-3 mb-1 pl-2 pr-1 flex items-center justify-between gap-2">
-          <span className="text-[11px] uppercase tracking-[0.08em] text-secondary">Folders</span>
+          <span className="tree-label">Folders</span>
           <span className="flex items-center gap-0.5">
             {expanded.size > 0 && (
               <button className="icon-btn !p-1" title="Collapse all" aria-label="Collapse all" onClick={() => setExpanded(() => new Set())}>
@@ -212,7 +212,8 @@ export default function FolderTree({
           </span>
         </div>
 
-        <ul className="flex-1 min-h-0 overflow-y-auto overscroll-contain text-[14px]" role="tree" aria-label="Folders">
+        {/* A scroller clips sideways too: -mx-2/px-2 lends it the card's padding, so the selected row's rim and glow show. */}
+        <ul className="flex-1 min-h-0 overflow-y-auto overscroll-contain text-sm -mx-2 px-2" role="tree" aria-label="Folders">
           {creating?.parent === null && (
             <li><NewFolderInput spaceId={spaceId} depth={0} onCreate={create} onCancel={() => setCreating(null)} /></li>
           )}

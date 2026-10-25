@@ -15,7 +15,7 @@ export const ContextMenuContent = React.forwardRef<
     <ContextMenuPortal>
       <ContextMenuPrimitive.Content
         ref={ref}
-        className={cn('dropdown-menu z-50 min-w-40', className)}
+        className={cn('dropdown-menu layer-popover min-w-40', className)}
         {...props}
       />
     </ContextMenuPortal>

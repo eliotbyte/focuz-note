@@ -60,6 +60,9 @@ A security review (2026-10) fixed these; keep them when changing code:
 
 ## Working on the code
 
+- UI work follows `DESIGN.md` (tokens, materials, components, motion, a11y); read it first and keep it in
+  sync with the tokens in `focuz-web/src/index.css`.
+
 - API integration tests: `run-api-tests.ps1` (Docker). It shares the compose project name with the
   dev stand and **stops and removes the dev stand's containers** (volumes survive); bring the stand
   back with `docker compose up -d` afterwards.

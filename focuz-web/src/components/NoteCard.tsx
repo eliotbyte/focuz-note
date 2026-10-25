@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { NoteRecord } from '../lib/types'
 import { activities as activitiesRepo, notes as notesRepo } from '../data'
@@ -13,6 +13,7 @@ import { SurfaceNoPad } from './ui/surface'
 import SubdirectoryArrowRightRoundedIcon from '@mui/icons-material/SubdirectoryArrowRightRounded'
 import SyncMark from './SyncMark'
 import PublicRoundedIcon from '@mui/icons-material/PublicRounded'
+import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import { useSpaceView } from '../lib/space-context'
 import { canDeleteNote, canEditNotes, canWrite } from '../lib/roles'
 import { useNotePublicState } from '../lib/useSpaces'
@@ -69,8 +70,23 @@ export default function NoteCard({
   const author = view.shared ? (note.authorName ?? view.meName ?? 'you') : null
   const editedBy = view.shared && note.modifiedByName && note.modifiedById != null && note.modifiedById !== note.authorId ? note.modifiedByName : null
   const hasReplies = Number.isFinite(repliesCount) && repliesCount > 0
+  // The note on its own (showFullDate) is already open; in the feed a click anywhere on the card opens it.
+  const openable = !!onOpenThread && !showFullDate
+  const open = () => onOpenThread?.(note.id!)
+
+  function openFromCard(e: MouseEvent<HTMLElement>) {
+    if (!openable) return
+    const target = e.target as HTMLElement
+    // Clicks bubble here from portals too (menu, dialogs): only the card's own surface counts.
+    if (!e.currentTarget.contains(target)) return
+    if (target.closest('a, button, input, label, textarea, select, [role="button"], [role="tab"]')) return
+    // Selecting text is not a click on the card.
+    if (window.getSelection()?.toString()) return
+    open()
+  }
+
   return (
-    <SurfaceNoPad className="relative group">
+    <SurfaceNoPad className={`relative group ${openable ? 'note-card-openable' : ''}`} onClick={openFromCard}>
       {(pub.direct || pub.inherited) && (
         <div className="absolute right-2.5 top-2.5 z-20">
           <button
@@ -130,7 +146,7 @@ export default function NoteCard({
 
         {/* Tags (pills) */}
         {note.tags?.length ? (
-          <div className="relative z-20 flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {note.tags.filter(t => !(hiddenTags?.has(t))).map((t, i) => (
               <Pill
                 key={`${t}-${i}`}
@@ -145,70 +161,37 @@ export default function NoteCard({
         ) : null}
 
         {/* Footer */}
-        <div className="relative z-20 flex items-baseline justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             {hasReplies && (
-              <button className="note-footer inline-flex items-baseline gap-2 text-primary hover:underline" type="button" onClick={() => onOpenThread && onOpenThread(note.id!)}>
+              <button className="note-footer inline-flex items-baseline gap-2 text-primary hover:underline" type="button" onClick={open}>
                 <SubdirectoryArrowRightRoundedIcon fontSize="inherit" className="icon-sm icon-shift-down-15 text-secondary" />
                 <span>{repliesCount} {repliesCount === 1 ? 'reply' : 'replies'}</span>
               </button>
             )}
           </div>
 
-          <div className="note-footer flex items-baseline gap-2 text-secondary min-w-0">
-            {author && <span className="inline-flex items-center gap-1.5 min-w-0 self-center"><PersonAvatar userId={note.authorId ?? view.meId} name={author} size={16} /><span className="truncate">{author}</span></span>}
+          <div className="note-footer flex items-center gap-2 text-secondary min-w-0">
+            {author && <span className="inline-flex items-center gap-1.5 min-w-0"><PersonAvatar userId={note.authorId ?? view.meId} name={author} size={16} /><span className="truncate">{author}</span></span>}
             {author && <span aria-hidden style={{ fontWeight: 700 }}>·</span>}
             {showFullDate
               ? <span>{formatExactDateTime(note.date ?? note.createdAt)}</span>
               : (
-                <NoteDateTip note={note} extra={editedBy ? `Edited by ${editedBy}` : undefined}>
+                <NoteDateTip note={note} extra={editedBy ? `Edited by ${editedBy}` : undefined} onClick={openable ? open : undefined}>
                   <span>{formatRelativeShort(note.createdAt)}</span>
                 </NoteDateTip>
               )}
             {editedBy && <span className="truncate hidden sm:inline">· edited by {editedBy}</span>}
             <SyncMark pending={note.isDirty === 1} />
-          </div>
-        </div>
-      </div>
 
-      {/* Hover overlay: blocks footer actions, tags remain clickable (higher z-index) */}
-      {onOpenThread && (
-        <div
-          className={[
-            'absolute inset-x-0 bottom-0 z-10 h-[64px] transition-opacity',
-            (menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'),
-          ].join(' ')}
-          style={{
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 100%)',
-            backdropFilter: 'blur(2px)',
-            borderBottomLeftRadius: 'var(--radius)',
-            borderBottomRightRadius: 'var(--radius)',
-            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 55%, black 100%)',
-            maskImage: 'linear-gradient(to bottom, transparent 0%, black 55%, black 100%)',
-          }}
-        >
-          {/* click-anywhere area to open note */}
-          <button
-            type="button"
-            className="absolute inset-0 w-full h-full"
-            onClick={() => onOpenThread(note.id!)}
-            aria-label="Open note"
-          />
-
-          {/* menu trigger (the circle) */}
-          <div className="absolute right-3 bottom-2.5 z-20">
+            {/* ⋮ sits in the footer row, after the date: it never covers the author or the date. */}
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="drop-btn"
-                  aria-label="Open actions"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  ⋮
+                <button type="button" className={`note-more ${menuOpen ? 'is-open' : ''}`} aria-label="Open actions">
+                  <MoreVertRoundedIcon fontSize="inherit" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuContent align="end">
                 {onReplyClick && mayWrite && <DropdownMenuItem onSelect={() => onReplyClick()}>Reply</DropdownMenuItem>}
                 {onEdit && mayEdit && <DropdownMenuItem onSelect={() => onEdit()}>Edit</DropdownMenuItem>}
                 {onManageFolders && mayEdit && <DropdownMenuItem onSelect={() => onManageFolders()}>Folders…</DropdownMenuItem>}
@@ -219,7 +202,7 @@ export default function NoteCard({
             </DropdownMenu>
           </div>
         </div>
-      )}
+      </div>
 
       {dialog === 'share' && <NoteShareDialog note={note} onClose={() => setDialog(null)} onOpenNote={onOpenThread} />}
       {dialog === 'details' && <NoteDetailsDialog note={note} onClose={() => setDialog(null)} />}

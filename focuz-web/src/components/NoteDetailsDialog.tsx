@@ -22,7 +22,7 @@ export default function NoteDetailsDialog({ note, onClose }: { note: NoteRecord;
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="p-5 space-y-4">
-        <DialogTitle className="!text-primary !text-[17px] font-semibold">Details</DialogTitle>
+        <DialogTitle>Details</DialogTitle>
         <DialogDescription className="sr-only">Author and edit history</DialogDescription>
         <dl className="settings-dl text-sm">
           <dt>Created</dt>

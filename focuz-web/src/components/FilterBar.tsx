@@ -5,6 +5,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
 import { activityTypes as activityTypesRepo, tags as tagsRepo } from '../data'
@@ -83,8 +84,9 @@ export default function FilterBar({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {SORT_OPTIONS.map(o => (
-                <DropdownMenuItem key={o.value} onSelect={() => onSortChange(o.value)} className={o.value === sort ? 'text-primary' : undefined}>
-                  {o.value === sort ? '✓ ' : ''}{o.label}
+                <DropdownMenuItem key={o.value} role="menuitemradio" aria-checked={o.value === sort} onSelect={() => onSortChange(o.value)}>
+                  {o.label}
+                  {o.value === sort && <CheckRoundedIcon aria-hidden fontSize="inherit" className="icon-sm dropdown-check" />}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -94,7 +96,7 @@ export default function FilterBar({
       </div>
 
       {!empty && (
-        <div className="filter-bar-row">
+        <div className="filter-bar-row filter-chips-row">
           {/* A click on a chip flips it: green (must have the tag) <-> red (must not have it). The text never changes. */}
           {value.include.map(t => (
             <Chip

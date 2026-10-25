@@ -39,8 +39,8 @@ export default function SpaceSettingsDialog({ space, tab, onTabChange, onClose, 
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="settings-dialog" aria-describedby={undefined}>
         <div className="settings-head">
-          <DialogTitle className="!text-primary !text-[17px] font-semibold truncate">{space.name}</DialogTitle>
-          <button type="button" className="icon-btn !p-1" aria-label="Close" onClick={onClose}><CloseRoundedIcon fontSize="inherit" /></button>
+          <DialogTitle className="truncate">{space.name}</DialogTitle>
+          <button type="button" className="icon-btn icon-btn-close !p-1" aria-label="Close" onClick={onClose}><CloseRoundedIcon fontSize="inherit" /></button>
         </div>
         <div className="settings-tabs" role="tablist" aria-label="Space settings">
           {tabs.map(t => (
@@ -128,7 +128,7 @@ function GeneralTab({ space, role, onGone }: { space: SpaceRecord; role: SpaceRo
             </>
           ) : <p>Leave “{space.name}”?</p>}
           <div className="flex justify-end gap-2">
-            <button type="button" className="filter-btn" onClick={() => setConfirm(null)}>Cancel</button>
+            <button type="button" className="button button-secondary" onClick={() => setConfirm(null)}>Cancel</button>
             <button type="button" className="button button-danger" disabled={busy || (confirm === 'delete' && typed.trim() !== space.name)} onClick={() => { void leaveOrDelete() }}>
               {confirm === 'delete' ? 'Delete space' : 'Leave'}
             </button>
@@ -256,8 +256,8 @@ function MembersTab({ space, role }: { space: SpaceRecord; role: SpaceRole }) {
 export function CopyField({ value, label }: { value: string; label: string }) {
   return (
     <div className="copy-field">
-      <input className="input !text-[13px]" readOnly value={value} aria-label={label} onFocus={e => e.currentTarget.select()} />
-      <button type="button" className="filter-btn" onClick={() => {
+      <input className="input !text-[length:var(--fs-small)]" readOnly value={value} aria-label={label} onFocus={e => e.currentTarget.select()} />
+      <button type="button" className="button button-secondary" onClick={() => {
         navigator.clipboard?.writeText(value).then(() => notify('Link copied', 'success')).catch(() => notify('Select the link and copy it', 'info'))
       }}><ContentCopyRoundedIcon fontSize="inherit" className="icon-sm" /> Copy</button>
     </div>

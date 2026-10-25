@@ -210,14 +210,14 @@ export default function ActivitiesInput({
               <button
                 key={`${it.typeId}`}
                 type="button"
-                className="inline-flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-1 text-xs text-secondary hover:bg-neutral-700 select-none"
+                className="pill pill-tag gap-1 select-none"
                 onClick={() => { setEditingIdx(idx); setTimeout(() => inputRef.current?.focus(), 0) }}
                 title={label}
               >
-                <span className="text-neutral-300">{label}:</span>
-                <span className="text-neutral-200">{valueDisplay}</span>
+                <span>{label}:</span>
+                <span className="text-primary">{valueDisplay}</span>
                 <span
-                  className="ml-1 text-neutral-400 hover:text-neutral-200 cursor-pointer"
+                  className="pill-x ml-1 cursor-pointer"
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
@@ -243,7 +243,7 @@ export default function ActivitiesInput({
           const placeholderText = 'e.g. 1h 2m 3s 250ms or 1:02:03.250'
           return (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-neutral-400">{t?.name}</span>
+              <span className="text-xs text-secondary">{t?.name}</span>
               <input
                 ref={inputRef}
                 className="input h-7 text-sm"
@@ -283,7 +283,7 @@ export default function ActivitiesInput({
           const parseFn = vt === 'integer' ? (s: string) => (s === '-' ? NaN : Number.parseInt(s, 10)) : (s: string) => Number(s)
           return (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-neutral-400">{t?.name}</span>
+              <span className="text-xs text-secondary">{t?.name}</span>
               <input
                 ref={inputRef}
                 className="input h-7 text-sm"
@@ -324,7 +324,7 @@ export default function ActivitiesInput({
         // default: text
         return (
           <div className="flex items-center gap-2">
-            <span className="text-xs text-neutral-400">{t?.name}</span>
+            <span className="text-xs text-secondary">{t?.name}</span>
             <input
               ref={inputRef}
               className="input h-7 text-sm"

@@ -87,7 +87,7 @@ export default function NoteShareDialog({ note, onClose, onOpenNote }: { note: N
           <span><b>Replies are public too</b><small>All replies below this note, including ones written later. Turn off to share only this note.</small></span>
         </label>
         <div className="flex justify-end gap-2">
-          <button type="button" className="filter-btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="button button-secondary" onClick={onClose}>Cancel</button>
           <button type="button" className="button" disabled={busy} onClick={() => { void run(() => shareNote(note.spaceId, note.serverId!, includeReplies), 'Anyone with the link can read it now') }}>
             <PublicRoundedIcon fontSize="inherit" className="icon-sm" /> Make public
           </button>
@@ -99,7 +99,7 @@ export default function NoteShareDialog({ note, onClose, onOpenNote }: { note: N
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="p-5 space-y-4">
-        <DialogTitle className="!text-primary !text-[17px] font-semibold">Share note</DialogTitle>
+        <DialogTitle>Share note</DialogTitle>
         <DialogDescription className="text-sm truncate">{notePreviewText(note.text).slice(0, 120)}</DialogDescription>
         {body}
       </DialogContent>

@@ -49,7 +49,7 @@ export function MoveFolderDialog({ index, folderId, onClose, onMove }: {
             </button>
           ))}
         </div>
-        <div className="flex justify-end"><button type="button" className="filter-btn" onClick={onClose}>Cancel</button></div>
+        <div className="flex justify-end"><button type="button" className="button button-secondary" onClick={onClose}>Cancel</button></div>
       </DialogContent>
     </Dialog>
   )
@@ -87,7 +87,7 @@ export function DeleteFolderDialog({ index, folderId, onClose, onDeleted }: {
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="p-5 space-y-4" aria-describedby="delete-folder-desc">
-        <DialogTitle className="!text-primary">Delete “{node.rec.name}”?</DialogTitle>
+        <DialogTitle>Delete “{node.rec.name}”?</DialogTitle>
         <p id="delete-folder-desc" className="text-sm text-secondary leading-relaxed">
           Notes are not deleted with the folder: they stay in All notes and in other folders.
           {plan.notesShown > 0 && <> This folder shows {plan.notesShown} note{plan.notesShown === 1 ? '' : 's'}{elsewhere > 0 ? `, ${elsewhere} of them also in other folders` : ''}.</>}
@@ -119,7 +119,7 @@ export function DeleteFolderDialog({ index, folderId, onClose, onDeleted }: {
           </span>
         </label>
         <div className="flex justify-end gap-2">
-          <button type="button" className="filter-btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="button button-secondary" onClick={onClose}>Cancel</button>
           <button type="button" className="button button-danger" disabled={busy} onClick={() => { void confirm() }}>Delete</button>
         </div>
       </DialogContent>

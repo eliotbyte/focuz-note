@@ -16,6 +16,7 @@ import { filesFromDataTransfer, hasFiles, isImageFile } from '../lib/clipboard'
 import FullscreenNoteEditor from './FullscreenNoteEditor'
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ImageEditorDialog from './ImageEditorDialog'
 import { TextareaFormatBar } from './SelectionFormatBar'
 import { dayOf, withDay } from '../lib/note-date'
@@ -186,7 +187,7 @@ export default function NoteEditor({
       <div className="card p-2">
         <button
           type="button"
-          className="w-full text-left text-sm text-neutral-400 rounded px-1 py-1 hover:text-neutral-200"
+          className="composer-collapsed"
           onClick={() => setExpanded(true)}
         >
           {mode === 'reply' ? 'Reply…' : 'Add note…'}
@@ -227,7 +228,7 @@ export default function NoteEditor({
   const thumbnails = (
     <>
         {mode === 'edit' && existingAttachments.length > 0 && attachments.length === 0 && (
-          <div className="text-xs text-neutral-400">Adding new photos will be uploaded when you click Update.</div>
+          <div className="text-xs text-secondary">Adding new photos will be uploaded when you click Update.</div>
         )}
         {(mode === 'edit' && existingAttachments.length > 0) && (
           <SortableThumbs
@@ -240,16 +241,16 @@ export default function NoteEditor({
                 {att.data ? (
                   <AttachmentThumb att={att} />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-neutral-500 text-xs">img</div>
+                  <div className="thumb-empty">img</div>
                 )}
                 <UploadBadge state={existingUploads.get(att.id!)} />
                 <button
                   type="button"
-                  className="absolute -top-1 -right-1 bg-neutral-900/80 hover:bg-neutral-800 text-neutral-100 rounded-full w-5 h-5 text-xs"
+                  className="thumb-remove"
                   onClick={async () => { if (att.id != null) { try { await deleteLocalAttachment(att.id) } catch {} } }}
                   aria-label="Remove attachment"
                   title="Remove"
-                >×</button>
+                ><CloseRoundedIcon fontSize="inherit" /></button>
               </>
             )}
           />
@@ -272,11 +273,11 @@ export default function NoteEditor({
                 ><EditRoundedIcon fontSize="inherit" /></button>
                 <button
                   type="button"
-                  className="absolute -top-1 -right-1 bg-neutral-900/80 hover:bg-neutral-800 text-neutral-100 rounded-full w-5 h-5 text-xs"
+                  className="thumb-remove"
                   onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
                   aria-label="Remove attachment"
                   title="Remove"
-                >×</button>
+                ><CloseRoundedIcon fontSize="inherit" /></button>
               </>
             )}
           />
@@ -364,7 +365,7 @@ export default function NoteEditor({
         {onCancel && (
           <button className="button button-secondary" onClick={() => { onCancel(); setAttachments([]); collapseIfNeeded() }}>Cancel</button>
         )}
-        <button className="button" onClick={submit} disabled={!canSubmit}>{submitLabel}</button>
+        <button className="button button-default" onClick={submit} disabled={!canSubmit}>{submitLabel}</button>
       </div>
       <FullscreenNoteEditor
         open={fullscreen}
@@ -463,10 +464,10 @@ function SortableThumbs<T>({ group, items, keyOf, render, onMove }: {
             data-thumb={idx}
             data-thumb-group={group}
             className={[
-              'relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-neutral-800 select-none',
+              'relative w-16 h-16 thumb-cell overflow-hidden select-none',
               items.length > 1 ? 'cursor-grab touch-none' : '',
               dragging ? 'cursor-grabbing opacity-80 shadow-lg' : '',
-              target ? 'ring-2 ring-[rgb(var(--c-accent))]' : '',
+              target ? 'is-target' : '',
             ].join(' ')}
             style={dragging ? { transform: `translate(${drag!.dx}px, ${drag!.dy}px)`, zIndex: 10 } : undefined}
             onPointerDown={e => {

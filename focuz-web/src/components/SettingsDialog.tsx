@@ -35,8 +35,8 @@ export default function SettingsDialog({ open, onOpenChange, onLogout, spaceId, 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="settings-dialog settings-dialog-wide" aria-describedby={undefined}>
         <div className="settings-head">
-          <DialogTitle className="!text-primary !text-[17px] font-semibold">Settings</DialogTitle>
-          <button type="button" className="icon-btn !p-1" aria-label="Close" onClick={() => onOpenChange(false)}><CloseRoundedIcon fontSize="inherit" /></button>
+          <DialogTitle>Settings</DialogTitle>
+          <button type="button" className="icon-btn icon-btn-close !p-1" aria-label="Close" onClick={() => onOpenChange(false)}><CloseRoundedIcon fontSize="inherit" /></button>
         </div>
         <div className="settings-layout">
           <div className="settings-nav" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
@@ -109,7 +109,7 @@ function AccountTab({ onLogout }: { onLogout: () => void }) {
       </form>
       <div className="settings-danger">
         <div><b>Sign out</b><p>Signs you out on this device. Your notes stay on the server; if something is not synced yet, you will be asked first.</p></div>
-        <button type="button" className="filter-btn" onClick={onLogout}>Sign out</button>
+        <button type="button" className="button button-secondary" onClick={onLogout}>Sign out</button>
       </div>
     </div>
   )
@@ -170,10 +170,10 @@ function AgentsTab() {
         <div className="space-y-2">
           <div className="settings-label">New token</div>
           <p className="settings-note">Copy this command now. The token is shown only once; if you lose it, revoke it and make a new one.</p>
-          <code className="block break-all text-xs p-2 rounded bg-black/5 dark:bg-white/5">{command}</code>
+          <code className="code-block">{command}</code>
           <div className="flex gap-2">
             <button type="button" className="button" onClick={() => { void copyCommand() }}>Copy command</button>
-            <button type="button" className="filter-btn" onClick={() => setSecret(null)}>Done</button>
+            <button type="button" className="button button-secondary" onClick={() => setSecret(null)}>Done</button>
           </div>
         </div>
       )}
@@ -202,7 +202,7 @@ function AgentsTab() {
                 Created {new Date(t.createdAt).toLocaleDateString()} · {t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleString()}` : 'never used'}
               </p>
             </div>
-            <button type="button" className="filter-btn" onClick={() => { void revoke(t) }}>Revoke</button>
+            <button type="button" className="button button-secondary" onClick={() => { void revoke(t) }}>Revoke</button>
           </div>
         ))}
       </div>

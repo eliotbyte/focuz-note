@@ -51,7 +51,7 @@ export default function SpaceRail({ spaces, currentId, onSelect, onCreate }: {
     <nav className="space-rail" aria-label="Spaces">
       <ul className="flex flex-col items-center gap-2">
         {personal.map(item)}
-        {shared.length > 0 && <li aria-hidden className="space-rail-sep" />}
+        {personal.length > 0 && shared.length > 0 && <li aria-hidden className="space-rail-sep" />}
         {shared.map(item)}
         <li className="space-rail-item">
           <span aria-hidden className="space-rail-pill" />
