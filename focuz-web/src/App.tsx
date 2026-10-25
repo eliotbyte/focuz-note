@@ -28,6 +28,7 @@ import {
 } from './lib/criteria'
 import { applyStoredTheme } from './lib/theme'
 import SettingsDialog from './components/SettingsDialog'
+import ExportPanel from './components/ExportPanel'
 import NotificationsBell from './components/NotificationsBell'
 import SpaceRail from './components/spaces/SpaceRail'
 import SpaceHeader from './components/spaces/SpaceHeader'
@@ -1202,6 +1203,7 @@ function App() {
       </header>
 
       <SystemStatusLayer />
+      <ExportPanel />
 
       {/* Global scroll container (scrollbar at viewport edge).
           Sidebars are sticky inside it, so they stay pinned to the screen while feed scrolls. */}

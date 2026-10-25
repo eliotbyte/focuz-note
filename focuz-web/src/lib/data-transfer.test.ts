@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from './db'
-import { blobBytes, exportSpace, importIntoSpace, MissingPicturesError } from './data-transfer'
+import { blobBytes, ExportCancelledError, ExportControl, exportSpace, importIntoSpace, inDateRange, MissingPicturesError } from './data-transfer'
 import { readExport } from './export-format'
 
 // Pictures that are not on this device are fetched from the server; the tests answer for it.
@@ -93,7 +93,8 @@ describe('export waits for every picture', () => {
     expect(fetchMock).toHaveBeenCalledWith('srv-1')
     expect(exported.pictureCount).toBe(1)
     expect(exported.missingPictures).toBe(0)
-    expect(progress).toEqual([[0, 1], [1, 1]])
+    // Before each download, then after it: the second picture's start is the one with the file name.
+    expect(progress).toEqual([[0, 1], [0, 1], [1, 1]])
     const stored = await db.attachments.where('noteId').equals(parent as number).first()
     expect(stored?.data).toBeTruthy()
   })
@@ -115,5 +116,53 @@ describe('export waits for every picture', () => {
     expect(exported.noteCount).toBe(1)
     expect(exported.pictureCount).toBe(0)
     expect(exported.missingPictures).toBe(1)
+  })
+
+  it('leaves out a picture the user skips, without failing the export', async () => {
+    const parent = await db.notes.add({ spaceId: 1, text: 'slow pic', tags: [], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 14, clientId: 's' } as never)
+    await db.attachments.add({ noteId: parent as number, serverId: 'srv-4', clientId: 'c4', fileName: 'slow.webp', fileType: 'image/webp', fileSize: 3, data: null, position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
+    fetchMock.mockReturnValueOnce(new Promise<Blob>(() => {}))
+    const control = new ExportControl()
+
+    // The skip comes from the UI, after the download has started: a timer stands in for the click.
+    const exporting = exportSpace(1, 'A', true, {
+      control,
+      onProgress: (done, total, current) => { if (current && done < total) setTimeout(() => control.skipCurrent(), 0) },
+    })
+    const exported = await exporting
+    expect(exported.pictureCount).toBe(0)
+    expect(exported.missingPictures).toBe(1)
+  })
+
+  it('stops with ExportCancelledError and writes nothing', async () => {
+    const parent = await db.notes.add({ spaceId: 1, text: 'stop here', tags: [], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 15, clientId: 'x2' } as never)
+    await db.attachments.add({ noteId: parent as number, serverId: 'srv-5', clientId: 'c5', fileName: 'x.webp', fileType: 'image/webp', fileSize: 3, data: null, position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
+    fetchMock.mockReturnValueOnce(new Promise<Blob>(() => {}))
+    const control = new ExportControl()
+
+    const exporting = exportSpace(1, 'A', true, { control, onProgress: (_d, _t, current) => { if (current) setTimeout(() => control.stop(), 0) } })
+    await expect(exporting).rejects.toBeInstanceOf(ExportCancelledError)
+  })
+
+  it('filters notes by their local day, inclusive on both ends', async () => {
+    const day = (d: string) => new Date(`${d}T12:00:00`).toISOString()
+    await db.notes.add({ spaceId: 1, text: 'before', tags: [], createdAt: NOW, modifiedAt: NOW, date: day('2026-03-09'), parentId: null, deletedAt: null, isDirty: 0, serverId: 20, clientId: 'f1' } as never)
+    await db.notes.add({ spaceId: 1, text: 'first', tags: [], createdAt: NOW, modifiedAt: NOW, date: day('2026-03-10'), parentId: null, deletedAt: null, isDirty: 0, serverId: 21, clientId: 'f2' } as never)
+    await db.notes.add({ spaceId: 1, text: 'last', tags: [], createdAt: NOW, modifiedAt: NOW, date: day('2026-03-20'), parentId: null, deletedAt: null, isDirty: 0, serverId: 22, clientId: 'f3' } as never)
+    await db.notes.add({ spaceId: 1, text: 'after', tags: [], createdAt: NOW, modifiedAt: NOW, date: day('2026-03-21'), parentId: null, deletedAt: null, isDirty: 0, serverId: 23, clientId: 'f4' } as never)
+
+    const exported = await exportSpace(1, 'A', false, { from: '2026-03-10', to: '2026-03-20' })
+    const back = readExport(await zipBytes(exported.blob))
+    expect(back.doc.notes.map(n => n.text).sort()).toEqual(['first', 'last'])
+  })
+})
+
+describe('inDateRange', () => {
+  it('treats an empty bound as open', () => {
+    const iso = new Date('2026-05-05T12:00:00').toISOString()
+    expect(inDateRange(iso)).toBe(true)
+    expect(inDateRange(iso, '2026-05-06')).toBe(false)
+    expect(inDateRange(iso, undefined, '2026-05-04')).toBe(false)
+    expect(inDateRange(iso, '2026-05-05', '2026-05-05')).toBe(true)
   })
 })

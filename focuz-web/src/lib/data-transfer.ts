@@ -65,44 +65,107 @@ export class MissingPicturesError extends Error {
   }
 }
 
+/** The export was stopped by the user before the file was written. */
+export class ExportCancelledError extends Error {
+  constructor() {
+    super('The export was stopped')
+    this.name = 'ExportCancelledError'
+  }
+}
+
+/**
+ * Lets the user stop an export, or skip the picture that is downloading now. A skipped picture is
+ * left out of the file, like one that could not be downloaded, but it is not an error.
+ */
+export class ExportControl {
+  cancelled = false
+  private skipper: (() => void) | null = null
+
+  /** Skips the picture being downloaded now. */
+  skipCurrent(): void {
+    this.skipper?.()
+  }
+
+  /** Stops the export: the picture being downloaded is dropped and nothing is written. */
+  stop(): void {
+    this.cancelled = true
+    this.skipper?.()
+  }
+
+  /** Waits for the task, unless the user skips it first. Resolves to null when skipped. */
+  async skippable<T>(task: Promise<T>): Promise<{ value: T } | null> {
+    if (this.cancelled) return null
+    const skipped = new Promise<null>(resolve => { this.skipper = () => resolve(null) })
+    try {
+      return await Promise.race([task.then(value => ({ value })), skipped])
+    } finally {
+      this.skipper = null
+    }
+  }
+}
+
 export interface ExportOptions {
-  onProgress?: (done: number, total: number) => void
+  /** Called before each picture: how many are done, how many in all, and which one is next. */
+  onProgress?: (done: number, total: number, current?: { fileName: string; fileSize: number }) => void
   /** Export even when some pictures cannot be downloaded (for example, damaged on the server). */
   skipUnavailable?: boolean
+  /** Only notes whose date is on or after this day, as YYYY-MM-DD in local time. */
+  from?: string
+  /** Only notes whose date is on or before this day, as YYYY-MM-DD in local time. */
+  to?: string
+  control?: ExportControl
+}
+
+/** The day of an ISO date in local time, as YYYY-MM-DD. */
+export function localDay(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** Whether a note's date falls in the range. An empty bound is open. */
+export function inDateRange(iso: string, from?: string, to?: string): boolean {
+  const day = localDay(iso)
+  return (!from || day >= from) && (!to || day <= to)
 }
 
 /**
  * Downloads every picture of these notes that is not on this device yet. Pictures that fail are
- * counted, not fetched again here: returns how many are still missing.
+ * counted, not fetched again here. Skipped pictures are counted apart, and are not an error.
  */
-async function loadMissingPictures(noteIds: number[], onProgress?: (done: number, total: number) => void): Promise<number> {
+async function loadMissingPictures(noteIds: number[], control: ExportControl, onProgress?: ExportOptions['onProgress']): Promise<{ failed: number }> {
   const missing = await db.attachments.where('noteId').anyOf(noteIds).filter(a => !a.deletedAt && !a.data && !!a.serverId).toArray()
   let done = 0
   let failed = 0
   onProgress?.(done, missing.length)
   for (const a of missing) {
+    if (control.cancelled) break
+    onProgress?.(done, missing.length, { fileName: a.fileName, fileSize: a.fileSize })
     try {
-      const blob = await fetchAttachmentBlob(a.serverId!)
-      await db.attachments.update(a.id!, { data: blob })
+      const got = await control.skippable(fetchAttachmentBlob(a.serverId!))
+      if (got) await db.attachments.update(a.id!, { data: got.value })
     } catch {
       failed++
     }
     done++
     onProgress?.(done, missing.length)
   }
-  return failed
+  return { failed }
 }
 
 /**
  * Exports the live notes of a space. With withPictures, the pictures are downloaded first. If some
- * cannot be downloaded, this throws MissingPicturesError unless skipUnavailable is set.
+ * cannot be downloaded, this throws MissingPicturesError unless skipUnavailable is set. Stopping
+ * through the control throws ExportCancelledError.
  */
 export async function exportSpace(spaceId: number, spaceName: string, withPictures: boolean, options: ExportOptions = {}): Promise<ExportResult> {
-  const live = (await db.notes.where('spaceId').equals(spaceId).filter(n => !n.deletedAt).toArray())
+  const control = options.control ?? new ExportControl()
+  const live = (await db.notes.where('spaceId').equals(spaceId).filter(n => !n.deletedAt && inDateRange(n.date ?? n.createdAt, options.from, options.to)).toArray())
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const ids = new Set(live.map(n => n.id!))
   if (withPictures) {
-    const failed = await loadMissingPictures(live.map(n => n.id!), options.onProgress)
+    const { failed } = await loadMissingPictures(live.map(n => n.id!), control, options.onProgress)
+    if (control.cancelled) throw new ExportCancelledError()
     if (failed > 0 && !options.skipUnavailable) throw new MissingPicturesError(failed)
   }
   const pictures = new Map<string, Uint8Array>()

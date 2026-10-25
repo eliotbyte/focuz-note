@@ -1,44 +1,20 @@
 import { useRef, useState } from 'react'
-import { downloadBlob, exportSpace, importIntoSpace, MissingPicturesError } from '../lib/data-transfer'
+import { importIntoSpace } from '../lib/data-transfer'
+import { isExportActive, openExportOptions, useExportState } from '../lib/export-job'
 import { notify } from '../ui/notify'
 
 /** Settings → Data: export the open space to a file, or add the notes of a file to it. Works offline. */
 export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: number | null; spaceName: string; canWrite: boolean }) {
-  const [withPictures, setWithPictures] = useState(true)
-  const [busy, setBusy] = useState<'export' | 'import' | null>(null)
+  const [busy, setBusy] = useState(false)
   const [report, setReport] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [progress, setProgress] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  const ready = spaceId != null && busy === null
-
-  const [failedPictures, setFailedPictures] = useState<number | null>(null)
-
-  async function doExport(skipUnavailable = false) {
-    if (spaceId == null) return
-    setBusy('export'); setError(null); setReport(null); setProgress(null); setFailedPictures(null)
-    try {
-      const res = await exportSpace(spaceId, spaceName || 'space', withPictures, {
-        skipUnavailable,
-        onProgress: (done, total) => { if (total > 0) setProgress(`Downloading pictures ${done} of ${total}…`) },
-      })
-      downloadBlob(res.blob, res.fileName)
-      const parts = [`${res.noteCount} ${res.noteCount === 1 ? 'note' : 'notes'}`]
-      if (withPictures) parts.push(`${res.pictureCount} ${res.pictureCount === 1 ? 'picture' : 'pictures'}`)
-      let text = `Exported ${parts.join(' and ')}.`
-      if (res.missingPictures > 0) text += ` ${res.missingPictures} ${res.missingPictures === 1 ? 'picture is' : 'pictures are'} not in the file.`
-      setReport(text)
-    } catch (e) {
-      if (e instanceof MissingPicturesError) setFailedPictures(e.count)
-      else setError(e instanceof Error ? e.message : 'Export failed')
-    } finally {
-      setBusy(null)
-    }
-  }
+  const exporting = isExportActive(useExportState())
+  const ready = spaceId != null && !busy
 
   async function doImport(file: File) {
     if (spaceId == null) return
-    setBusy('import'); setError(null); setReport(null)
+    setBusy(true); setError(null); setReport(null)
     try {
       const r = await importIntoSpace(spaceId, file)
       const lines = [`Imported ${r.notes} ${r.notes === 1 ? 'note' : 'notes'} and ${r.pictures} ${r.pictures === 1 ? 'picture' : 'pictures'}.`]
@@ -49,7 +25,7 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed')
     } finally {
-      setBusy(null)
+      setBusy(false)
       if (fileInput.current) fileInput.current.value = ''
     }
   }
@@ -59,15 +35,11 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
       <section className="space-y-2">
         <div className="settings-label">Export</div>
         <p className="settings-note">
-          Saves the notes of {spaceName ? <b>{spaceName}</b> : 'this space'}: text, tags, dates, activities and, if you tick it, the pictures.
-          With pictures, every picture is downloaded to this device first, so the export waits for all of them.
+          Saves the notes of {spaceName ? <b>{spaceName}</b> : 'this space'} to a file: text, tags, dates, activities and, if you tick it, the pictures.
+          With pictures, every picture is downloaded to this device first, so keep this tab open until the export is complete.
         </p>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={withPictures} onChange={e => setWithPictures(e.target.checked)} />
-          Include pictures (saved as a zip)
-        </label>
-        <button type="button" className="button" disabled={!ready} onClick={() => { void doExport() }}>
-          {busy === 'export' ? (progress ?? 'Exporting…') : 'Export notes'}
+        <button type="button" className="button" disabled={spaceId == null} onClick={() => { if (spaceId != null) openExportOptions({ spaceId, spaceName }) }}>
+          {exporting ? 'Show export progress' : 'Export notes…'}
         </button>
       </section>
 
@@ -86,22 +58,11 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
           onChange={e => { const f = e.target.files?.[0]; if (f) void doImport(f) }}
         />
         <button type="button" className="button button-secondary" disabled={!ready || !canWrite} onClick={() => fileInput.current?.click()}>
-          {busy === 'import' ? 'Importing…' : 'Choose a file to import'}
+          {busy ? 'Importing…' : 'Choose a file to import'}
         </button>
       </section>
 
       {report && <p className="settings-ok" role="status">{report}</p>}
-      {failedPictures !== null && (
-        <div className="space-y-2" role="alert">
-          <p className="settings-error">
-            {failedPictures} {failedPictures === 1 ? 'picture' : 'pictures'} could not be downloaded. The server may be unreachable, or the {failedPictures === 1 ? 'file is' : 'files are'} damaged there.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="button" disabled={busy !== null} onClick={() => { void doExport() }}>Try again</button>
-            <button type="button" className="button button-secondary" disabled={busy !== null} onClick={() => { void doExport(true) }}>Export without them</button>
-          </div>
-        </div>
-      )}
       {error && <p className="settings-error" role="alert">{error}</p>}
     </div>
   )
