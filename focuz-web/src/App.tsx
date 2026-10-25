@@ -20,7 +20,7 @@ import AuthScreen, { ReauthDialog } from './components/AuthScreen'
 import { useFolderIndex } from './lib/useFolderIndex'
 import { directOnly, folderKind, type FolderIndex } from './lib/folders'
 import { createFolder, saveFolderRule } from './lib/folder-actions'
-import { hasOpenTasks } from './lib/note-format/render'
+import { isReservedTag, noteHasTag } from './lib/reserved-tags'
 import { getFrozen, mergeFrozen, newEntryKey, setFrozen } from './lib/feed-snapshot'
 import {
   DEFAULT_QUICK, criteriaFromQuick, criteriaFromRule, mergeIntoRule, quickFromCriteria, ruleFromCriteria,
@@ -237,7 +237,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
       result = result.filter(n => (n.parentId ?? null) === null)
     }
     if (filter?.params?.includeTags?.length) {
-      result = result.filter(n => filter!.params!.includeTags!.every(t => n.tags.includes(t)))
+      result = result.filter(n => filter!.params!.includeTags!.every(t => noteHasTag(n, t)))
     }
     // Activities filter: include notes that have ALL selected activity type names
     const quickActivities = featureFlags.quickFiltersActivities ? (((quick as any).activities as string[]) || []) : []
@@ -267,16 +267,15 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
       const includeTags = quickTags.filter(t => !t.startsWith('!'))
       const excludeTags = quickTags.filter(t => t.startsWith('!')).map(t => t.slice(1))
       if (includeTags.length > 0) {
-        result = result.filter(n => (n.tags || []).length > 0 && includeTags.every(t => n.tags.includes(t)))
+        result = result.filter(n => includeTags.every(t => noteHasTag(n, t)))
       }
       if (excludeTags.length > 0) {
-        result = result.filter(n => !excludeTags.some(t => (n.tags || []).includes(t)))
+        result = result.filter(n => !excludeTags.some(t => noteHasTag(n, t)))
       }
     }
     if (filter?.params?.excludeTags?.length) {
-      result = result.filter(n => !filter!.params!.excludeTags!.some(t => n.tags.includes(t)))
+      result = result.filter(n => !filter!.params!.excludeTags!.some(t => noteHasTag(n, t)))
     }
-    if (quick.openTasks) result = result.filter(n => hasOpenTasks(n.text))
 
     const sort = quick.sort || filter?.params?.sort || 'modifiedat,DESC'
     result.sort((a, b) => {
@@ -1089,8 +1088,9 @@ function App() {
     } else {
       const editing = ruleDraft && feedView.kind === 'folder' && ruleDraft.id === feedView.id ? ruleDraft : null
       // Notes created here get the folder's tags (and tags picked in the filter bar).
+      // Reserved tags (open-tasks) are computed from the text, so they are never stored on a note.
       const folderTags = currentRule && folderKind(currentRule) !== 'group' ? currentRule.includeTags : []
-      const newNoteTags = Array.from(new Set([...folderTags, ...criteriaFromQuick(quickFeed).include]))
+      const newNoteTags = Array.from(new Set([...folderTags, ...criteriaFromQuick(quickFeed).include])).filter(t => !isReservedTag(t))
       const feedQuick: QuickState = editing ? { ...DEFAULT_QUICK, sort: quickFeed.sort } : quickFeed
       const emptyText = editing
         ? 'No notes match this rule yet.'
@@ -1213,6 +1213,8 @@ function App() {
         style={{
           paddingTop: 'var(--topbar-effective-h, var(--topbar-h, 96px))',
           transition: 'padding-top 180ms ease',
+          // Keep the scrollbar's room even when a short feed needs no scrolling, so the layout does not shift sideways.
+          scrollbarGutter: 'stable',
         }}
         onScroll={(e) => {
           const el = e.currentTarget

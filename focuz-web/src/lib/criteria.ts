@@ -1,29 +1,33 @@
 // One shape for "what narrows the feed", shared by the filter bar, quick filters and folder rules.
 import type { FolderRule } from './folders'
+import { OPEN_TASKS_TAG, REPLIES_TAG } from './reserved-tags'
 
 export type SortValue = 'modifiedat,DESC' | 'modifiedat,ASC' | 'createdat,DESC' | 'createdat,ASC' | 'date,DESC' | 'date,ASC'
 
 export interface Criteria {
   text: string
+  /** Tags the notes must have. Reserved tags (open tasks, replies, ...) are listed here like any other. */
   include: string[]
+  /** Tags the notes must not have. */
   exclude: string[]
   activities: string[]
-  hideReplies: boolean
-  openTasks: boolean
 }
 
-/** Quick filters as stored per space (kept compatible with older saved values: "!tag" = exclude). */
+/**
+ * Quick filters as stored per space: "!tag" = exclude. The old flags `openTasks` and `noParents`
+ * are read as reserved tags and never written again.
+ */
 export interface QuickState {
   text: string
   tags: string[]
   activities?: string[]
-  noParents: boolean
+  noParents?: boolean
   openTasks?: boolean
   sort: SortValue
 }
 
-export const EMPTY_CRITERIA: Criteria = { text: '', include: [], exclude: [], activities: [], hideReplies: false, openTasks: false }
-export const DEFAULT_QUICK: QuickState = { text: '', tags: [], noParents: false, sort: 'modifiedat,DESC' }
+export const EMPTY_CRITERIA: Criteria = { text: '', include: [], exclude: [], activities: [] }
+export const DEFAULT_QUICK: QuickState = { text: '', tags: [], sort: 'modifiedat,DESC' }
 
 export const SORT_OPTIONS: Array<{ value: SortValue; label: string }> = [
   { value: 'modifiedat,DESC', label: 'Last edited' },
@@ -38,51 +42,53 @@ export function sortLabel(v: string | undefined): string {
   return SORT_OPTIONS.find(o => o.value === v)?.label ?? 'Last edited'
 }
 
+const uniq = (xs: string[]) => [...new Set(xs)]
+
 export function criteriaFromQuick(q: QuickState): Criteria {
   const tags = Array.isArray(q.tags) ? q.tags : []
+  let include = tags.filter(t => !t.startsWith('!'))
+  let exclude = tags.filter(t => t.startsWith('!')).map(t => t.slice(1))
+  if (q.openTasks) include = uniq([...include, OPEN_TASKS_TAG])
+  if (q.noParents) exclude = uniq([...exclude, REPLIES_TAG])
   return {
     text: q.text || '',
-    include: tags.filter(t => !t.startsWith('!')),
-    exclude: tags.filter(t => t.startsWith('!')).map(t => t.slice(1)),
+    include,
+    exclude,
     activities: Array.isArray(q.activities) ? q.activities : [],
-    hideReplies: !!q.noParents,
-    openTasks: !!q.openTasks,
   }
 }
 
 export function quickFromCriteria(c: Criteria, base: QuickState): QuickState {
+  // The old flags are dropped here, so they cannot come back on the next read.
+  const rest: QuickState = { ...base }
+  delete rest.openTasks
   return {
-    ...base,
+    ...rest,
     text: c.text,
     tags: [...c.include, ...c.exclude.map(t => `!${t}`)],
     activities: c.activities,
-    noParents: c.hideReplies,
-    openTasks: c.openTasks,
+    noParents: false,
   }
 }
 
 export function criteriaFromRule(r: FolderRule): Criteria {
-  return { text: r.textContains, include: r.includeTags, exclude: r.excludeTags, activities: r.includeActivities, hideReplies: r.notReply, openTasks: r.hasOpenTasks }
+  return { text: r.textContains, include: r.includeTags, exclude: r.excludeTags, activities: r.includeActivities }
 }
 
 export function ruleFromCriteria(c: Criteria): FolderRule {
-  return { textContains: c.text.trim(), includeTags: c.include, excludeTags: c.exclude, includeActivities: c.activities, notReply: c.hideReplies, hasOpenTasks: c.openTasks }
+  return { textContains: c.text.trim(), includeTags: c.include, excludeTags: c.exclude, includeActivities: c.activities }
 }
 
 export function isEmptyCriteria(c: Criteria): boolean {
-  return !c.text.trim() && !c.include.length && !c.exclude.length && !c.activities.length && !c.hideReplies && !c.openTasks
+  return !c.text.trim() && !c.include.length && !c.exclude.length && !c.activities.length
 }
 
-/** Rule for "Save as folder": the current folder's rule (unless it is a group) narrowed by the criteria. */
+/** Rule for "Save as folder": the current folder's rule narrowed by the criteria. */
 export function mergeIntoRule(base: FolderRule | null, c: Criteria): FolderRule {
-  const uniq = (xs: string[]) => [...new Set(xs)]
-  const b = base
   return {
-    includeTags: uniq([...(b?.includeTags ?? []), ...c.include]),
-    excludeTags: uniq([...(b?.excludeTags ?? []), ...c.exclude]),
-    textContains: c.text.trim() || b?.textContains || '',
-    includeActivities: uniq([...(b?.includeActivities ?? []), ...c.activities]),
-    notReply: !!b?.notReply || c.hideReplies,
-    hasOpenTasks: !!b?.hasOpenTasks || c.openTasks,
+    includeTags: uniq([...(base?.includeTags ?? []), ...c.include]),
+    excludeTags: uniq([...(base?.excludeTags ?? []), ...c.exclude]),
+    textContains: c.text.trim() || base?.textContains || '',
+    includeActivities: uniq([...(base?.includeActivities ?? []), ...c.activities]),
   }
 }

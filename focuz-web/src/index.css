@@ -1082,6 +1082,11 @@ button:disabled { cursor: not-allowed; }
 /* ---------- Folders & filter bar ---------- */
 .filter-bar {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.filter-bar-row {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
@@ -1213,6 +1218,20 @@ button:disabled { cursor: not-allowed; }
   cursor: pointer;
 }
 .filter-pop-check:hover { background: rgba(var(--c-text) / 0.04); }
+/* A picker line: a click adds it as a filter. */
+.filter-pop-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.filter-pop-item:hover { background: rgba(var(--c-text) / 0.05); }
+.filter-pop-item:focus-visible { outline: 2px solid rgb(var(--c-accent)); }
 .filter-pop-check input, .folder-pick input, .folder-choice input { accent-color: rgb(var(--c-accent)); width: 16px; height: 16px; flex: none; }
 
 .folder-head { display: flex; flex-direction: column; gap: 4px; padding: 2px 2px 0; }

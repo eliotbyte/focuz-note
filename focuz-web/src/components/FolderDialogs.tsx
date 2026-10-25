@@ -6,6 +6,7 @@ import { notes as notesRepo } from '../data'
 import { deleteFolder, planFolderDelete, setFolderLook, setNoteInFolder } from '../lib/folder-actions'
 import { descendantIds, folderKind, matchesRule, tagsForFolder, type FolderIndex } from '../lib/folders'
 import { notePreviewText } from '../lib/note-format/render'
+import { REPLIES_TAG } from '../lib/reserved-tags'
 import type { FilterTreeNode } from '../lib/filter-tree'
 import { FolderIcon } from './FolderIcon'
 import { FOLDER_COLORS, FOLDER_ICON_KEYS, lookFromParams, type FolderLook } from '../lib/folder-look'
@@ -150,7 +151,7 @@ export function NoteFoldersDialog({ index, note, onClose }: { index: FolderIndex
             const inFolder = kind === 'group' ? (index!.deep.get(n.id)?.has(live.id!) ?? false) : matchesRule(live, rule)
             // Adding the tags is not enough when the note carries a tag the folder excludes.
             const blockedBy = tags && !inFolder ? rule.excludeTags.find(t => (live.tags || []).includes(t)) : undefined
-            const disabled = !tags || !!blockedBy || (rule.notReply && live.parentId != null)
+            const disabled = !tags || !!blockedBy || (rule.excludeTags.includes(REPLIES_TAG) && live.parentId != null)
             const hint = kind === 'group' ? 'group' : kind === 'smart' ? 'by rule' : blockedBy ? `has #${blockedBy}` : ''
             return (
               <label key={n.id} className={`folder-pick ${disabled ? 'is-disabled' : ''}`} style={{ paddingLeft: 10 + n.depth * 14 }}>

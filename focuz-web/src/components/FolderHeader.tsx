@@ -82,8 +82,6 @@ const CHIP_HINT: Record<RuleChipKind, string> = {
   without: 'Notes with this tag are left out',
   text: 'Notes containing this text',
   activity: 'Notes with this activity',
-  tasks: 'Notes with unticked checklist items',
-  noreply: 'Replies are left out',
 }
 
 /** The rule at a glance: what gets in (green), what stays out (red). Edited with the pencil. */

@@ -3,32 +3,34 @@
 // is only tags behaves like a classic folder: putting a note in it means adding those tags.
 import type { FilterParams, FilterRecord, NoteRecord } from './types'
 import { buildFilterTree, type FilterTreeNode } from './filter-tree'
-import { hasOpenTasks } from './note-format/render'
+import { OPEN_TASKS_TAG, REPLIES_TAG, isReservedTag, noteHasTag, tagLabel } from './reserved-tags'
 
 export type FolderKind = 'folder' | 'smart' | 'group'
 
 export interface FolderRule {
+  /** Tags the notes must have. "open-tasks" is reserved: it means the note has an unticked checklist item. */
   includeTags: string[]
   excludeTags: string[]
   textContains: string
   includeActivities: string[]
-  notReply: boolean
-  hasOpenTasks: boolean
 }
 
-export const EMPTY_RULE: FolderRule = { includeTags: [], excludeTags: [], textContains: '', includeActivities: [], notReply: false, hasOpenTasks: false }
+export const EMPTY_RULE: FolderRule = { includeTags: [], excludeTags: [], textContains: '', includeActivities: [] }
 
 const strList = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length > 0) : []
+
+/** Rules saved before reserved tags existed: the old flags are the same as including or excluding them. */
+function withLegacyTags(list: string[], tag: string, on: boolean | undefined): string[] {
+  return on && !list.includes(tag) ? [...list, tag] : list
+}
 
 export function ruleFromParams(p?: FilterParams | null): FolderRule {
   const params = (p || {}) as FilterParams
   return {
-    includeTags: strList(params.includeTags),
-    excludeTags: strList(params.excludeTags),
+    includeTags: withLegacyTags(strList(params.includeTags), OPEN_TASKS_TAG, params.hasOpenTasks),
+    excludeTags: withLegacyTags(strList(params.excludeTags), REPLIES_TAG, params.notReply),
     textContains: typeof params.textContains === 'string' ? params.textContains.trim() : '',
     includeActivities: strList(params.includeActivities),
-    notReply: !!params.notReply,
-    hasOpenTasks: !!params.hasOpenTasks,
   }
 }
 
@@ -39,26 +41,28 @@ export function ruleToParams(rule: FolderRule, base?: FilterParams | null): Filt
   out.excludeTags = [...rule.excludeTags]
   out.textContains = rule.textContains.trim() || undefined
   out.includeActivities = rule.includeActivities.length ? [...rule.includeActivities] : undefined
-  out.notReply = rule.notReply || undefined
-  out.hasOpenTasks = rule.hasOpenTasks || undefined
+  // Old flags are dropped: the reserved tags above carry them now.
+  out.notReply = undefined
+  out.hasOpenTasks = undefined
   for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k]
   return out
 }
 
 export function hasOwnRule(r: FolderRule): boolean {
-  return r.includeTags.length > 0 || r.excludeTags.length > 0 || !!r.textContains || r.includeActivities.length > 0 || r.notReply || r.hasOpenTasks
+  return r.includeTags.length > 0 || r.excludeTags.length > 0 || !!r.textContains || r.includeActivities.length > 0
 }
 
 export function folderKind(r: FolderRule): FolderKind {
   if (!hasOwnRule(r)) return 'group'
-  if (r.includeTags.length > 0 && !r.textContains && r.includeActivities.length === 0 && !r.hasOpenTasks) return 'folder'
+  // A classic folder is only tags: putting a note in it adds those tags. Reserved tags cannot be added.
+  if (r.includeTags.length > 0 && !r.textContains && r.includeActivities.length === 0 && !r.includeTags.some(isReservedTag)) return 'folder'
   return 'smart'
 }
 
 export function sameRule(a: FolderRule, b: FolderRule): boolean {
   const eq = (x: string[], y: string[]) => x.length === y.length && x.every(v => y.includes(v))
   return eq(a.includeTags, b.includeTags) && eq(a.excludeTags, b.excludeTags) && a.textContains === b.textContains
-    && eq(a.includeActivities, b.includeActivities) && a.notReply === b.notReply && a.hasOpenTasks === b.hasOpenTasks
+    && eq(a.includeActivities, b.includeActivities)
 }
 
 /** Activity type names per note; only needed when a rule filters by activities. */
@@ -66,12 +70,9 @@ export type ActivityLookup = (noteId: number) => Set<string> | undefined
 
 export function matchesRule(note: NoteRecord, r: FolderRule, activities?: ActivityLookup): boolean {
   if (!hasOwnRule(r)) return false
-  const tags = note.tags || []
-  if (!r.includeTags.every(t => tags.includes(t))) return false
-  if (r.excludeTags.some(t => tags.includes(t))) return false
-  if (r.notReply && note.parentId != null) return false
+  if (!r.includeTags.every(t => noteHasTag(note, t))) return false
+  if (r.excludeTags.some(t => noteHasTag(note, t))) return false
   if (r.textContains && !(note.text || '').toLowerCase().includes(r.textContains.toLowerCase())) return false
-  if (r.hasOpenTasks && !hasOpenTasks(note.text || '')) return false
   if (r.includeActivities.length) {
     const names = note.id != null ? activities?.(note.id) : undefined
     if (!names || !r.includeActivities.every(a => names.has(a))) return false
@@ -95,28 +96,24 @@ export function slugTag(name: string): string {
 
 export function describeRule(r: FolderRule): string {
   if (!hasOwnRule(r)) return 'Shows the notes of its subfolders'
-  const tagList = (ts: string[], joiner: string) => ts.map(t => `#${t}`).join(joiner)
+  const tagList = (ts: string[], joiner: string) => ts.map(tagLabel).join(joiner)
   const parts: string[] = []
   if (r.includeTags.length) parts.push(`tagged ${tagList(r.includeTags, ' and ')}`)
   if (r.excludeTags.length) parts.push(`without ${tagList(r.excludeTags, ', ')}`)
   if (r.textContains) parts.push(`containing “${r.textContains}”`)
   if (r.includeActivities.length) parts.push(`with ${r.includeActivities.join(', ')}`)
-  if (r.hasOpenTasks) parts.push('with open tasks')
-  if (r.notReply) parts.push('not replies')
   return `Notes ${parts.join(', ')}`
 }
 
-export type RuleChipKind = 'tag' | 'without' | 'text' | 'activity' | 'tasks' | 'noreply'
+export type RuleChipKind = 'tag' | 'without' | 'text' | 'activity'
 
 /** The rule as short chips for the folder header, in the same order as describeRule. */
 export function ruleChips(r: FolderRule): { kind: RuleChipKind; label: string }[] {
   return [
-    ...r.includeTags.map(t => ({ kind: 'tag' as const, label: `#${t}` })),
-    ...r.excludeTags.map(t => ({ kind: 'without' as const, label: `#${t}` })),
+    ...r.includeTags.map(t => ({ kind: 'tag' as const, label: tagLabel(t) })),
+    ...r.excludeTags.map(t => ({ kind: 'without' as const, label: tagLabel(t) })),
     ...(r.textContains ? [{ kind: 'text' as const, label: `“${r.textContains}”` }] : []),
     ...r.includeActivities.map(a => ({ kind: 'activity' as const, label: a })),
-    ...(r.hasOpenTasks ? [{ kind: 'tasks' as const, label: 'Open tasks' }] : []),
-    ...(r.notReply ? [{ kind: 'noreply' as const, label: 'No replies' }] : []),
   ]
 }
 

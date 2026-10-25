@@ -64,17 +64,25 @@ export function toggleTask(text: string, taskIndex: number): string {
   return text
 }
 
-/** True when the note has at least one unticked checklist item (outside fenced code). */
-export function hasOpenTasks(text: string): boolean {
-  if (!text || !text.includes('[ ]')) return false
+/** Checklist items of a note (outside fenced code): how many are unticked and how many are ticked. */
+export function checklistCounts(text: string): { open: number; done: number } {
+  const counts = { open: 0, done: 0 }
+  if (!text || !text.includes('[')) return counts
   let inFence = false
   for (const line of text.split('\n')) {
     if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue }
     if (inFence) continue
     const m = TASK_RE.exec(line)
-    if (m && m[2] === ' ') return true
+    if (!m) continue
+    if (m[2] === ' ') counts.open++
+    else counts.done++
   }
-  return false
+  return counts
+}
+
+/** True when the note has at least one unticked checklist item. */
+export function hasOpenTasks(text: string): boolean {
+  return checklistCounts(text).open > 0
 }
 
 /** Short plain-text preview (for reply pills etc.). */

@@ -57,6 +57,7 @@ describe('folder rules', () => {
     expect(folderKind(ruleFromParams({ includeTags: ['a'], excludeTags: ['b'] }))).toBe('folder')
     expect(folderKind(ruleFromParams({ includeTags: ['a'], textContains: 'x' }))).toBe('smart')
     expect(folderKind(ruleFromParams({ hasOpenTasks: true }))).toBe('smart')
+    expect(ruleFromParams({ notReply: true }).excludeTags).toEqual(['replies'])
     expect(folderKind(ruleFromParams({ includeTags: [] }))).toBe('group')
     expect(tagsForFolder(ruleFromParams({ includeTags: ['a', 'b'] }))).toEqual(['a', 'b'])
     expect(tagsForFolder(ruleFromParams({ includeTags: ['a'], textContains: 'x' }))).toBeNull()
@@ -69,13 +70,13 @@ describe('folder rules', () => {
 
   it('lists the rule as header chips', () => {
     const r = ruleFromParams({ includeTags: ['work', 'q3'], excludeTags: ['archive'] })
-    expect(ruleChips({ ...r, textContains: 'invoice', hasOpenTasks: true, notReply: true })).toEqual([
+    expect(ruleChips({ ...r, includeTags: [...r.includeTags, 'open-tasks'], textContains: 'invoice', excludeTags: ['archive', 'replies'] })).toEqual([
       { kind: 'tag', label: '#work' },
       { kind: 'tag', label: '#q3' },
+      { kind: 'tag', label: 'open tasks' },
       { kind: 'without', label: '#archive' },
+      { kind: 'without', label: 'replies' },
       { kind: 'text', label: '“invoice”' },
-      { kind: 'tasks', label: 'Open tasks' },
-      { kind: 'noreply', label: 'No replies' },
     ])
     expect(ruleChips(EMPTY_RULE)).toEqual([])
   })
