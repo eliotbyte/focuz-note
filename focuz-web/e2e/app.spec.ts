@@ -396,7 +396,7 @@ test.describe('folders', () => {
     await shot(page, '24-new-folder')
     await page.getByLabel('New folder name').press('Enter')
     await expect(page.getByRole('heading', { name: 'Ремонт кухни' })).toBeVisible()
-    await expect(page.getByText('Notes tagged #ремонт-кухни')).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Notes tagged #ремонт-кухни', exact: true })).toBeVisible()
     await expect(page.getByText('No notes here yet.')).toBeVisible()
 
     // A note written inside gets the folder's tag.
@@ -429,6 +429,10 @@ test.describe('folders', () => {
     await dialog.getByRole('checkbox', { name: /^Дом/ }).check()
     await shot(page, '25-note-folders')
     await dialog.getByRole('button', { name: 'Done' }).click()
+    // The open list keeps the note in its place (a frozen feed); opened again, Unsorted leaves it out.
+    await expect(card).toBeVisible()
+    await page.getByRole('button', { name: 'All notes' }).click()
+    await page.getByRole('button', { name: 'Unsorted' }).click()
     await expect(card).toHaveCount(0)
     await expect(page.getByText('Everything is in a folder.')).toBeVisible()
     await expect.poll(async () => (await serverNote(s.token, 'Позвонить в сервис'))?.tags ?? [], { timeout: 20000 }).toEqual(['home'])
@@ -452,27 +456,28 @@ test.describe('folders', () => {
     // Search + exclude a tag, then save it as a folder inside Работа.
     await page.getByRole('textbox', { name: 'Search', exact: true }).fill('backoff')
     await page.getByRole('button', { name: 'Add filter' }).click()
-    await page.getByRole('button', { name: 'Hide notes tagged sync' }).click()
+    await page.getByRole('button', { name: 'Add filter #sync' }).click()
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Remove filter not #sync' })).toBeVisible()
+    await page.getByRole('button', { name: /^#sync, required/ }).click()
+    await expect(page.getByRole('button', { name: 'Remove filter #sync (excluded)' })).toBeVisible()
     await expect(page.locator('li', { hasText: 'Ответ: backoff' })).toBeVisible()
     await expect(page.locator('li', { hasText: 'Ревью архитектуры' }).filter({ hasNotText: 'Ответ' })).toHaveCount(0)
     await page.getByRole('button', { name: 'Save as folder' }).click()
     await page.getByLabel(/New folder inside/).fill('Backoff')
     await page.getByLabel(/New folder inside/).press('Enter')
     await expect(page.getByRole('heading', { name: 'Backoff' })).toBeVisible()
-    await expect(page.getByText('Notes tagged #work, without #sync, containing “backoff”')).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Notes tagged #work, without #sync, containing “backoff”', exact: true })).toBeVisible()
     await expect(page.locator('li', { hasText: 'Ответ: backoff' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Remove filter not #sync' })).toHaveCount(0) // filters were saved into the folder
+    await expect(page.getByRole('button', { name: 'Remove filter #sync (excluded)' })).toHaveCount(0) // filters were saved into the folder
     await shot(page, '26-smart-folder')
 
     // Edit the rule: drop the exclusion, the list previews the change, Save keeps it.
     await page.getByRole('button', { name: 'Edit rule' }).click()
     await expect(page.getByRole('region', { name: 'Editing folder rule' })).toBeVisible()
-    await page.getByRole('button', { name: 'Remove filter not #sync' }).click()
+    await page.getByRole('button', { name: 'Remove filter #sync (excluded)' }).click()
     await expect(page.locator('li', { hasText: 'Ревью архитектуры' }).filter({ hasNotText: 'Ответ' })).toBeVisible()
     await page.getByRole('button', { name: 'Save rule' }).click()
-    await expect(page.getByText('Notes tagged #work, containing “backoff”')).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Notes tagged #work, containing “backoff”', exact: true })).toBeVisible()
     await expect.poll(async () => (await serverFilters(s.token)).find((f: any) => f.name === 'Backoff')?.params?.excludeTags ?? null, { timeout: 20000 }).toEqual([])
 
     // Delete Работа but keep its subfolders: they move up, notes stay.
@@ -503,7 +508,7 @@ test.describe('folders', () => {
     await expect(page.locator('li', { hasText: 'Купить: молоко' })).toBeVisible()
     await expect(page.locator('li', { hasText: 'Тренировка' })).toHaveCount(0)
     await page.getByRole('button', { name: 'Add filter' }).click()
-    await page.getByRole('button', { name: 'Only notes tagged shopping' }).click()
+    await page.getByRole('button', { name: 'Add filter #shopping' }).click()
     await page.keyboard.press('Escape')
     await expect(page.locator('li', { hasText: 'Список подарков' })).toHaveCount(0)
     await shot(page, '28-mobile-folder')
