@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { noteExtensions, normalizeEditorMarkdown } from './extensions'
-import { notePreviewText, renderNoteHtml, toggleTask } from './render'
+import { noteLabel, notePreviewText, renderNoteHtml, toggleTask } from './render'
 
 describe('note rendering', () => {
   it('keeps plain-text notes looking like before (line breaks, no markup)', () => {
@@ -30,6 +30,12 @@ describe('note rendering', () => {
     expect(toggleTask(src, 2)).toContain('* [x] c')
     expect(toggleTask(src, 2)).toContain('```\n- [ ] not a task\n```')
     expect(toggleTask(src, 9)).toBe(src)
+  })
+
+  it('names a note that is only pictures', () => {
+    expect(noteLabel('')).toBe('Picture')
+    expect(noteLabel('  ')).toBe('Picture')
+    expect(noteLabel('Hi')).toBe('Hi')
   })
 
   it('makes a readable preview', () => {

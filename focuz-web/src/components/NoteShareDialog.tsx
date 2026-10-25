@@ -10,7 +10,7 @@ import { useSpaceView } from '../lib/space-context'
 import { publicUrl, useNotePublicState } from '../lib/useSpaces'
 import { errorText, setShareReplies, shareNote, unshare } from '../lib/spaces-api'
 import { defaultServer, getServer } from '../lib/server'
-import { notePreviewText } from '../lib/note-format/render'
+import { noteLabel } from '../lib/note-format/render'
 import { notify } from '../ui/notify'
 import { CopyField } from './spaces/SpaceSettingsDialog'
 
@@ -62,7 +62,7 @@ export default function NoteShareDialog({ note, onClose, onOpenNote }: { note: N
       <>
         <div className="share-status is-public"><PublicRoundedIcon fontSize="inherit" /> Public as a reply to a shared note:</div>
         <button type="button" className="share-root" onClick={() => { if (root?.id && onOpenNote) { onOpenNote(root.id); onClose() } }}>
-          {root ? notePreviewText(root.text).slice(0, 120) : 'Shared note'}
+          {root ? noteLabel(root.text).slice(0, 120) : 'Shared note'}
         </button>
         <CopyField value={publicUrl(s.token, server, defaultServer())} label="Public link" />
         {can ? (
@@ -100,7 +100,7 @@ export default function NoteShareDialog({ note, onClose, onOpenNote }: { note: N
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="p-5 space-y-4">
         <DialogTitle>Share note</DialogTitle>
-        <DialogDescription className="text-sm truncate">{notePreviewText(note.text).slice(0, 120)}</DialogDescription>
+        <DialogDescription className="text-sm truncate">{noteLabel(note.text).slice(0, 120)}</DialogDescription>
         {body}
       </DialogContent>
     </Dialog>

@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dial
 import { notes as notesRepo } from '../data'
 import { deleteFolder, planFolderDelete, setFolderLook, setNoteInFolder } from '../lib/folder-actions'
 import { descendantIds, folderKind, matchesRule, tagsForFolder, type FolderIndex } from '../lib/folders'
-import { notePreviewText } from '../lib/note-format/render'
+import { noteLabel } from '../lib/note-format/render'
 import { REPLIES_TAG } from '../lib/reserved-tags'
 import type { FilterTreeNode } from '../lib/filter-tree'
 import { FolderIcon } from './FolderIcon'
@@ -113,7 +113,7 @@ export function DeleteFolderDialog({ index, folderId, onClose, onDeleted }: {
               : 'Also delete notes that would be in no folder'}
             <small>
               {canDeleteNotes
-                ? orphanNotes.map(n => `“${notePreviewText(n.text).slice(0, 32)}”`).join(', ') + (plan.orphans.length > 3 ? ` and ${plan.orphans.length - 3} more` : '')
+                ? orphanNotes.map(n => `“${noteLabel(n.text).slice(0, 32)}”`).join(', ') + (plan.orphans.length > 3 ? ` and ${plan.orphans.length - 3} more` : '')
                 : 'There are none: every note here is also in another folder.'}
             </small>
           </span>

@@ -4,7 +4,7 @@ import type { NoteRecord } from '../lib/types'
 import { activities as activitiesRepo, notes as notesRepo } from '../data'
 // import HighlightedText from './HighlightedText'
 import NoteBody from './NoteBody'
-import { notePreviewText } from '../lib/note-format/render'
+import { noteLabel } from '../lib/note-format/render'
 import NoteImages from './NoteImages'
 import { formatExactDateTime, formatRelativeShort, formatDurationShort, parseDurationToMs } from '../lib/time'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
@@ -107,9 +107,9 @@ export default function NoteCard({
             <Pill
               className="w-full justify-start overflow-hidden text-left pill-reply-preview"
               onClick={() => onOpenThread && onOpenThread(parentNote.id!)}
-              title={notePreviewText(parentNote.text)}
+              title={noteLabel(parentNote.text)}
             >
-              <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{notePreviewText(parentNote.text)}</span>
+              <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{noteLabel(parentNote.text)}</span>
             </Pill>
           </div>
         )}

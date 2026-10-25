@@ -147,7 +147,7 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
   }
 
   async function addNoteWithAttachments(extra: { attachments?: File[] }) {
-    if (!canAdd) return
+    if (!canAdd && !extra.attachments?.length) return
     const now = new Date().toISOString()
     const mergedTags = Array.from(new Set([...(value.tags || []), ...positiveQuickTags]))
     const noteId = await notesRepo.addDraft({
@@ -464,7 +464,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
                 onChange={setReplyValue}
                 onSubmit={() => addInlineReply(n, replyValue)}
                 onSubmitWithExtra={async (extra) => {
-                  const canAdd = replyValue.text.trim().length > 0
+                  const canAdd = replyValue.text.trim().length > 0 || !!extra.attachments?.length
                   if (!canAdd) return
                   const now = new Date().toISOString()
                   const positiveQuickTags = ((quick as any).tags || []).filter((t: string) => !t.startsWith('!')) as string[]
@@ -1333,7 +1333,7 @@ function ReplyComposer({ spaceId, parentId, positiveQuickTags = [] }: { spaceId:
     setValue({ text: '', tags: [] })
   }
   async function addReplyWithAttachments(extra: { attachments?: File[] }) {
-    if (!canAdd) return
+    if (!canAdd && !extra.attachments?.length) return
     const now = new Date().toISOString()
     const mergedTags = Array.from(new Set([...(value.tags || []), ...positiveQuickTags]))
     const noteId = await notesRepo.addDraft({

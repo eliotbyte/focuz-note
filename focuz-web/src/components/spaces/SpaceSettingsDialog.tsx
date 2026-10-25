@@ -17,7 +17,7 @@ import {
 } from '../../lib/spaces-api'
 import { notify } from '../../ui/notify'
 import { defaultServer, getServer } from '../../lib/server'
-import { notePreviewText } from '../../lib/note-format/render'
+import { noteLabel } from '../../lib/note-format/render'
 
 export type SpaceSettingsTab = 'general' | 'members' | 'public'
 
@@ -310,7 +310,7 @@ function PublicTab({ space, role }: { space: SpaceRecord; role: SpaceRole }) {
             return (
               <li key={s.token} className="member-row">
                 <PublicRoundedIcon fontSize="inherit" className="icon-sm text-[rgb(var(--c-accent))] shrink-0" />
-                <span className="flex-1 min-w-0 truncate">{n ? notePreviewText(n.text).slice(0, 80) : 'Note'}</span>
+                <span className="flex-1 min-w-0 truncate">{n ? noteLabel(n.text).slice(0, 80) : 'Note'}</span>
                 <span className="text-xs text-secondary shrink-0">{s.includeReplies ? 'with replies' : 'note only'}</span>
                 <a className="filter-btn filter-btn-ghost !h-7" href={publicUrl(s.token, server, defaultServer())} target="_blank" rel="noreferrer">Open</a>
               </li>

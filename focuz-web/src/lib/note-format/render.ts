@@ -86,6 +86,11 @@ export function hasOpenTasks(text: string): boolean {
 }
 
 /** Short plain-text preview (for reply pills etc.). */
+/** A one-line name for a note: its text, or "Picture" for a note that is only pictures. */
+export function noteLabel(text: string): string {
+  return notePreviewText(text) || 'Picture'
+}
+
 export function notePreviewText(text: string): string {
   return (text ?? '')
     .replace(/^\s*```[\s\S]*?```/gm, '')

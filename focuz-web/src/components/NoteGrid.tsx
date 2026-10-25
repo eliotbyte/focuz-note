@@ -9,7 +9,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import type { AttachmentRecord, NoteRecord } from '../lib/types'
 import { activities as activitiesRepo, attachments as attachmentsRepo, notes as notesRepo } from '../data'
-import { notePreviewText, renderNoteHtml } from '../lib/note-format/render'
+import { noteLabel, renderNoteHtml } from '../lib/note-format/render'
 import { formatRelativeShort } from '../lib/time'
 import { colsOptions, fitCols, TILE_GAP, type FeedLayout } from '../lib/feed-layout'
 import { useSpaceView } from '../lib/space-context'
@@ -207,7 +207,7 @@ function NoteTile({
       className={['note-tile', hasMedia ? 'has-media' : '', mediaOnly ? 'is-media-only' : ''].join(' ')}
       role="button"
       tabIndex={0}
-      aria-label={notePreviewText(note.text) || 'Open note'}
+      aria-label={noteLabel(note.text)}
       onClick={onOpen}
       // Right click, or a long press on a phone, opens the same menu as ⋮.
       onContextMenu={e => { e.preventDefault(); setMenuOpen(true) }}
@@ -218,9 +218,9 @@ function NoteTile({
       {!mediaOnly && (
         <div className="tile-body">
           {parentShown && (
-            <div className="tile-parent" title={notePreviewText(parentNote!.text)}>
+            <div className="tile-parent" title={noteLabel(parentNote!.text)}>
               <SubdirectoryArrowRightRoundedIcon fontSize="inherit" aria-hidden />
-              <span className="truncate">{notePreviewText(parentNote!.text)}</span>
+              <span className="truncate">{noteLabel(parentNote!.text)}</span>
             </div>
           )}
           {text

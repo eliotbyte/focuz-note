@@ -82,7 +82,11 @@ export default function NoteEditor({
   }, [noteId, mode]) ?? NO_ATTACHMENTS) as AttachmentRecord[]
   const existingUploads = useUploadStates(existingAttachments)
 
-  const canSubmit = useMemo(() => value.text.trim().length > 0, [value.text])
+  // A note needs text or at least one picture (one being added, or one it already has).
+  const canSubmit = useMemo(
+    () => value.text.trim().length > 0 || attachments.length > 0 || (mode === 'edit' && existingAttachments.length > 0),
+    [value.text, attachments.length, mode, existingAttachments.length],
+  )
   // The day the note is about. Clearing the field is ignored: a note always has a day.
   const dateInput = mode === 'reply' ? null : (
     <label className="flex items-center gap-2 text-xs text-secondary">
