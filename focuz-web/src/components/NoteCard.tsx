@@ -122,7 +122,7 @@ export default function NoteCard({
         <NoteBody className="text-primary" noteId={note.id} text={note.text} readOnly={!mayEdit} />
 
         {/* Documents */}
-        <NoteFiles noteId={note.id!} />
+        <NoteFiles noteId={note.id!} mayEdit={mayEdit} />
 
         {/* Activities (pills) */}
         {activities.length > 0 && (

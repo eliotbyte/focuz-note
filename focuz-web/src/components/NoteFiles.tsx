@@ -8,6 +8,8 @@ import ArticleRoundedIcon from '@mui/icons-material/ArticleRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import { replaceLocalAttachment } from '../lib/sync'
 import type { AttachmentRecord } from '../lib/types'
 import { attachments as attachmentsRepo } from '../data'
 import { useUploadStates } from '../lib/useUploadStates'
@@ -32,8 +34,11 @@ export function DocumentIcon({ kind }: { kind: DocumentKind }) {
   return <Icon fontSize="inherit" aria-hidden />
 }
 
-/** The documents of a note under its text: one droplet per file. Pictures are NoteImages' job. */
-export default function NoteFiles({ noteId }: { noteId: number }) {
+/**
+ * The documents of a note under its text: one droplet per file. Pictures are NoteImages' job.
+ * mayEdit: text files (Markdown, text, CSV) can be edited in their preview.
+ */
+export default function NoteFiles({ noteId, mayEdit = false }: { noteId: number; mayEdit?: boolean }) {
   const all = (useLiveQuery(() => attachmentsRepo.listDisplayForNote(noteId), [noteId]) ?? NONE) as AttachmentRecord[]
   const files = useMemo(() => all.filter(a => !isPicture(a)), [all])
   const uploads = useUploadStates(files)
@@ -50,7 +55,7 @@ export default function NoteFiles({ noteId }: { noteId: number }) {
           </li>
         ))}
       </ul>
-      {preview && <DocumentPreviewDialog att={preview} onClose={() => setPreview(null)} />}
+      {preview && <DocumentPreviewDialog att={preview} mayEdit={mayEdit} onClose={() => setPreview(null)} />}
     </>
   )
 }
@@ -125,10 +130,13 @@ function downloadError(e: unknown): string {
  * Reads a document inside the app: text, Markdown (through the note renderer, no HTML) and CSV here;
  * PDF (pdf.js, pages drawn on canvas) and Word (mammoth, cleaned HTML) in DocumentViewers.
  */
-function DocumentPreviewDialog({ att, onClose }: { att: AttachmentRecord; onClose: () => void }) {
+function DocumentPreviewDialog({ att, mayEdit, onClose }: { att: AttachmentRecord; mayEdit: boolean; onClose: () => void }) {
   const [blob, setBlob] = useState<Blob | null>(null)
   const [text, setText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The text being edited; null while reading.
+  const [draft, setDraft] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const kind = previewKind(att)
   const textual = kind === 'text' || kind === 'markdown' || kind === 'csv'
   useEffect(() => {
@@ -145,12 +153,38 @@ function DocumentPreviewDialog({ att, onClose }: { att: AttachmentRecord; onClos
   const html = useMemo(() => (kind === 'markdown' && text != null ? renderNoteHtml(text) : ''), [kind, text])
   const rows = useMemo(() => (kind === 'csv' && text != null ? parseCsv(text) : null), [kind, text])
   const loading = <p className="text-secondary">Loading…</p>
+  const editable = mayEdit && textual && text != null && att.id != null
+  const changed = draft != null && draft !== text
+
+  async function save() {
+    if (draft == null || att.id == null) return
+    setSaving(true)
+    try {
+      await replaceLocalAttachment(att.id, new Blob([draft], { type: att.fileType || 'text/plain' }))
+      notify(`${att.fileName} saved`, 'success')
+      onClose()
+    } catch {
+      notify('Could not save the file', 'error')
+      setSaving(false)
+    }
+  }
 
   return (
-    <Dialog open onOpenChange={o => { if (!o) onClose() }}>
+    // Unsaved edits are not dropped by Esc or a click outside: Cancel or Save.
+    <Dialog open onOpenChange={o => { if (!o && !changed) onClose() }}>
       <DialogContent className="p-5 space-y-4 w-[min(92vw,45rem)]">
         <DialogTitle className="truncate pr-8">{att.fileName}</DialogTitle>
         <DialogDescription className="sr-only">Contents of the file</DialogDescription>
+        {draft != null ? (
+          <textarea
+            className="input doc-edit"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            spellCheck={kind !== 'csv'}
+            aria-label={`Text of ${att.fileName}`}
+            autoFocus
+          />
+        ) : (
         <div className={`doc-preview-body ${kind === 'pdf' ? 'is-pdf' : ''}`}>
           {error ? <p className="settings-error" role="alert">{error}</p>
             : !blob ? loading
@@ -160,8 +194,20 @@ function DocumentPreviewDialog({ att, onClose }: { att: AttachmentRecord; onClos
                     : rows ? <CsvTable rows={rows} />
                       : <pre className="doc-preview-text">{text}</pre>}
         </div>
+        )}
+        {draft != null ? (
+          <div className="flex justify-end gap-2">
+            <button type="button" className="button button-secondary" onClick={() => setDraft(null)} disabled={saving}>Cancel</button>
+            <button type="button" className="button" onClick={() => void save()} disabled={!changed || saving}>Save</button>
+          </div>
+        ) : (
         <div className="flex justify-end gap-2">
           <button type="button" className="button button-secondary" onClick={onClose}>Close</button>
+          {editable && (
+            <button type="button" className="button button-secondary" onClick={() => setDraft(text)}>
+              <EditRoundedIcon fontSize="inherit" aria-hidden /> Edit
+            </button>
+          )}
           <button
             type="button"
             className="button"
@@ -171,6 +217,7 @@ function DocumentPreviewDialog({ att, onClose }: { att: AttachmentRecord; onClos
             <FileDownloadRoundedIcon fontSize="inherit" aria-hidden /> Download
           </button>
         </div>
+        )}
       </DialogContent>
     </Dialog>
   )

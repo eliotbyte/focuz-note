@@ -1197,6 +1197,50 @@ button:disabled { cursor: not-allowed; }
   overflow-x: auto;
 }
 .note-prose pre code { padding: 0; background: none; font-size: 0.86em; }
+
+/* Code blocks with a language: the name sits in the top-right corner (a list while editing), and
+   highlight.js classes take the syntax colours. Like folder colours, they are content, not accent. */
+.note-code { position: relative; }
+.note-code[data-lang] { padding-top: 26px; }
+.note-code[data-lang]::before {
+  content: attr(data-lang); position: absolute; top: 6px; right: 12px;
+  font-family: var(--font-sans, inherit); font-size: var(--fs-caption); color: var(--text-muted);
+}
+.note-code.is-editing { padding-top: 30px; }
+.code-lang {
+  position: absolute; top: 4px; right: 6px; max-width: 45%;
+  height: 22px; padding: 0 6px; border-radius: var(--r-sm);
+  font-family: inherit; font-size: var(--fs-caption); color: var(--text-muted);
+  background: transparent; cursor: pointer;
+}
+@media (hover: hover) { .code-lang:hover { color: var(--text-primary); background: rgba(var(--c-text) / 0.08); } }
+:root {
+  --code-keyword: 207 34 46;
+  --code-string: 10 48 105;
+  --code-number: 5 80 174;
+  --code-comment: 110 119 129;
+  --code-title: 130 80 223;
+  --code-type: 149 56 0;
+  --code-attr: 17 99 41;
+}
+[data-theme='dark'] {
+  --code-keyword: 255 123 114;
+  --code-string: 165 214 255;
+  --code-number: 121 192 255;
+  --code-comment: 139 148 158;
+  --code-title: 210 168 255;
+  --code-type: 255 166 87;
+  --code-attr: 126 231 135;
+}
+.hljs-keyword, .hljs-selector-tag, .hljs-meta .hljs-keyword, .hljs-doctag, .hljs-template-tag { color: rgb(var(--code-keyword)); }
+.hljs-string, .hljs-regexp, .hljs-meta .hljs-string, .hljs-char.escape_ { color: rgb(var(--code-string)); }
+.hljs-number, .hljs-literal, .hljs-built_in, .hljs-symbol, .hljs-variable.language_, .hljs-operator { color: rgb(var(--code-number)); }
+.hljs-comment, .hljs-quote, .hljs-meta { color: rgb(var(--code-comment)); font-style: italic; }
+.hljs-title, .hljs-title.function_, .hljs-section { color: rgb(var(--code-title)); }
+.hljs-type, .hljs-title.class_, .hljs-title.class_.inherited__, .hljs-params .hljs-type { color: rgb(var(--code-type)); }
+.hljs-attr, .hljs-attribute, .hljs-name, .hljs-tag, .hljs-property, .hljs-selector-class, .hljs-selector-id, .hljs-variable { color: rgb(var(--code-attr)); }
+.hljs-addition { color: rgb(var(--code-attr)); }
+.hljs-deletion { color: rgb(var(--code-keyword)); }
 .note-prose hr { border: 0; border-top: 1px solid var(--line-strong); margin: 0.9em 0; }
 .note-prose a { color: rgb(var(--c-accent-ink)); text-decoration: underline; text-underline-offset: 2px; }
 .note-prose strong { font-weight: 700; }
@@ -2432,6 +2476,8 @@ button:disabled { cursor: not-allowed; }
 .docx-view img { max-width: 100%; height: auto; }
 .docx-view table { border-collapse: collapse; margin: 0.5em 0; }
 .docx-view th, .docx-view td { padding: 4px 8px; border: 1px solid rgba(var(--c-text) / 0.15); vertical-align: top; }
+/* Editing a text file: the whole text in one well, in mono, as tall as the preview. */
+.doc-edit { display: block; width: 100%; height: min(60vh, 560px); padding: var(--space-3); resize: vertical; font-family: var(--font-mono); font-size: var(--fs-small); line-height: 1.5; tab-size: 4; white-space: pre; overflow: auto; }
 /* A preview is read-only: task boxes in Markdown files can't be ticked. */
 .doc-preview-body input[type='checkbox'] { pointer-events: none; }
 .doc-preview-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--fs-small); }

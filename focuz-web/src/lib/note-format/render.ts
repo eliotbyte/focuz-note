@@ -1,8 +1,20 @@
 // Renders a note (Markdown, or legacy plain text) to HTML for the feed.
 // Raw HTML in notes is disabled, so note text can never inject markup or scripts.
 import MarkdownIt from 'markdown-it'
+import { highlightCode, languageLabel, normalizeLanguage } from '../code-languages'
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true, typographer: false })
+
+// Fenced code: coloured by its language (highlight.js escapes the text) and labelled with it.
+md.renderer.rules.fence = (tokens, idx) => {
+  const token = tokens[idx]
+  const name = token.info.trim().split(/\s+/)[0] ?? ''
+  const id = normalizeLanguage(name)
+  const html = highlightCode(token.content, id) ?? md.utils.escapeHtml(token.content)
+  const label = name ? ` data-lang="${md.utils.escapeHtml(languageLabel(name))}"` : ''
+  const cls = id ? ` class="hljs language-${id}"` : ''
+  return `<pre class="note-code"${label}><code${cls}>${html}</code></pre>\n`
+}
 
 // Links open in a new tab and never leak the app URL.
 const defaultLinkOpen = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))

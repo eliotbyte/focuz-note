@@ -3,7 +3,7 @@
 Frontend for **focuz-note** (local-first notes).
 
 **Status**: alpha  
-**Version**: 0.1.13
+**Version**: 0.1.14
 
 ## Environment
 
@@ -56,5 +56,11 @@ E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8080 npm run test
   Text, Markdown and CSV up to 1 MB, PDF (pdf.js, pages on canvas) and .docx (mammoth, then DOMPurify)
   can be read in the app; everything else is saved as a file. pdf.js and mammoth load only when such a
   file is opened; nginx serves the pdf.js worker (`.mjs`) as JavaScript.
+- Text, Markdown and CSV files can be edited in their preview (by anyone who may edit the note).
+  Saving uploads a new version in the same place and deletes the old one, so it works offline.
+- Code blocks keep their language in the Markdown (```` ```csharp ````) and are highlighted with
+  highlight.js (the grammars in `src/lib/code-languages.ts`; lowlight in the editors). Code pasted
+  from VS Code keeps its language; code of 20+ lines pasted from a code editor or into a code block
+  becomes an attached `Code (<language>).md`, with "Keep in text" in the toast.
 - Conflicts (a note changed on two devices) keep the server version and save the local text as a
   separate note tagged `conflict`.

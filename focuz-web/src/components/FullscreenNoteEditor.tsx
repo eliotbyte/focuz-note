@@ -3,7 +3,9 @@ import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/r
 import { BubbleMenu } from '@tiptap/react/menus'
 import { TextSelection } from '@tiptap/pm/state'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { codeBlockView } from './CodeBlockView'
 import { noteExtensions, normalizeEditorMarkdown } from '../lib/note-format/extensions'
+import type { LargeCode } from '../lib/note-format/code-paste'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent,
   DropdownMenuSubTrigger, DropdownMenuTrigger,
@@ -157,6 +159,8 @@ export interface FullscreenNoteEditorProps {
   imagesDisabled?: boolean
   onPickFile?: () => void
   filesDisabled?: boolean
+  /** Long pasted code; without it, it is pasted as a code block. */
+  onLargeCode?: (c: LargeCode) => void
   /** Tags input, attachment thumbnails etc., shown under the text. */
   footer?: ReactNode
   placeholder?: string
@@ -178,14 +182,16 @@ export default function FullscreenNoteEditor(props: FullscreenNoteEditorProps) {
   )
 }
 
-function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmit, onPickImage, imagesDisabled, onPickFile, filesDisabled, footer, placeholder, onOpenChange }: FullscreenNoteEditorProps) {
+function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmit, onPickImage, imagesDisabled, onPickFile, filesDisabled, onLargeCode, footer, placeholder, onOpenChange }: FullscreenNoteEditorProps) {
+  const largeCodeRef = useRef(onLargeCode)
+  largeCodeRef.current = onLargeCode
   const submitRef = useRef(onSubmit)
   submitRef.current = onSubmit
   const canSubmitRef = useRef(canSubmit)
   canSubmitRef.current = canSubmit
 
   const editor = useEditor({
-    extensions: noteExtensions({ placeholder }),
+    extensions: noteExtensions({ placeholder, codeBlockView, onLargeCode: () => largeCodeRef.current }),
     content: initialText,
     contentType: 'markdown',
     autofocus: 'end',

@@ -148,6 +148,40 @@ export async function deleteLocalAttachment(attachmentLocalId: number): Promise<
   emitLocalWrite()
 }
 
+/**
+ * Saves a new version of a file: the new bytes go up as a new attachment in the same place, under the
+ * same name, and the old one is deleted (its server file goes with it). Works offline like any edit.
+ */
+export async function replaceLocalAttachment(attachmentLocalId: number, file: Blob): Promise<number | undefined> {
+  const now = new Date().toISOString()
+  const id = await db.transaction('rw', db.attachments, db.notes, db.jobs, async () => {
+    const old = await db.attachments.get(attachmentLocalId)
+    if (!old || old.deletedAt) return undefined
+    const newId = await db.attachments.add({
+      noteId: old.noteId,
+      serverId: null,
+      clientId: crypto.randomUUID(),
+      fileName: old.fileName,
+      fileType: old.fileType,
+      fileSize: file.size,
+      data: file,
+      position: old.position ?? null,
+      createdAt: now,
+      modifiedAt: now,
+      deletedAt: null,
+      isDirty: 1,
+    } as AttachmentRecord)
+    await db.jobs.add({ kind: 'attachment-upload', attachmentId: newId, priority: 5, status: 'pending', attempts: 0, createdAt: now, updatedAt: now, nextAttemptAt: null })
+    await db.attachments.update(attachmentLocalId, { deletedAt: now, modifiedAt: now, isDirty: 1 })
+    // Touch the note so /sync accepts the deletion.
+    const note = await db.notes.get(old.noteId)
+    if (note?.id) await db.notes.update(note.id, { modifiedAt: now, isDirty: 1 })
+    return newId
+  })
+  emitLocalWrite()
+  return id
+}
+
 export async function reorderNoteAttachments(noteId: number, orderedAttachmentLocalIds: number[]): Promise<void> {
   const now = new Date().toISOString()
   await db.transaction('rw', db.attachments, db.notes, async () => {

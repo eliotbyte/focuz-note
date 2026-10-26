@@ -4,7 +4,7 @@ import { db, getKV, wipeLocalData } from './db'
 import { MEMBERS_KV } from './sync-pull'
 import { __resetSyncEngineForTests, ensureDefaultSpace, runSync, requestAttachmentPrefetch } from './sync'
 import { getAppState } from './app-state'
-import { addLocalAttachment, addLocalAttachments, updateNoteLocal, deleteLocalAttachment, reorderNoteAttachments } from './local-writes'
+import { addLocalAttachment, addLocalAttachments, updateNoteLocal, deleteLocalAttachment, reorderNoteAttachments, replaceLocalAttachment } from './local-writes'
 import { listDisplayForNote } from '../data/attachments'
 import { processNextJob, retryFailedJobs, MAX_ATTEMPTS } from './jobs-worker'
 import { recoverLegacyConflicts, CONFLICT_TAG } from './sync-push'
@@ -452,6 +452,25 @@ describe('attachment jobs', () => {
     await deleteLocalAttachment(att.id!)
     await runSync(true)
     expect(server.attachments.size).toBe(0)
+  })
+
+  it('saves an edited file as a new version in the same place and deletes the old one', async () => {
+    const n = server.addNote('remote')
+    server.addAttachment(n.id, 'a.webp').position = 0
+    const doc = server.addAttachment(n.id, 'notes.md', new TextEncoder().encode('old'))
+    doc.file_type = 'text/plain'
+    doc.position = 1
+    await ensureDefaultSpace()
+    await runSync(true)
+    const local = (await db.attachments.toArray()).find(a => a.fileName === 'notes.md')!
+    await replaceLocalAttachment(local.id!, new Blob(['new text'], { type: 'text/markdown' }))
+    const shown = await listDisplayForNote(local.noteId)
+    expect(shown.map(a => a.fileName)).toEqual(['a.webp', 'notes.md'])
+    expect(shown[1].fileSize).toBe('new text'.length)
+    await drainJobs()
+    await runSync(true)
+    const onServer = [...server.attachments.values()].map(a => [a.file_name, new TextDecoder().decode(a.data), a.position])
+    expect(onServer).toEqual([['a.webp', '', 0], ['notes.md', 'new text', 1]])
   })
 })
 
