@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "0.1.12",
+  "version": "0.1.13",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -43,7 +43,7 @@
     "fflate": "0.8.3",
     "flexsearch": "^0.8.205",
     "mammoth": "1.13.0",
-    "markdown-it": "^15.0.2",
+    "markdown-it": "^15.0.3",
     "pdfjs-dist": "6.4.299",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
