@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canPreview, checkDocument, documentKind, isPicture, MAX_DOCUMENT_BYTES, parseCsv } from './attachment-files'
+import { canPreview, checkDocument, documentKind, isPicture, MAX_DOCUMENT_BYTES, parseCsv, previewKind } from './attachment-files'
 
 describe('documentKind', () => {
   it('goes by the extension first, then by the type', () => {
@@ -42,8 +42,15 @@ describe('canPreview', () => {
     expect(canPreview({ fileName: 'a.txt', fileType: 'text/plain', fileSize: 100 })).toBe(true)
     expect(canPreview({ fileName: 'a.md', fileType: 'text/plain', fileSize: 100 })).toBe(true)
     expect(canPreview({ fileName: 'a.csv', fileType: 'text/csv', fileSize: 100 })).toBe(true)
-    expect(canPreview({ fileName: 'a.pdf', fileType: 'application/pdf', fileSize: 100 })).toBe(false)
     expect(canPreview({ fileName: 'a.txt', fileType: 'text/plain', fileSize: 5 * 1024 * 1024 })).toBe(false)
+  })
+
+  it('shows PDF and .docx, not the other office formats', () => {
+    expect(previewKind({ fileName: 'a.pdf', fileType: 'application/pdf', fileSize: 20 * 1024 * 1024 })).toBe('pdf')
+    expect(previewKind({ fileName: 'Report.DOCX', fileType: 'application/octet-stream', fileSize: 100 })).toBe('docx')
+    expect(previewKind({ fileName: 'old.doc', fileType: 'application/msword', fileSize: 100 })).toBe(null)
+    expect(previewKind({ fileName: 'a.odt', fileType: 'application/vnd.oasis.opendocument.text', fileSize: 100 })).toBe(null)
+    expect(previewKind({ fileName: 'a.xlsx', fileType: '', fileSize: 100 })).toBe(null)
   })
 })
 

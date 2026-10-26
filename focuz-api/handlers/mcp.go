@@ -21,7 +21,7 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.1.11"
+	mcpServerVersion   = "0.1.12"
 	maxMCPBodyBytes    = 1 << 20
 	mcpInstructions    = "Focuz notes. Call list_spaces first to get a spaceId. " +
 		"Dates are RFC 3339 timestamps, for example 2026-10-24T12:00:00Z."

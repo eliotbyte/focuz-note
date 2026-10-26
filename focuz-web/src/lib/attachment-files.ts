@@ -59,10 +59,22 @@ export function checkDocument(file: File): { ok: true } | { ok: false; reason: s
   return { ok: true }
 }
 
-/** Plain text, Markdown and CSV can be read inside the app; everything else is downloaded. */
-export function canPreview(a: { fileName: string; fileType: string; fileSize: number }): boolean {
+export type PreviewKind = 'text' | 'markdown' | 'csv' | 'pdf' | 'docx'
+
+/**
+ * How a document can be read inside the app, or null when it can only be downloaded. Text up to
+ * MAX_PREVIEW_BYTES; PDF and Word (.docx only: .doc, .odt and .rtf are other formats) at any allowed size.
+ */
+export function previewKind(a: { fileName: string; fileType: string; fileSize: number }): PreviewKind | null {
   const k = documentKind(a)
-  return (k === 'text' || k === 'markdown' || k === 'csv') && a.fileSize <= MAX_PREVIEW_BYTES
+  if (k === 'text' || k === 'markdown' || k === 'csv') return a.fileSize <= MAX_PREVIEW_BYTES ? k : null
+  if (k === 'pdf') return 'pdf'
+  if (extensionOf(a.fileName) === 'docx' || a.fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx'
+  return null
+}
+
+export function canPreview(a: { fileName: string; fileType: string; fileSize: number }): boolean {
+  return previewKind(a) !== null
 }
 
 export function formatBytes(n: number): string {

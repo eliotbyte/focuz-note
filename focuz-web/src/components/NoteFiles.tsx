@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
@@ -14,10 +14,13 @@ import { useUploadStates } from '../lib/useUploadStates'
 import UploadBadge from './UploadBadge'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog'
 import { renderNoteHtml } from '../lib/note-format/render'
-import { canPreview, documentBlob, documentKind, formatBytes, isPicture, parseCsv, saveBlob, type DocumentKind } from '../lib/attachment-files'
+import { canPreview, documentBlob, documentKind, formatBytes, isPicture, parseCsv, previewKind, saveBlob, type DocumentKind } from '../lib/attachment-files'
 import { notify } from '../ui/notify'
 
 const NONE: AttachmentRecord[] = []
+// pdf.js and mammoth load only when a PDF or Word file is opened.
+const PdfView = lazy(() => import('./DocumentViewers').then(m => ({ default: m.PdfView })))
+const DocxView = lazy(() => import('./DocumentViewers').then(m => ({ default: m.DocxView })))
 
 export function DocumentIcon({ kind }: { kind: DocumentKind }) {
   const Icon = kind === 'pdf' ? PictureAsPdfRoundedIcon
@@ -118,40 +121,51 @@ function downloadError(e: unknown): string {
   return 'The server could not be reached. Try again in a moment.'
 }
 
-/** Reads a text, Markdown or CSV file inside the app. Markdown goes through the note renderer (no HTML). */
+/**
+ * Reads a document inside the app: text, Markdown (through the note renderer, no HTML) and CSV here;
+ * PDF (pdf.js, pages drawn on canvas) and Word (mammoth, cleaned HTML) in DocumentViewers.
+ */
 function DocumentPreviewDialog({ att, onClose }: { att: AttachmentRecord; onClose: () => void }) {
+  const [blob, setBlob] = useState<Blob | null>(null)
   const [text, setText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const kind = documentKind(att)
+  const kind = previewKind(att)
+  const textual = kind === 'text' || kind === 'markdown' || kind === 'csv'
   useEffect(() => {
     let cancelled = false
     documentBlob(att)
-      .then(b => b.text())
-      .then(t => { if (!cancelled) setText(t) })
+      .then(async b => {
+        const t = textual ? await b.text() : null
+        if (!cancelled) { setBlob(b); setText(t) }
+      })
       .catch(e => { if (!cancelled) setError(downloadError(e)) })
     return () => { cancelled = true }
-  }, [att])
+  }, [att, textual])
+  const onViewError = useCallback((message: string) => setError(message), [])
   const html = useMemo(() => (kind === 'markdown' && text != null ? renderNoteHtml(text) : ''), [kind, text])
   const rows = useMemo(() => (kind === 'csv' && text != null ? parseCsv(text) : null), [kind, text])
+  const loading = <p className="text-secondary">Loading…</p>
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose() }}>
       <DialogContent className="p-5 space-y-4 w-[min(92vw,45rem)]">
         <DialogTitle className="truncate pr-8">{att.fileName}</DialogTitle>
         <DialogDescription className="sr-only">Contents of the file</DialogDescription>
-        <div className="doc-preview-body">
+        <div className={`doc-preview-body ${kind === 'pdf' ? 'is-pdf' : ''}`}>
           {error ? <p className="settings-error" role="alert">{error}</p>
-            : text == null ? <p className="text-secondary">Loading…</p>
-              : kind === 'markdown' ? <div className="note-prose" dangerouslySetInnerHTML={{ __html: html }} />
-                : rows ? <CsvTable rows={rows} />
-                  : <pre className="doc-preview-text">{text}</pre>}
+            : !blob ? loading
+              : kind === 'pdf' ? <Suspense fallback={loading}><PdfView blob={blob} onError={onViewError} /></Suspense>
+                : kind === 'docx' ? <Suspense fallback={loading}><DocxView blob={blob} onError={onViewError} /></Suspense>
+                  : kind === 'markdown' ? <div className="note-prose" dangerouslySetInnerHTML={{ __html: html }} />
+                    : rows ? <CsvTable rows={rows} />
+                      : <pre className="doc-preview-text">{text}</pre>}
         </div>
         <div className="flex justify-end gap-2">
           <button type="button" className="button button-secondary" onClick={onClose}>Close</button>
           <button
             type="button"
             className="button"
-            disabled={text == null}
+            disabled={!blob}
             onClick={() => { void documentBlob(att).then(b => saveBlob(b, att.fileName)).catch(e => notify('Could not download the file', 'error', { description: downloadError(e) })) }}
           >
             <FileDownloadRoundedIcon fontSize="inherit" aria-hidden /> Download

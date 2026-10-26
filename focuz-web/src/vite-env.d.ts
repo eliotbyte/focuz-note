@@ -18,3 +18,9 @@ declare module 'virtual:pwa-register' {
 
   export function registerSW(options?: RegisterSWOptions): (reloadPage?: boolean) => Promise<void>
 }
+
+// mammoth's browser build has the same API as the package (whose main entry needs Node).
+declare module 'mammoth/mammoth.browser.js' {
+  import mammoth from 'mammoth'
+  export default mammoth
+}

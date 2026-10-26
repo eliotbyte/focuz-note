@@ -3,7 +3,7 @@
 Frontend for **focuz-note** (local-first notes).
 
 **Status**: alpha  
-**Version**: 0.1.11
+**Version**: 0.1.12
 
 ## Environment
 
@@ -53,6 +53,8 @@ E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8080 npm run test
   transfer as failed; other errors are retried 5 times, then can be retried from the status menu.
 - Documents (PDF, office, text, Markdown, CSV; up to 25 MB) upload through the same queue but are
   downloaded only when someone opens them; after that they stay in IndexedDB and open offline.
-  Text, Markdown and CSV up to 1 MB can be read in the app; everything else is saved as a file.
+  Text, Markdown and CSV up to 1 MB, PDF (pdf.js, pages on canvas) and .docx (mammoth, then DOMPurify)
+  can be read in the app; everything else is saved as a file. pdf.js and mammoth load only when such a
+  file is opened; nginx serves the pdf.js worker (`.mjs`) as JavaScript.
 - Conflicts (a note changed on two devices) keep the server version and save the local text as a
   separate note tagged `conflict`.

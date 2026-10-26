@@ -23,7 +23,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
+        // mjs: the pdf.js worker, so PDFs kept on the device can be previewed offline.
+        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,webp}'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
         runtimeCaching: [

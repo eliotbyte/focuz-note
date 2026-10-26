@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.1.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -39,9 +39,12 @@
     "browser-image-compression": "^2.0.2",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^1.1.7",
+    "dompurify": "3.4.17",
     "fflate": "0.8.3",
     "flexsearch": "^0.8.205",
+    "mammoth": "1.13.0",
     "markdown-it": "^15.0.2",
+    "pdfjs-dist": "6.4.299",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "sonner": "^2.0.7"

@@ -2423,6 +2423,15 @@ button:disabled { cursor: not-allowed; }
   max-height: min(60vh, 560px); overflow: auto; padding: var(--space-3);
   border-radius: var(--r-md); background: var(--field-bg); box-shadow: var(--shadow-field);
 }
+/* PDF: pages as sheets of paper, one under another, as wide as the well. */
+.doc-preview-body.is-pdf { max-height: min(70vh, 720px); }
+.pdf-pages { display: flex; flex-direction: column; gap: var(--space-3); }
+.pdf-page { position: relative; width: 100%; background: #fff; border-radius: 2px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); overflow: hidden; }
+.pdf-page canvas { display: block; width: 100%; height: 100%; }
+/* Word: the document's text in the note's prose style; pictures and tables fit the well. */
+.docx-view img { max-width: 100%; height: auto; }
+.docx-view table { border-collapse: collapse; margin: 0.5em 0; }
+.docx-view th, .docx-view td { padding: 4px 8px; border: 1px solid rgba(var(--c-text) / 0.15); vertical-align: top; }
 /* A preview is read-only: task boxes in Markdown files can't be ticked. */
 .doc-preview-body input[type='checkbox'] { pointer-events: none; }
 .doc-preview-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--fs-small); }
