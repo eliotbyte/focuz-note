@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import FindInPageRoundedIcon from '@mui/icons-material/FindInPageRounded'
+import { setSearchInFiles, useSearchInFiles } from '../lib/search-prefs'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
@@ -49,6 +51,7 @@ export default function FilterBar({
   // Keep typing smooth: the bar owns the text while focused and reports changes right away.
   useEffect(() => { setText(value.text) }, [value.text])
   const set = (patch: Partial<Criteria>) => onChange({ ...value, ...patch })
+  const inFiles = useSearchInFiles()
   const empty = isEmptyCriteria(value)
   const placeholder = mode === 'rule' ? 'Text contains…' : mode === 'thread' ? 'Search replies' : 'Search'
 
@@ -68,6 +71,19 @@ export default function FilterBar({
           {text && (
             <button type="button" className="filter-search-clear" aria-label="Clear search" onClick={() => { setText(''); set({ text: '' }) }}>
               <CloseRoundedIcon fontSize="inherit" />
+            </button>
+          )}
+          {/* Like "match case" in a code editor: a switch of the search itself, at the end of the field. */}
+          {mode !== 'rule' && (
+            <button
+              type="button"
+              className="filter-search-opt"
+              aria-pressed={inFiles}
+              aria-label="Search in file contents"
+              title={inFiles ? 'Searching the notes and their text files (Markdown, text, CSV)' : 'Also search inside text files (Markdown, text, CSV)'}
+              onClick={() => setSearchInFiles(!inFiles)}
+            >
+              <FindInPageRoundedIcon fontSize="inherit" />
             </button>
           )}
         </label>

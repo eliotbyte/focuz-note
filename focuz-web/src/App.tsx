@@ -4,6 +4,7 @@ import type { NoteRecord, FilterRecord } from './lib/types'
 import { ensureDefaultSpace, getCurrentSpaceId, runSync, scheduleAutoSync, isAuthenticated, logout, deleteNote, addLocalAttachments, teardownSync, purgeAndLogout, countUnsyncedChanges } from './lib/sync'
 import { updateNoteLocal } from './lib/sync'
 import { searchNotes, ensureNoteIndexForSpace, initSearch } from './lib/search'
+import { useSearchInFiles } from './lib/search-prefs'
 import { activityTypes as activityTypesRepo, activities as activitiesRepo, filters as filtersRepo, kv, notes as notesRepo } from './data'
 import { initAppState, useAppState } from './lib/app-state'
 import { db } from './lib/db'
@@ -184,9 +185,10 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
 
 function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTag, onAddQuickActivity, scopeIds, folderIndex, emptyText, hiddenTags = [], freeze, layout, onLayoutChange }: { spaceId: number; filter: FilterRecord | null; quick: QuickState; parentId?: number | null; onOpenThread?: (noteId: number) => void; onAddQuickTag?: (tag: string) => void; onAddQuickActivity?: (name: string) => void; /** Only these notes (the open folder), or null for all. */ scopeIds?: Set<number> | null; folderIndex?: FolderIndex; emptyText?: string; /** Tags every note here has anyway (the open folder's), not repeated on each card. */ hiddenTags?: string[]; /** Keep the order this list had when opened (see feed-snapshot). `sig` names what the caller shows; `ready` is false while that is still loading. */ freeze?: { key: string; sig: string; ready: boolean }; /** Tiles instead of cards (the main feed only). */ layout?: FeedLayout; onLayoutChange?: (next: FeedLayout) => void }) {
   const [foldersFor, setFoldersFor] = useState<NoteRecord | null>(null)
-  const [search, setSearch] = useState<{ q: string; ids: number[] } | null>(null)
+  const [search, setSearch] = useState<{ q: string; inFiles: boolean; ids: number[] } | null>(null)
   const searchQ = (quick.text || '').trim()
-  const idsBySearch = search && search.q === searchQ ? search.ids : null
+  const searchInFiles = useSearchInFiles()
+  const idsBySearch = search && search.q === searchQ && search.inFiles === searchInFiles ? search.ids : null
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingValue, setEditingValue] = useState<{ text: string; tags: string[]; activities?: any[]; date?: string }>({ text: '', tags: [], activities: [] })
   const [replyingForId, setReplyingForId] = useState<number | null>(null)
@@ -198,9 +200,9 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
   useEffect(() => {
     let cancelled = false
     if (!searchQ) { setSearch(null); return }
-    searchNotes(spaceId, searchQ).then(ids => { if (!cancelled) setSearch({ q: searchQ, ids }) }).catch(() => { if (!cancelled) setSearch({ q: searchQ, ids: [] }) })
+    searchNotes(spaceId, searchQ, { inFiles: searchInFiles }).then(ids => { if (!cancelled) setSearch({ q: searchQ, inFiles: searchInFiles, ids }) }).catch(() => { if (!cancelled) setSearch({ q: searchQ, inFiles: searchInFiles, ids: [] }) })
     return () => { cancelled = true }
-  }, [spaceId, searchQ])
+  }, [spaceId, searchQ, searchInFiles])
 
   useEffect(() => {
     if (editingId != null) {

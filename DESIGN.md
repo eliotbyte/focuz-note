@@ -286,6 +286,7 @@ One primary (gel) per task region. Labels name the action ("Create", "Export", "
 | Filter chip, flag | `.filter-chip.filter-chip-flag` | Droplet |
 | Tag on a note | `.pill.pill-tag` | Small droplet, 26px, `--fs-small` |
 | Rule chip (read-only) | `.rule-chip-tag` / `.rule-chip-without` | Outline only (not pressable): green / red, excluded struck through |
+| Search switch | `.filter-search-opt` inside `.filter-search`, after the clear button | 26px icon button in the well (like "match case" in a code editor). Off: muted icon; on (`aria-pressed=true`): `--c-accent-ink` icon on a 16 % accent tint with an accent hairline. The setting of this device (`localStorage`), not part of the filter. Not shown in a folder rule's bar |
 | Choice chip | `.filter-chip-select` | Droplet; `aria-checked=true` → green gel |
 | Role badge | `.role-badge` | Quiet well, `--fs-caption` |
 

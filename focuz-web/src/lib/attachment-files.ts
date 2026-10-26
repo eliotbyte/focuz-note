@@ -73,6 +73,17 @@ export function previewKind(a: { fileName: string; fileType: string; fileSize: n
   return null
 }
 
+/** Text, Markdown and CSV up to the preview size: searched with their note, so kept on the device. */
+export function isSearchableText(a: { fileName: string; fileType: string; fileSize: number }): boolean {
+  const k = previewKind(a)
+  return k === 'text' || k === 'markdown' || k === 'csv'
+}
+
+/** Files fetched as soon as sync learns of them: pictures (for the feed) and searchable text. */
+export function fetchedInBackground(a: { fileName: string; fileType: string; fileSize: number }): boolean {
+  return isPicture(a) || isSearchableText(a)
+}
+
 export function canPreview(a: { fileName: string; fileType: string; fileSize: number }): boolean {
   return previewKind(a) !== null
 }

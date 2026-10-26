@@ -2,6 +2,7 @@
 import { db, getKV, setKV } from './db'
 import { api } from './api'
 import { fromServerActivityValue } from './activity-values'
+import { fetchedInBackground } from './attachment-files'
 import type { ActivityRecord, ActivityTypeRecord, AttachmentRecord, FilterRecord, JobRecord, NoteRecord, PublicShare, SpaceMember, SpaceRecord, SpaceRole, TagRecord } from './types'
 
 export const LAST_SYNC_KV = 'lastSyncAt'
@@ -112,8 +113,8 @@ async function mergeNoteAttachments(n: any, noteLocalId: number): Promise<void> 
       await db.attachments.delete(d.id!)
       await db.jobs.where('attachmentId').equals(d.id!).delete()
     }
-    // Documents are downloaded when someone opens them; pictures are wanted in the feed.
-    if (!hasData && !rec.deletedAt && rec.fileType.startsWith('image/')) await ensureDownloadJobInTx(attId, BACKGROUND_DOWNLOAD_PRIORITY)
+    // Pictures are wanted in the feed and small text files in search; other documents wait until opened.
+    if (!hasData && !rec.deletedAt && fetchedInBackground(rec)) await ensureDownloadJobInTx(attId, BACKGROUND_DOWNLOAD_PRIORITY)
   }
   // The server returns the complete attachment list of a note and hard-deletes removed files:
   // anything server-backed that is missing here was deleted on another device.

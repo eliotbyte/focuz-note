@@ -1539,6 +1539,19 @@ button:disabled { cursor: not-allowed; }
   font-size: 16px;
 }
 .filter-search-clear:hover { background: rgba(var(--c-text) / 0.08); color: var(--text-primary); }
+/* A switch of the search (search in files): off is a quiet icon, on is lit in the accent, like a chip. */
+.filter-search-opt {
+  flex: none; display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: var(--r-sm);
+  color: var(--text-muted); font-size: 17px;
+  transition: color var(--dur-micro) var(--ease-standard), background-color var(--dur-micro) var(--ease-standard), box-shadow var(--dur-micro) var(--ease-standard);
+}
+@media (hover: hover) { .filter-search-opt:hover { background: rgba(var(--c-text) / 0.08); color: var(--text-primary); } }
+.filter-search-opt[aria-pressed='true'] {
+  color: rgb(var(--c-accent-ink));
+  background: rgb(var(--c-accent) / 0.16);
+  box-shadow: inset 0 0 0 1px rgb(var(--c-accent) / 0.45);
+}
 
 /* Compact droplet: filter bar controls, and the general small secondary button. */
 .filter-btn {
