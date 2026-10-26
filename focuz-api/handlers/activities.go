@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"focuz-api/models"
 	"focuz-api/pkg/access"
@@ -85,7 +84,7 @@ func (h *ActivitiesHandler) CreateActivity(c *gin.Context) {
 		return
 	}
 
-	checkedValue, err := h.validateActivityValue(activityType, req.Value)
+	checkedValue, err := encodeMetricValue(activityType, req.Value)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, err.Error()))
 		return
@@ -210,7 +209,7 @@ func (h *ActivitiesHandler) UpdateActivity(c *gin.Context) {
 			return
 		}
 	}
-	checkedValue, err := h.validateActivityValue(activityType, req.Value)
+	checkedValue, err := encodeMetricValue(activityType, req.Value)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, err.Error()))
 		return
@@ -264,59 +263,6 @@ func (h *ActivitiesHandler) getSpaceIDForActivity(activity *models.Activity) (in
 		return 0, errors.New("invalid note")
 	}
 	return note.SpaceID, nil
-}
-
-func (h *ActivitiesHandler) validateActivityValue(t *models.ActivityType, raw string) ([]byte, error) {
-	if strings.TrimSpace(raw) == "" {
-		return nil, errors.New("empty value")
-	}
-	switch t.ValueType {
-	case "integer":
-		v, err := strconv.Atoi(raw)
-		if err != nil {
-			return nil, errors.New("value must be integer")
-		}
-		if t.MinValue != nil && float64(v) < *t.MinValue {
-			return nil, errors.New("value is out of range")
-		}
-		if t.MaxValue != nil && float64(v) > *t.MaxValue {
-			return nil, errors.New("value is out of range")
-		}
-		m := map[string]any{"data": v}
-		return json.Marshal(m)
-	case "float":
-		f, err := strconv.ParseFloat(raw, 64)
-		if err != nil {
-			return nil, errors.New("value must be float")
-		}
-		if t.MinValue != nil && f < *t.MinValue {
-			return nil, errors.New("value is out of range")
-		}
-		if t.MaxValue != nil && f > *t.MaxValue {
-			return nil, errors.New("value is out of range")
-		}
-		m := map[string]any{"data": f}
-		return json.Marshal(m)
-	case "boolean":
-		b, err := strconv.ParseBool(raw)
-		if err != nil {
-			return nil, errors.New("value must be boolean")
-		}
-		m := map[string]any{"data": b}
-		return json.Marshal(m)
-	case "text":
-		m := map[string]any{"data": raw}
-		return json.Marshal(m)
-	case "time":
-		_, err := time.Parse(time.RFC3339, raw)
-		if err != nil {
-			return nil, errors.New("value must be valid RFC3339 time")
-		}
-		m := map[string]any{"data": raw}
-		return json.Marshal(m)
-	default:
-		return nil, errors.New("unsupported value type")
-	}
 }
 
 // NEW

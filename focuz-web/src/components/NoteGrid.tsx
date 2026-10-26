@@ -191,12 +191,12 @@ function NoteTile({
   const activities = (useLiveQuery(
     () => (note.id ? activitiesRepo.listDecoratedForNote(note.id) : Promise.resolve([])),
     [note.id],
-  ) as Array<{ valueRaw: string; _name: string }>) || []
+  ) as Array<{ valueRaw: string; _name: string; _unit: string | null }>) || []
 
   const text = (note.text || '').trim()
   const html = useMemo(() => renderNoteHtml(text), [text])
   const tags = (note.tags || []).filter(t => !hiddenTags.has(t))
-  const meta = [...activities.map(a => `${a._name}: ${a.valueRaw}`), ...tags.map(t => `#${t}`)]
+  const meta = [...activities.map(a => `${a._name}: ${a.valueRaw}${a._unit ? ` ${a._unit}` : ''}`), ...tags.map(t => `#${t}`)]
   const pictures = attachments.filter(isPicture)
   const documents = attachments.filter(a => !isPicture(a))
   const hasMedia = pictures.length > 0

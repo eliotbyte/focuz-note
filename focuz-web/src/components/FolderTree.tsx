@@ -6,6 +6,7 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import NotesRoundedIcon from '@mui/icons-material/NotesRounded'
 import InboxRoundedIcon from '@mui/icons-material/InboxRounded'
+import ShowChartRoundedIcon from '@mui/icons-material/ShowChartRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { db } from '../lib/db'
@@ -18,7 +19,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { DeleteFolderDialog, FolderLookDialog, MoveFolderDialog } from './FolderDialogs'
 import { lookFromParams } from '../lib/folder-look'
 
-export type FeedView = { kind: 'all' } | { kind: 'unsorted' } | { kind: 'folder'; id: number }
+export type FeedView = { kind: 'all' } | { kind: 'unsorted' } | { kind: 'metrics' } | { kind: 'folder'; id: number }
 
 const INDENT_PX = 14
 
@@ -194,6 +195,18 @@ export default function FolderTree({
             <InboxRoundedIcon fontSize="inherit" className="icon-sm shrink-0" />
             <span className="truncate flex-1">Unsorted</span>
             {unsortedCount > 0 && <span className="folder-count">{unsortedCount}</span>}
+          </div>
+          <div
+            role="button"
+            tabIndex={0}
+            aria-pressed={view.kind === 'metrics'}
+            className={`${rowBase} pl-2 ${rowTone(view.kind === 'metrics')}`}
+            onClick={() => onSelect({ kind: 'metrics' })}
+            onKeyDown={onKeySelect(() => onSelect({ kind: 'metrics' }))}
+            title="Weight, spending and other numbers you track"
+          >
+            <ShowChartRoundedIcon fontSize="inherit" className="icon-sm shrink-0" />
+            <span className="truncate flex-1">Metrics</span>
           </div>
         </div>
 

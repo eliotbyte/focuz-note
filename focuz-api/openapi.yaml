@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Focuz API
   description: API for a note-taking application with workspaces, notes, charts, and activities
-  version: 0.2.3
+  version: 0.2.4
   contact:
     name: Focuz Team
 servers:
@@ -510,6 +510,134 @@ paths:
           headers:
             X-Request-ID:
               $ref: '#/components/parameters/XRequestID'
+
+  /spaces/{spaceId}/metrics:
+    get:
+      summary: Metrics of a space with the number of values and the last two
+      tags:
+        - Metrics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Metrics (built-in ones too)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+    post:
+      summary: Create a metric (editors and above)
+      tags:
+        - Metrics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+                valueType: { type: string, enum: [float, integer, boolean, time, text], default: float }
+                unit: { type: string, maxLength: 20, description: Number metrics only }
+                aggregation: { type: string, description: 'float/integer: avg, sum, min, max, count; time: sum, avg, min, max, count; boolean: count_true, count_false, percentage_true, percentage_false, and, or; text: count' }
+                minValue: { type: number }
+                maxValue: { type: number }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '409':
+          description: A metric with this name (any case) exists in the space
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /spaces/{spaceId}/metrics/{metric}/entries:
+    get:
+      summary: Values of a metric with their notes and stats, or one aggregated value per period
+      tags:
+        - Metrics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: spaceId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: metric
+          in: path
+          required: true
+          description: Metric id or name
+          schema:
+            type: string
+        - { name: from, in: query, schema: { type: string }, description: 'YYYY-MM-DD or RFC 3339, inclusive' }
+        - { name: to, in: query, schema: { type: string }, description: 'YYYY-MM-DD (whole day) or RFC 3339' }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 500 } }
+        - { name: order, in: query, schema: { type: string, enum: [newest, oldest] } }
+        - { name: groupBy, in: query, schema: { type: string, enum: [day, week, month, year] } }
+      responses:
+        '200':
+          description: '{ metric, stats, entries } or { metric, stats, groupBy, series }'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /metrics/record:
+    post:
+      summary: Save metric values in a new note (or in an existing one with noteId)
+      tags:
+        - Metrics
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [values]
+              properties:
+                spaceId: { type: integer }
+                noteId: { type: integer }
+                values:
+                  type: array
+                  items:
+                    type: object
+                    required: [metric, value]
+                    properties:
+                      metric: { description: Metric id or name, oneOf: [{ type: integer }, { type: string }] }
+                      value: { oneOf: [{ type: number }, { type: string }, { type: boolean }] }
+                text: { type: string }
+                tags: { type: array, items: { type: string } }
+                date: { type: string, format: date-time }
+      responses:
+        '201':
+          description: '{ noteId, date, values: [{ metric, value, previous, change }] }'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
 
   /notes/{id}:
     get:

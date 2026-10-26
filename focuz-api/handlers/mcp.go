@@ -21,10 +21,16 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.2.3"
+	mcpServerVersion   = "0.2.4"
 	maxMCPBodyBytes    = 1 << 20
-	mcpInstructions    = "Focuz notes. Call list_spaces first to get a spaceId. " +
-		"Dates are RFC 3339 timestamps, for example 2026-10-24T12:00:00Z."
+	mcpInstructions    = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +
+		"Start with list_spaces, then describe_space: it shows the tags, folders and metrics of a space, so you " +
+		"know where things are. Find notes with list_notes (query searches the text). " +
+		"Metrics are numbers the user tracks over time (weight, spending, sleep). When the user reports one, " +
+		"call record_metrics: it saves the value in a dated note and tells you the previous value. " +
+		"Read the past with get_metric_history (groupBy for chart data). Create a metric with create_metric " +
+		"only when list_metrics has nothing that fits. " +
+		"Dates are RFC 3339 timestamps, for example 2026-10-24T12:00:00Z; date filters also take YYYY-MM-DD."
 )
 
 type rpcRequest struct {
@@ -181,6 +187,8 @@ var (
 	textSchema  = map[string]any{"type": "string", "description": "Note text (Markdown)"}
 	tagsSchema  = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Tags without #"}
 	dateSchema  = map[string]any{"type": "string", "format": "date-time", "description": "Note date, RFC 3339. Defaults to the creation time."}
+
+	metricRefSchema = map[string]any{"type": []string{"string", "integer"}, "description": "Metric name (any case) or id from list_metrics"}
 )
 
 var mcpTools = []mcpTool{
@@ -205,10 +213,13 @@ var mcpTools = []mcpTool{
 		},
 	},
 	{
-		Name:        "list_notes",
-		Description: "List notes in a space, newest created first by default. Use page and pageSize (max 100) to go on.",
+		Name: "list_notes",
+		Description: "List or search notes in a space, newest created first by default. query keeps notes whose text " +
+			"contains every word (any case). Tags: a note must have all of them; prefix one with ! to exclude it. " +
+			"Use page and pageSize (max 100) to go on.",
 		Schema: objectSchema(map[string]any{
 			"spaceId":  spaceSchema,
+			"query":    map[string]any{"type": "string", "description": "Words the text must contain"},
 			"page":     map[string]any{"type": "integer", "minimum": 1},
 			"pageSize": map[string]any{"type": "integer", "minimum": 1, "maximum": 100},
 			"tags":     tagsSchema,
@@ -221,6 +232,7 @@ var mcpTools = []mcpTool{
 		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
 			var a struct {
 				SpaceID  int      `json:"spaceId"`
+				Query    string   `json:"query"`
 				Page     int      `json:"page"`
 				PageSize int      `json:"pageSize"`
 				Tags     []string `json:"tags"`
@@ -264,7 +276,7 @@ var mcpTools = []mcpTool{
 			}
 			notes, total, err := h.notes.GetNotes(userID, a.SpaceID, models.NoteFilters{
 				Tags: a.Tags, NotReply: a.NotReply, Page: a.Page, PageSize: a.PageSize,
-				SortField: sortField, SortOrder: order, DateFrom: dateFrom, DateTo: dateTo,
+				SortField: sortField, SortOrder: order, DateFrom: dateFrom, DateTo: dateTo, Search: a.Query,
 			})
 			if err != nil {
 				return nil, err
@@ -274,17 +286,34 @@ var mcpTools = []mcpTool{
 	},
 	{
 		Name:        "get_note",
-		Description: "Get one note with its tags, replies count and attachments.",
-		Schema:      objectSchema(map[string]any{"id": idSchema}, "id"),
+		Description: "Get one note with its tags, metric values and attachments. includeReplies adds its replies (up to 100, oldest first).",
+		Schema: objectSchema(map[string]any{
+			"id":             idSchema,
+			"includeReplies": map[string]any{"type": "boolean"},
+		}, "id"),
 		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
 			var a struct {
-				ID int `json:"id"`
+				ID             int  `json:"id"`
+				IncludeReplies bool `json:"includeReplies"`
 			}
 			if err := decodeArgs(raw, &a); err != nil {
 				return nil, err
 			}
 			note, _, err := h.loadNote(userID, a.ID)
-			return note, err
+			if err != nil || !a.IncludeReplies {
+				return note, err
+			}
+			parentID := note.ID
+			replies, _, err := h.notes.GetNotes(userID, note.SpaceID, models.NoteFilters{
+				ParentID: &parentID, Page: 1, PageSize: 100, SortField: "created_at", SortOrder: "ASC",
+			})
+			if err != nil {
+				return nil, err
+			}
+			if replies == nil {
+				replies = []*models.Note{}
+			}
+			return gin.H{"note": note, "replies": replies}, nil
 		},
 	},
 	{
@@ -343,6 +372,150 @@ var mcpTools = []mcpTool{
 				return nil, err
 			}
 			return gin.H{"deleted": true, "id": a.ID}, nil
+		},
+	},
+	{
+		Name:        "restore_note",
+		Description: "Bring a note back from the trash, with the same rules as delete_note.",
+		Schema:      objectSchema(map[string]any{"id": idSchema}, "id"),
+		Write:       true,
+		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
+			var a struct {
+				ID int `json:"id"`
+			}
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			if err := h.restoreNote(userID, a.ID); err != nil {
+				return nil, err
+			}
+			return gin.H{"restored": true, "id": a.ID}, nil
+		},
+	},
+	{
+		Name: "describe_space",
+		Description: "Overview of a space: number of notes and their dates, tags with how many notes use each, " +
+			"your folders (saved filters: a rule over tags, text or metrics) and the metrics with their last values.",
+		Schema: objectSchema(map[string]any{"spaceId": spaceSchema}, "spaceId"),
+		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
+			var a struct {
+				SpaceID int `json:"spaceId"`
+			}
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			return h.describeSpace(userID, a.SpaceID)
+		},
+	},
+	{
+		Name: "list_metrics",
+		Description: "List the metrics of a space (built-in ones too): value type, unit, how many values there are, " +
+			"the last value and the one before it, each with its note and date.",
+		Schema: objectSchema(map[string]any{"spaceId": spaceSchema}, "spaceId"),
+		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
+			var a struct {
+				SpaceID int `json:"spaceId"`
+			}
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			return h.listMetrics(userID, a.SpaceID)
+		},
+	},
+	{
+		Name: "create_metric",
+		Description: "Create a metric to track, for example Weight in kg or Spending in EUR. Check list_metrics " +
+			"first: names are unique in a space, ignoring case. Use the name the user would look for in the app.",
+		Schema: objectSchema(map[string]any{
+			"spaceId":   spaceSchema,
+			"name":      map[string]any{"type": "string", "description": "Short name, for example Weight"},
+			"valueType": map[string]any{"type": "string", "enum": metricValueTypes, "description": "float (default) for measurements and money, integer for counts, boolean for yes/no, time for durations, text for words"},
+			"unit":      map[string]any{"type": "string", "description": "Unit of a number metric, for example kg, EUR, mmol/L"},
+			"aggregation": map[string]any{"type": "string", "description": "How values add up per day/week/month: avg (default for numbers; weight, blood values), " +
+				"sum (spending, steps), min, max, count. time: sum (default), avg. boolean: count_true (default), percentage_true. text: count."},
+			"minValue": map[string]any{"type": "number", "description": "Lowest value allowed"},
+			"maxValue": map[string]any{"type": "number", "description": "Highest value allowed"},
+		}, "spaceId", "name"),
+		Write: true,
+		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
+			var a metricCreate
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			return h.createMetric(userID, a)
+		},
+	},
+	{
+		Name: "record_metrics",
+		Description: "Save metric values. Without noteId it creates a note in the space, dated `date` (now by default), " +
+			"with your text or, when text is empty, a line like \"Weight: 63 kg\"; the values are attached to it. " +
+			"With noteId the values are added to that note (a note holds one value per metric; an existing one is replaced). " +
+			"The answer has the note id and, per metric, the previous value with its date and, unless the metric adds up (sum), the change.",
+		Schema: objectSchema(map[string]any{
+			"spaceId": spaceSchema,
+			"noteId":  map[string]any{"type": "integer", "description": "Add the values to this note instead of creating one"},
+			"values": map[string]any{
+				"type": "array", "minItems": 1,
+				"items": objectSchema(map[string]any{
+					"metric": metricRefSchema,
+					"value":  map[string]any{"type": []string{"number", "string", "boolean"}, "description": "A number in the metric's unit, true/false, text, or a duration like 7h30m"},
+				}, "metric", "value"),
+			},
+			"text": map[string]any{"type": "string", "description": "Note text (Markdown). Optional: write the user's own words if they said more than the number"},
+			"tags": tagsSchema,
+			"date": map[string]any{"type": "string", "format": "date-time", "description": "When it was measured, RFC 3339. Defaults to now"},
+		}, "values"),
+		Write: true,
+		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
+			var a metricRecord
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			return h.recordMetrics(userID, a)
+		},
+	},
+	{
+		Name: "get_metric_history",
+		Description: "Values of one metric with their dates and notes, and stats over the range (count; min, max, avg and sum for numbers). " +
+			"Newest first by default; order oldest suits a chart. With groupBy (day, week, month, year) you get one aggregated value per period " +
+			"instead of the single values, using the metric's aggregation.",
+		Schema: objectSchema(map[string]any{
+			"spaceId": spaceSchema,
+			"metric":  metricRefSchema,
+			"from":    map[string]any{"type": "string", "description": "YYYY-MM-DD or RFC 3339, inclusive"},
+			"to":      map[string]any{"type": "string", "description": "YYYY-MM-DD (the whole day counts) or RFC 3339"},
+			"limit":   map[string]any{"type": "integer", "minimum": 1, "maximum": maxMetricEntries, "description": "Default 50"},
+			"order":   map[string]any{"type": "string", "enum": []string{"newest", "oldest"}},
+			"groupBy": map[string]any{"type": "string", "enum": []string{"day", "week", "month", "year"}},
+		}, "spaceId", "metric"),
+		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
+			var a metricHistoryQuery
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			return h.metricHistory(userID, a)
+		},
+	},
+	{
+		Name:        "remove_metric_value",
+		Description: "Remove a metric's value from a note (the note stays). To fix a wrong value, call record_metrics with the noteId instead.",
+		Schema: objectSchema(map[string]any{
+			"noteId": idSchema,
+			"metric": metricRefSchema,
+		}, "noteId", "metric"),
+		Write: true,
+		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
+			var a struct {
+				NoteID int       `json:"noteId"`
+				Metric metricRef `json:"metric"`
+			}
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			if err := h.removeMetricValue(userID, a.NoteID, a.Metric); err != nil {
+				return nil, err
+			}
+			return gin.H{"removed": true, "noteId": a.NoteID}, nil
 		},
 	},
 }

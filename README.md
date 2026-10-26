@@ -5,7 +5,7 @@ Integration repository that bundles:
 - `focuz-api/` (backend)
 
 **Status**: alpha  
-**Version**: 0.2.3 (changes: `CHANGELOG.md`)
+**Version**: 0.2.4 (changes: `CHANGELOG.md`)
 
 ## Environments (Docker Compose)
 
@@ -21,9 +21,9 @@ APP_ENV=test docker compose up -d --build
 
 ## Versions
 
-- **Focuz-Node**: `0.2.3` (this repo, see `package.json`)
-- **Focuz-Web**: `0.2.3` (see `focuz-web/package.json`)
-- **Focuz-API**: `0.2.3` (see `focuz-api/pkg/buildinfo`)
+- **Focuz-Node**: `0.2.4` (this repo, see `package.json`)
+- **Focuz-Web**: `0.2.4` (see `focuz-web/package.json`)
+- **Focuz-API**: `0.2.4` (see `focuz-api/pkg/buildinfo`)
 
 
 ## Tests
@@ -128,10 +128,30 @@ To lock the web app to your own server, build it with `VITE_ALLOW_CUSTOM_SERVER=
 then `docker compose up -d --build web`): the "Change" link disappears and a server chosen earlier
 in a browser is ignored.
 
+## Metrics
+
+A metric is a number you track over time: weight, a blood value, spending, sleep. Each value lives in a
+note, and the note's date is the value's date, so the feed shows what you recorded and when.
+
+- Add a value to a note with the chart button under its text; “New metric…” in that menu creates one
+  (name, kind of value, unit, and whether a day/week/month shows the average or the total).
+- **Metrics** in the sidebar lists every metric of the space with its last value and the change since the
+  one before; open one to see all its values and go to their notes.
+- Built-in metrics: mood, steps, sleep. A space's own metrics are shared by its members; editors can create them.
+- REST: `GET/POST /spaces/:spaceId/metrics`, `GET /spaces/:spaceId/metrics/:metric/entries`
+  (`from`, `to`, `limit`, `order`, `groupBy=day|week|month|year`), `POST /metrics/record`.
+
 ## Agents (MCP)
 
-focuz answers the Model Context Protocol on `POST /mcp`, so an agent such as Claude can list, read,
-create, edit and delete your notes. Serve it over HTTPS, like the sign-in (see the security checklist).
+focuz answers the Model Context Protocol on `POST /mcp`, so an agent such as Claude can use your notes as
+its long-term memory: find, read, create, edit and delete notes, and record and look up metrics. Serve it
+over HTTPS, like the sign-in (see the security checklist).
+
+Tools: `list_spaces`, `describe_space` (tags with counts, folders, metrics with last values), `list_notes`
+(with `query` for text search), `get_note` (optionally with replies), `create_note`, `update_note`,
+`delete_note`, `restore_note`, `list_metrics`, `create_metric`, `record_metrics` (saves values in a dated
+note and answers with the previous value), `get_metric_history` (values and stats, or one value per
+day/week/month/year for a chart), `remove_metric_value`.
 
 1. Create a personal token while signed in: `POST /me/api-tokens` with `{"name": "Claude", "scope": "write"}`.
    The token (`fct_…`) is shown once. Use `"scope": "read"` for an agent that should only read.

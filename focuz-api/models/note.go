@@ -26,6 +26,7 @@ type ParentNote struct {
 type NoteActivity struct {
 	ID     int     `json:"id"`
 	TypeID int     `json:"typeId"`
+	Name   string  `json:"name"`
 	Value  string  `json:"value"`
 	Unit   *string `json:"unit,omitempty"`
 }
@@ -39,13 +40,15 @@ type Attachment struct {
 }
 
 type NoteFilters struct {
-	Tags        []string   `json:"tags"`
-	NotReply    bool       `json:"notReply"`
-	Page        int        `json:"page"`
-	PageSize    int        `json:"pageSize"`
-	ParentID    *int       `json:"parentId"`
-	SortField   string     `json:"sortField"`
-	SortOrder   string     `json:"sortOrder"`
-	DateFrom    *time.Time `json:"dateFrom"`
-	DateTo      *time.Time `json:"dateTo"`
+	Tags      []string   `json:"tags"`
+	NotReply  bool       `json:"notReply"`
+	Page      int        `json:"page"`
+	PageSize  int        `json:"pageSize"`
+	ParentID  *int       `json:"parentId"`
+	SortField string     `json:"sortField"`
+	SortOrder string     `json:"sortOrder"`
+	DateFrom  *time.Time `json:"dateFrom"`
+	DateTo    *time.Time `json:"dateTo"`
+	// Search keeps notes whose text contains every word, ignoring case (agents; the web app searches locally).
+	Search string `json:"search"`
 }

@@ -31,7 +31,7 @@ export default function FolderHeader({
   onCancelRule: () => void
 }) {
   const [styling, setStyling] = useState(false)
-  if (view.kind === 'all') return null
+  if (view.kind === 'all' || view.kind === 'metrics') return null
   if (view.kind === 'unsorted') {
     return (
       <div className="folder-head">

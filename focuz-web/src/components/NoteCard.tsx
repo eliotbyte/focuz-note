@@ -65,7 +65,7 @@ export default function NoteCard({
   const activities = (useLiveQuery(
     () => (note.id ? activitiesRepo.listDecoratedForNote(note.id) : Promise.resolve([])),
     [note.id],
-  ) as Array<{ valueRaw: string; _name: string; _valueType: string; id?: number; serverId?: number | null }>) || []
+  ) as Array<{ valueRaw: string; _name: string; _valueType: string; _unit: string | null; id?: number; serverId?: number | null }>) || []
 
   // Authors matter only when other people write here too.
   const author = view.shared ? (note.authorName ?? view.meName ?? 'you') : null
@@ -130,8 +130,8 @@ export default function NoteCard({
             {activities.map((a, i) => (
               <Pill
                 key={`${a.serverId ?? a.id}-${i}`}
-                onClick={() => onActivityClick ? onActivityClick(a._name) : (onTagClick && onTagClick(a._name))}
-                title={`${a._name}: ${a.valueRaw}`}
+                onClick={onActivityClick ? () => onActivityClick(a._name) : undefined}
+                title={`${a._name}: ${a.valueRaw}${a._unit ? ` ${a._unit}` : ''}`}
               >
                 <span className="mr-2">{a._name}:</span>
                 <span className="text-primary">{(() => {
@@ -141,7 +141,8 @@ export default function NoteCard({
                     const parsed = parseDurationToMs(String(a.valueRaw))
                     if (Number.isFinite(parsed)) return formatDurationShort(parsed)
                   }
-                  return a.valueRaw
+                  if (a._valueType === 'boolean') return a.valueRaw === 'true' ? 'yes' : a.valueRaw === 'false' ? 'no' : a.valueRaw
+                  return a._unit ? `${a.valueRaw} ${a._unit}` : a.valueRaw
                 })()}</span>
               </Pill>
             ))}

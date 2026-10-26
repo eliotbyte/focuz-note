@@ -13,7 +13,7 @@ export async function listActiveForNotes(noteLocalIds: number[]): Promise<Activi
   return list.filter(a => !a.deletedAt)
 }
 
-export async function listDecoratedForNote(noteLocalId: number): Promise<Array<ActivityRecord & { _name: string; _valueType: string }>> {
+export async function listDecoratedForNote(noteLocalId: number): Promise<Array<ActivityRecord & { _name: string; _valueType: string; _unit: string | null }>> {
   const list = await db.activities.where('noteId').equals(noteLocalId).toArray()
   const filtered = list.filter(a => !a.deletedAt)
   // Deduplicate per typeId: prefer server-backed; fallback to most recent modifiedAt
@@ -31,6 +31,7 @@ export async function listDecoratedForNote(noteLocalId: number): Promise<Array<A
     ...a,
     _name: byId.get(a.typeId)?.name || `#${a.typeId}`,
     _valueType: byId.get(a.typeId)?.valueType || 'text',
+    _unit: byId.get(a.typeId)?.unit ?? null,
   }))
 }
 

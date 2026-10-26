@@ -58,6 +58,10 @@ type NotesAPIHandler struct {
 	notes  *repository.NotesRepository
 	spaces *repository.SpacesRepository
 	sync   *repository.SyncRepository
+
+	activities    *repository.ActivitiesRepository
+	activityTypes *repository.ActivityTypesRepository
+	filters       *repository.FiltersRepository
 }
 
 func NewNotesAPIHandler(notes *repository.NotesRepository, spaces *repository.SpacesRepository, sync *repository.SyncRepository) *NotesAPIHandler {

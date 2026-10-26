@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import { activityTypes as activityTypesRepo } from '../data'
 import { parseDurationToMs, formatDurationShort } from '../lib/time'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from './ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
 
 export type ActivityDraft = { typeId: number; valueRaw: string }
 
@@ -11,12 +11,13 @@ export default function ActivitiesInput({
   value,
   onChange,
   spaceId,
-  placeholder = 'Add activity',
+  placeholder = 'Value',
   hideAddButton,
   menuOnly,
   onAddedType,
   requestEditTypeId,
   onEditRequestHandled,
+  onCreateNew,
 }: {
   value: ActivityDraft[]
   onChange: (next: ActivityDraft[]) => void
@@ -27,6 +28,8 @@ export default function ActivitiesInput({
   onAddedType?: (typeId: number) => void
   requestEditTypeId?: number | null
   onEditRequestHandled?: () => void
+  /** Menu only: offer “New metric…” at the end of the list. */
+  onCreateNew?: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
@@ -34,9 +37,10 @@ export default function ActivitiesInput({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
-  const activityTypes = (useLiveQuery(async () => {
+  const loadedTypes = useLiveQuery(async () => {
     return activityTypesRepo.listForSpace(spaceId)
-  }, [spaceId]) || [])
+  }, [spaceId])
+  const activityTypes = loadedTypes || []
 
   const byId = useMemo(() => new Map(activityTypes.map(t => [t.serverId!, t])), [activityTypes])
   const items = value
@@ -170,24 +174,26 @@ export default function ActivitiesInput({
 
   if (menuOnly) {
     return (
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger>
-          Activity
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="w-56" data-actmenu="1">
-          <div className="max-h-60 overflow-auto">
-            {availableTypes.length === 0 ? (
-              <DropdownMenuItem disabled>All activities added</DropdownMenuItem>
-            ) : (
-              availableTypes.map(t => (
-                <DropdownMenuItem key={t.serverId!} onSelect={() => addType(t.serverId!)}>
-                  {t.name}
-                </DropdownMenuItem>
-              ))
-            )}
-          </div>
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
+      <div data-actmenu="1">
+        <div className="max-h-60 overflow-auto">
+          {!loadedTypes ? null : availableTypes.length === 0 ? (
+            <DropdownMenuItem disabled>{activityTypes.length ? 'Every metric is on this note' : 'No metrics yet'}</DropdownMenuItem>
+          ) : (
+            availableTypes.map(t => (
+              <DropdownMenuItem key={t.serverId!} onSelect={() => addType(t.serverId!)}>
+                <span className="flex-1 truncate">{t.name}</span>
+                {t.unit && <span className="text-xs text-secondary">{t.unit}</span>}
+              </DropdownMenuItem>
+            ))
+          )}
+        </div>
+        {onCreateNew && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => onCreateNew()}>New metric…</DropdownMenuItem>
+          </>
+        )}
+      </div>
     )
   }
 
@@ -205,7 +211,7 @@ export default function ActivitiesInput({
                 const parsed = parseDurationToMs(String(it.valueRaw))
                 if (Number.isFinite(parsed)) return formatDurationShort(parsed)
               }
-              return it.valueRaw || '…'
+              return it.valueRaw ? `${it.valueRaw}${t?.unit ? ` ${t.unit}` : ''}` : '…'
             })()
             return (
               <button
@@ -226,7 +232,7 @@ export default function ActivitiesInput({
                     onChange(next)
                     if (editingIdx === idx) setEditingIdx(null)
                   }}
-                  aria-label="Remove activity"
+                  aria-label={`Remove ${label}`}
                   title="Remove"
                 ><CloseRoundedIcon fontSize="inherit" aria-hidden /></span>
               </button>
@@ -345,12 +351,12 @@ export default function ActivitiesInput({
       {!hideAddButton && activityTypes.length > 0 && (
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
-            <button type="button" className="button button-secondary" data-actmenu="1">Activity ▾</button>
+            <button type="button" className="button button-secondary" data-actmenu="1">Metric ▾</button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" data-actmenu="1" align="start">
             <div className="max-h-60 overflow-auto">
               {availableTypes.length === 0 ? (
-                <DropdownMenuItem disabled>All activities added</DropdownMenuItem>
+                <DropdownMenuItem disabled>Every metric is on this note</DropdownMenuItem>
               ) : (
                 availableTypes.map(t => (
                   <DropdownMenuItem key={t.serverId!} onSelect={() => addType(t.serverId!)}>

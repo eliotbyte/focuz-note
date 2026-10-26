@@ -149,7 +149,8 @@ func main() {
 
 	// Handlers
 	notesHandler := handlers.NewNotesHandler(notesRepo, spacesRepo)
-	notesAPIHandler := handlers.NewNotesAPIHandler(notesRepo, spacesRepo, syncRepo)
+	notesAPIHandler := handlers.NewNotesAPIHandler(notesRepo, spacesRepo, syncRepo).
+		WithMetrics(activitiesRepo, activityTypesRepo, filtersRepo)
 	apiTokensHandler := handlers.NewAPITokensHandler(apiTokensRepo)
 	spacesHandler := handlers.NewSpacesHandler(spacesRepo, rolesRepo).WithNotifier(notifier).WithNotificationsRepo(notificationsRepo)
 	activityTypesHandler := handlers.NewActivityTypesHandler(activityTypesRepo, spacesRepo)
@@ -268,6 +269,12 @@ func main() {
 		auth.PATCH("/activities/:activityId", activitiesHandler.UpdateActivity)
 
 		auth.GET("/activities", activitiesHandler.GetActivitiesAnalysis)
+
+		// metrics: activity types with their values, for people and agents (same functions as /mcp)
+		auth.GET("/spaces/:spaceId/metrics", notesAPIHandler.ListMetrics)
+		auth.POST("/spaces/:spaceId/metrics", notesAPIHandler.CreateMetric)
+		auth.GET("/spaces/:spaceId/metrics/:metric/entries", notesAPIHandler.MetricEntries)
+		auth.POST("/metrics/record", notesAPIHandler.RecordMetrics)
 
 		auth.POST("/upload", attachmentsHandler.UploadFile)
 		auth.GET("/files/:id", attachmentsHandler.GetFile)

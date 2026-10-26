@@ -30,6 +30,7 @@ import {
 import { applyStoredTheme } from './lib/theme'
 import SettingsDialog from './components/SettingsDialog'
 import ExportPanel from './components/ExportPanel'
+import MetricsView from './components/MetricsView'
 import NotificationsBell from './components/NotificationsBell'
 import SpaceRail from './components/spaces/SpaceRail'
 import SpaceHeader from './components/spaces/SpaceHeader'
@@ -535,6 +536,7 @@ function App() {
   const [selectedFilter, setSelectedFilter] = useState<FilterRecord | null>(null)
   const [currentNoteId, setCurrentNoteId] = useState<number | null>(null)
   const [unsortedView, setUnsortedView] = useState(false)
+  const [metricsView, setMetricsView] = useState(false)
   const [scope, setScope] = useState<FolderScope>('deep')
   // Folder rule being edited: the filter bar edits it and the feed previews it.
   const [ruleDraft, setRuleDraft] = useState<{ id: number; criteria: Criteria } | null>(null)
@@ -581,6 +583,8 @@ function App() {
   const selectedFilterIdRef = useRef<number | null>(null)
   useEffect(() => { selectedFilterIdRef.current = selectedFilter?.id ?? null }, [selectedFilter])
   useEffect(() => { unsortedViewRef.current = unsortedView }, [unsortedView])
+  const metricsViewRef = useRef(false)
+  useEffect(() => { metricsViewRef.current = metricsView }, [metricsView])
 
   // Ensure header is visible after auth transitions (otherwise content can be rendered with --topbar-effective-h=0).
   useEffect(() => {
@@ -624,18 +628,19 @@ function App() {
   }, [authed, headerHidden])
 
   // URL helpers
-  function parseQuery(): { space?: number; note?: number; filter?: number; unsorted: boolean } {
+  function parseQuery(): { space?: number; note?: number; filter?: number; unsorted: boolean; metrics: boolean } {
     const p = new URLSearchParams(location.search)
     const space = p.get('space')
     const note = p.get('note')
     const filter = p.get('filter')
-    return { space: space ? Number(space) : undefined, note: note ? Number(note) : undefined, filter: filter ? Number(filter) : undefined, unsorted: p.get('view') === 'unsorted' }
+    return { space: space ? Number(space) : undefined, note: note ? Number(note) : undefined, filter: filter ? Number(filter) : undefined, unsorted: p.get('view') === 'unsorted', metrics: p.get('view') === 'metrics' }
   }
-  function pushQuery(next: { space: number; note?: number | null; filter?: number | null; unsorted?: boolean }, replace = false, key = newEntryKey()) {
+  function pushQuery(next: { space: number; note?: number | null; filter?: number | null; unsorted?: boolean; metrics?: boolean }, replace = false, key = newEntryKey()) {
     const params = new URLSearchParams()
     params.set('space', String(next.space))
     if (next.note != null) params.set('note', String(next.note))
     if (next.filter != null) params.set('filter', String(next.filter))
+    else if (next.metrics ?? metricsViewRef.current) params.set('view', 'metrics')
     else if (next.unsorted ?? unsortedViewRef.current) params.set('view', 'unsorted')
     const url = `${location.pathname}?${params.toString()}`
     if (replace) history.replaceState({ k: key }, '', url)
@@ -768,8 +773,9 @@ function App() {
     if (!authed) return
 
     // initial from URL
-    const { space, note, filter, unsorted } = parseQuery()
+    const { space, note, filter, unsorted, metrics } = parseQuery()
     if (unsorted && !filter) setUnsortedView(true)
+    if (metrics && !filter) { setMetricsView(true); metricsViewRef.current = true }
     ensureDefaultSpace().then(async () => {
       const id = space || await getCurrentSpaceId()
       setCurrentSpaceId(id)
@@ -808,7 +814,7 @@ function App() {
     const onPop = () => {
       const prevSpaceId = currentSpaceIdRef.current
       const prevNoteId = currentNoteIdRef.current
-      const { space: s, note: n, filter: f, unsorted: u } = parseQuery()
+      const { space: s, note: n, filter: f, unsorted: u, metrics: mv } = parseQuery()
       // Back/forward: same entry, same frozen feed. Entries from before a reload start fresh.
       const k = typeof history.state?.k === 'string' ? history.state.k as string : newEntryKey()
       entryKeyRef.current = k
@@ -816,6 +822,7 @@ function App() {
       if (s) setCurrentSpaceId(s)
       setCurrentNoteId(n ?? null)
       setUnsortedView(u && f == null)
+      setMetricsView(mv && f == null)
       setRuleDraft(null)
       if (f == null) setSelectedFilter(null)
       else {
@@ -845,7 +852,7 @@ function App() {
     }
   }, [authed])
 
-  const feedView: FeedView = selectedFilter?.id != null ? { kind: 'folder', id: selectedFilter.id } : unsortedView ? { kind: 'unsorted' } : { kind: 'all' }
+  const feedView: FeedView = selectedFilter?.id != null ? { kind: 'folder', id: selectedFilter.id } : metricsView ? { kind: 'metrics' } : unsortedView ? { kind: 'unsorted' } : { kind: 'all' }
   const currentRule = feedView.kind === 'folder' ? folderIndex?.rules.get(feedView.id) : undefined
   const [feedLayout, setFeedLayout] = useFeedLayout(currentSpaceId, feedView, folderIndex, canWrite(spaceView.role))
   // Tiles use the room a wide screen has; a thread and the list keep the reading width.
@@ -867,12 +874,14 @@ function App() {
     }
     setSelectedFilter(rec)
     setUnsortedView(v.kind === 'unsorted')
+    setMetricsView(v.kind === 'metrics')
+    metricsViewRef.current = v.kind === 'metrics'
     setScope('deep')
     setRuleDraft(null)
     setCurrentNoteId(null)
     const folderSort = (rec?.params as any)?.sort
     setFeedQuick({ ...DEFAULT_QUICK, sort: folderSort || quickFeed.sort || DEFAULT_QUICK.sort })
-    pushQuery({ space: currentSpaceId, note: null, filter: rec?.id ?? null, unsorted: v.kind === 'unsorted' })
+    pushQuery({ space: currentSpaceId, note: null, filter: rec?.id ?? null, unsorted: v.kind === 'unsorted', metrics: v.kind === 'metrics' })
     setDrawerOpen(false)
     if (scrollRef.current) scrollRef.current.scrollTop = 0
   }
@@ -1036,11 +1045,11 @@ function App() {
   ) : null
   const viewTitle = feedView.kind === 'folder'
     ? (folderIndex?.nodes.get(feedView.id)?.rec.name ?? selectedFilter?.name ?? 'Folder')
-    : feedView.kind === 'unsorted' ? 'Unsorted' : 'All notes'
+    : feedView.kind === 'unsorted' ? 'Unsorted' : feedView.kind === 'metrics' ? 'Metrics' : 'All notes'
 
   // What the open view shows before quick filters: null = everything.
   let scopeIds: Set<number> | null = null
-  if (feedView.kind !== 'all') {
+  if (feedView.kind !== 'all' && feedView.kind !== 'metrics') {
     if (!folderIndex) scopeIds = new Set<number>()
     else if (feedView.kind === 'unsorted') scopeIds = folderIndex.unsorted
     else if (scope === 'here' && !ruleDraft) scopeIds = directOnly(folderIndex, feedView.id)
@@ -1085,6 +1094,8 @@ function App() {
           }}
         />
       )
+    } else if (feedView.kind === 'metrics') {
+      center = <MetricsView spaceId={currentSpaceId} canWrite={canWrite(spaceView.role)} onOpenNote={openThread} />
     } else {
       const editing = ruleDraft && feedView.kind === 'folder' && ruleDraft.id === feedView.id ? ruleDraft : null
       // Notes created here get the folder's tags (and tags picked in the filter bar).

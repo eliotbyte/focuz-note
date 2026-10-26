@@ -23,7 +23,10 @@ import { checkDocument, DOCUMENT_ACCEPT, isPicture, MAX_DOCUMENTS } from '../lib
 import { pasteFile, type LargePaste } from '../lib/note-format/code-paste'
 import { languageLabel } from '../lib/code-languages'
 import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import ShowChartRoundedIcon from '@mui/icons-material/ShowChartRounded'
+import NewMetricDialog from './NewMetricDialog'
+import { useSpaceView } from '../lib/space-context'
+import { canWrite } from '../lib/roles'
 import ImageEditorDialog from './ImageEditorDialog'
 import InlineNoteEditor, { type InlineNoteEditorHandle } from './InlineNoteEditor'
 import { dayOf, withDay } from '../lib/note-date'
@@ -83,6 +86,8 @@ export default function NoteEditor({
   const allowActivitiesInAddMenu = mode === 'edit' ? featureFlags.noteCreateAddActivity : allowActivitiesInline
   const [activities, setActivities] = useState<ActivityDraft[]>(allowActivitiesInline ? (value.activities || []) : [])
   const [editRequestTypeId, setEditRequestTypeId] = useState<number | null>(null)
+  const [newMetric, setNewMetric] = useState(false)
+  const mayCreateMetric = canWrite(useSpaceView().role)
   const [fullscreen, setFullscreen] = useState(false)
   // The full-screen editor reports text changes asynchronously; merge them into the latest value.
   const valueRef = useRef(value)
@@ -428,15 +433,16 @@ export default function NoteEditor({
           {allowActivitiesInAddMenu ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="composer-tool" aria-label="Add activity" title="Add activity"><AddRoundedIcon fontSize="inherit" /></button>
+                <button type="button" className="composer-tool" aria-label="Add a metric value" title="Add a metric value: weight, spending…"><ShowChartRoundedIcon fontSize="inherit" /></button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-44">
+              <DropdownMenuContent align="start" className="w-56">
                 <ActivitiesInput
                   value={activities}
                   onChange={(acts) => { setActivities(acts); onChange({ ...value, activities: acts }); }}
                   spaceId={spaceId}
                   menuOnly
                   onAddedType={(tid) => { setEditRequestTypeId(tid) }}
+                  onCreateNew={mayCreateMetric && spaceId != null ? () => setNewMetric(true) : undefined}
                 />
               </DropdownMenuContent>
             </DropdownMenu>
@@ -447,6 +453,20 @@ export default function NoteEditor({
         )}
         <button className="button button-default" onClick={submit} disabled={!canSubmit}>{submitLabel}</button>
       </div>
+      {spaceId != null && (
+        <NewMetricDialog
+          spaceId={spaceId}
+          open={newMetric}
+          onClose={() => setNewMetric(false)}
+          onCreated={(t) => {
+            if (t.serverId == null) return
+            const acts = [...activities, { typeId: t.serverId, valueRaw: '' }]
+            setActivities(acts)
+            onChange({ ...value, activities: acts })
+            setEditRequestTypeId(t.serverId)
+          }}
+        />
+      )}
       <FullscreenNoteEditor
         open={fullscreen}
         onOpenChange={(o) => { setFullscreen(o); if (!o) requestAnimationFrame(() => textRef.current?.focus()) }}

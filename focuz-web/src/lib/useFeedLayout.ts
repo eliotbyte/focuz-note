@@ -5,7 +5,7 @@ import { updateFilterLocal } from './local-writes'
 import { DEFAULT_LAYOUT, layoutFromParams, layoutFromValue, paramsWithLayout, type FeedLayout } from './feed-layout'
 import type { FolderIndex } from './folders'
 
-type View = { kind: 'all' } | { kind: 'unsorted' } | { kind: 'folder'; id: number }
+type View = { kind: 'all' } | { kind: 'unsorted' } | { kind: 'metrics' } | { kind: 'folder'; id: number }
 
 /**
  * The layout of the feed being shown and a way to change it. A folder keeps it in its params (so it

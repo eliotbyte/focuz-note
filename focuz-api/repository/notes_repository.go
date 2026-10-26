@@ -295,6 +295,11 @@ func (r *NotesRepository) GetNotes(userID, spaceID int, filters models.NoteFilte
 		params = append(params, *filters.DateTo)
 		idx++
 	}
+	for _, word := range strings.Fields(filters.Search) {
+		conditions = append(conditions, "n.text ILIKE $"+strconv.Itoa(idx)+` ESCAPE '\'`)
+		params = append(params, "%"+likeEscaper.Replace(word)+"%")
+		idx++
+	}
 
 	query := `
 		SELECT 
@@ -307,6 +312,7 @@ func (r *NotesRepository) GetNotes(userID, spaceID int, filters models.NoteFilte
 		    SELECT json_agg(json_build_object(
 		      'id', a.id,
 		      'typeId', a.type_id,
+		      'name', at.name,
 		      'value', a.value->>'data',
 		      'unit', at.unit
 		    ) ORDER BY a.id)
@@ -456,7 +462,7 @@ func (r *NotesRepository) GetNotes(userID, spaceID int, filters models.NoteFilte
 
 func (r *NotesRepository) getActivitiesForNote(noteID int) ([]models.NoteActivity, error) {
 	rows, err := r.db.Query(`
-		SELECT a.id, a.type_id, a.value->>'data', at.unit
+		SELECT a.id, a.type_id, at.name, a.value->>'data', at.unit
 		FROM activities a
 		JOIN activity_types at ON a.type_id = at.id
 		WHERE a.note_id = $1
@@ -470,13 +476,61 @@ func (r *NotesRepository) getActivitiesForNote(noteID int) ([]models.NoteActivit
 	for rows.Next() {
 		var item models.NoteActivity
 		var val string
-		if err := rows.Scan(&item.ID, &item.TypeID, &val, &item.Unit); err != nil {
+		if err := rows.Scan(&item.ID, &item.TypeID, &item.Name, &val, &item.Unit); err != nil {
 			return nil, err
 		}
 		item.Value = val
 		result = append(result, item)
 	}
 	return result, nil
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+
+// SpaceStats counts the live notes of a space and gives the dates of the first and the last.
+func (r *NotesRepository) SpaceStats(spaceID int) (notes, topLevel int, first, last *time.Time, err error) {
+	var f, l sql.NullTime
+	err = r.db.QueryRow(`
+		SELECT COUNT(*), COUNT(*) FILTER (WHERE parent_id IS NULL), MIN(date), MAX(date)
+		FROM note WHERE space_id = $1 AND is_deleted = FALSE
+	`, spaceID).Scan(&notes, &topLevel, &f, &l)
+	if f.Valid {
+		first = &f.Time
+	}
+	if l.Valid {
+		last = &l.Time
+	}
+	return
+}
+
+type TagCount struct {
+	Name  string `json:"name"`
+	Notes int    `json:"notes"`
+}
+
+// TagCounts lists the tags used by live notes of a space, most used first.
+func (r *NotesRepository) TagCounts(spaceID, limit int) ([]TagCount, error) {
+	rows, err := r.db.Query(`
+		SELECT t.name, COUNT(DISTINCT n.id) AS c
+		FROM tag t JOIN note_to_tag nt ON nt.tag_id = t.id JOIN note n ON n.id = nt.note_id
+		WHERE n.space_id = $1 AND n.is_deleted = FALSE
+		GROUP BY t.name
+		ORDER BY c DESC, t.name
+		LIMIT $2
+	`, spaceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]TagCount, 0)
+	for rows.Next() {
+		var tc TagCount
+		if err := rows.Scan(&tc.Name, &tc.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, tc)
+	}
+	return out, rows.Err()
 }
 
 func joinConditions(conds []string, sep string) string {
