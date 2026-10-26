@@ -3,6 +3,55 @@
 Versions before 0.2.0 were not tagged. From 0.2.0 on, each release has a `vX.Y.Z` tag, and every
 commit to `main` raises the patch number.
 
+## 0.3.0 (2026-10-26)
+
+Metrics, and an agent that can use the notes as its memory. Status: still alpha.
+
+### Metrics
+
+- A metric is a number tracked over time: weight, a blood value, spending, sleep. Each value lives in
+  a note and takes the note's date, so the feed shows what was recorded and when.
+- **Metrics** in the sidebar: every metric of the space with its last value and the change since the
+  one before; an open metric lists all its values (day, value, change, note) and opens their notes,
+  with lowest, highest and average for numbers. Metrics that add up (spending, steps) show no change.
+- The composer has a metric button (new notes and replies too, not only edits) with the space's
+  metrics and “New metric…”: name, kind of value (number, whole number, duration, yes/no, text), unit,
+  and whether a period shows the average or the total. Note pills show the unit (“Weight: 63 kg”).
+- REST: `GET/POST /spaces/:spaceId/metrics`, `GET /spaces/:spaceId/metrics/:metric/entries`
+  (`from`, `to`, `limit`, `order`, `groupBy=day|week|month|year`), `POST /metrics/record`.
+
+### Agents (MCP)
+
+- New tools: `describe_space` (tags with counts, folders, metrics with last values), `list_metrics`,
+  `create_metric`, `record_metrics` (saves values in a dated note and answers with the previous value
+  and the change), `get_metric_history` (values and stats, or one value per day/week/month/year),
+  `remove_metric_value`, `restore_note`.
+- `list_notes` searches the text (`query`: every word, any case); `get_note` can include replies; a
+  note's metric values carry the metric's name. The server instructions describe the workflow.
+
+### Also since 0.2.0
+
+- Export: Telegram-style options (pictures and files are separate choices, only the chosen kind is
+  downloaded), and a date picker for the range and the note date instead of the browser's input.
+- Uploads: a 429 no longer uses up a file's attempts; other refusals fail at once. Import skips
+  pictures the server would refuse and says so.
+- REST, MCP and public links list a note's files in their order, as sync does.
+
+### Upgrading from 0.2.x
+
+- No migrations and no new settings. Rebuild both images.
+- Editors can now create metrics in a shared space (`POST /spaces/:id/metrics`); deleting them still
+  needs an admin. The older `POST /spaces/:id/activity-types` is unchanged.
+- A `time` value sent to `POST /activities` or `PATCH /activities/:id` is now a duration (`7h30m`,
+  `7:30` or `7 hours 30 minutes`), stored as the web app stores it. The old RFC 3339 form could not be
+  aggregated and is refused.
+
+### Known gaps
+
+- No charts in the app yet; `get_metric_history` with `groupBy` gives the data for them.
+- A value is attached with the button, not recognised from the text (“weight 63 kg”).
+- Creating a metric needs a connection to the server; adding values works offline.
+
 ## 0.2.0 (2026-10-26)
 
 Everything since the first alpha, 0.1.0 (2026-01-14). Status: still alpha.

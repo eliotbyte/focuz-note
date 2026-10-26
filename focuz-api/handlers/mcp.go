@@ -21,7 +21,7 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.2.4"
+	mcpServerVersion   = "0.3.0"
 	maxMCPBodyBytes    = 1 << 20
 	mcpInstructions    = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +
 		"Start with list_spaces, then describe_space: it shows the tags, folders and metrics of a space, so you " +
