@@ -18,6 +18,8 @@ import { useNotePublicState } from '../lib/useSpaces'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { NoteTileImages } from './NoteImages'
+import { DocumentIcon } from './NoteFiles'
+import { documentKind, isPicture } from '../lib/attachment-files'
 import NoteShareDialog from './NoteShareDialog'
 import NoteDetailsDialog from './NoteDetailsDialog'
 import NoteDateTip from './NoteDateTip'
@@ -195,9 +197,11 @@ function NoteTile({
   const html = useMemo(() => renderNoteHtml(text), [text])
   const tags = (note.tags || []).filter(t => !hiddenTags.has(t))
   const meta = [...activities.map(a => `${a._name}: ${a.valueRaw}`), ...tags.map(t => `#${t}`)]
-  const hasMedia = attachments.length > 0
+  const pictures = attachments.filter(isPicture)
+  const documents = attachments.filter(a => !isPicture(a))
+  const hasMedia = pictures.length > 0
   // A picture with nothing to read fills the whole tile.
-  const mediaOnly = hasMedia && !text
+  const mediaOnly = hasMedia && !text && documents.length === 0
   // A line or two gets bigger type, so a short tile doesn't look empty.
   const short = !hasMedia && text.length > 0 && text.length <= 90 && !text.includes('\n')
   const parentShown = !!(parentNote && !parentNote.deletedAt)
@@ -213,7 +217,7 @@ function NoteTile({
       onContextMenu={e => { e.preventDefault(); setMenuOpen(true) }}
       onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); onOpen() } }}
     >
-      {hasMedia && <NoteTileImages attachments={attachments} className="tile-media-area" />}
+      {hasMedia && <NoteTileImages attachments={pictures} className="tile-media-area" />}
 
       {!mediaOnly && (
         <div className="tile-body">
@@ -226,6 +230,13 @@ function NoteTile({
           {text
             ? <TileText html={html} short={short} />
             : <div className="tile-text" />}
+          {documents.length > 0 && (
+            <div className="tile-files" title={documents.map(d => d.fileName).join(', ')}>
+              <DocumentIcon kind={documentKind(documents[0])} />
+              <span className="truncate">{documents[0].fileName}</span>
+              {documents.length > 1 && <span className="tile-files-more">+{documents.length - 1}</span>}
+            </div>
+          )}
           {meta.length > 0 && <div className="tile-meta" title={meta.join('  ')}>{meta.join('  ')}</div>}
         </div>
       )}

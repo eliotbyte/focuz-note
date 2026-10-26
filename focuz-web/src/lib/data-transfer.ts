@@ -4,6 +4,7 @@ import { db } from './db'
 import { activities as activitiesRepo, attachments as attachmentsRepo, notes as notesRepo } from '../data'
 import { createOrUpdateLocalActivity, addLocalAttachments } from './local-writes'
 import { fetchAttachmentBlob } from './jobs-worker'
+import { MAX_DOCUMENT_BYTES } from './attachment-files'
 import type { NoteRecord } from './types'
 import {
   EXPORT_FORMAT,
@@ -247,7 +248,8 @@ export async function importIntoSpace(spaceId: number, file: File): Promise<Impo
     const files: File[] = []
     for (const p of n.pictures) {
       const bytes = pictures.get(p.file)
-      if (!bytes || bytes.byteLength > MAX_PICTURE_BYTES) { result.skippedPictures++; continue }
+      const limit = p.fileType.startsWith('image/') ? MAX_PICTURE_BYTES : MAX_DOCUMENT_BYTES
+      if (!bytes || bytes.byteLength > limit) { result.skippedPictures++; continue }
       files.push(new File([bytes as BlobPart], p.fileName, { type: p.fileType }))
     }
     if (files.length > 0) {

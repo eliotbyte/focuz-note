@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Focuz API
   description: API for a note-taking application with workspaces, notes, charts, and activities
-  version: 0.1.10
+  version: 0.1.11
   contact:
     name: Focuz Team
 servers:
@@ -1106,11 +1106,14 @@ paths:
     post:
       summary: Upload a file
       description: |
-        Upload a file attachment for a note. The server validates file size and type against a server-side policy.
-        Allowed MIME types and maximum size are configured on the server (not via client headers).
-        Default limits:
-        - Max size: 10 MB
-        - Allowed types: image/jpeg, image/png, application/pdf, text/plain
+        Upload a file attachment for a note: a picture or a document. The type is detected from the
+        content (not the client's header or the file name) and checked against the server's policy
+        (`config/uploads.yaml`, or `ALLOWED_FILE_TYPES` / `MAX_FILE_SIZE` / `MAX_DOCUMENT_SIZE`).
+        Default policy:
+        - Pictures: image/webp (the web app converts pictures to WebP), up to 10 MB
+        - Documents, up to 25 MB: PDF; Word, Excel, PowerPoint (old and OOXML); OpenDocument text,
+          spreadsheet, presentation; RTF; plain text (Markdown is detected as text/plain); CSV
+        Documents are served with `Content-Disposition: attachment` and their file name, never shown.
       tags:
         - Attachments
       security:

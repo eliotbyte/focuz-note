@@ -172,7 +172,7 @@ function NoteComposer({ spaceId, positiveQuickTags = [] }: { spaceId: number; po
       }
     }
 
-    try { await addLocalAttachments(noteId, (extra.attachments ?? []).slice(0, 10)) } catch {}
+    try { await addLocalAttachments(noteId, (extra.attachments ?? [])) } catch {}
 
     setValue({ text: '', tags: [] })
   }
@@ -357,7 +357,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
         }
       }
     }
-    try { await addLocalAttachments(id, (extra?.attachments ?? []).slice(0, 10)) } catch {}
+    try { await addLocalAttachments(id, (extra?.attachments ?? [])) } catch {}
     window.dispatchEvent(new Event('focuz:local-write'))
     setEditingId(null)
   }
@@ -490,7 +490,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
                       try { await createOrUpdateLocalActivity(noteId, a.typeId, String(a.valueRaw ?? '')) } catch {}
                     }
                   }
-                  try { await addLocalAttachments(noteId, (extra?.attachments ?? []).slice(0, 10)) } catch {}
+                  try { await addLocalAttachments(noteId, (extra?.attachments ?? [])) } catch {}
                   setReplyingForId(null)
                   setReplyValue({ text: '', tags: [] })
                 }}
@@ -1350,7 +1350,7 @@ function ReplyComposer({ spaceId, parentId, positiveQuickTags = [] }: { spaceId:
       serverId: null,
       clientId: crypto.randomUUID(),
     } as NoteRecord)
-    try { await addLocalAttachments(noteId, (extra.attachments ?? []).slice(0, 10)) } catch {}
+    try { await addLocalAttachments(noteId, (extra.attachments ?? [])) } catch {}
     setValue({ text: '', tags: [] })
   }
   return (
@@ -1371,7 +1371,7 @@ function NoteThread({ spaceId, noteId, entryKey, onBack, onOpenThread, quick, on
   async function saveEdit(extra?: { attachments?: File[] }) {
     if (!mainNote?.id) return
     await updateNoteLocal(mainNote.id, { text: editValue.text.trim(), tags: editValue.tags, ...(editValue.date ? { date: editValue.date } : {}) })
-    try { await addLocalAttachments(mainNote.id, (extra?.attachments ?? []).slice(0, 10)) } catch {}
+    try { await addLocalAttachments(mainNote.id, (extra?.attachments ?? [])) } catch {}
     window.dispatchEvent(new Event('focuz:local-write'))
     setEditing(false)
   }

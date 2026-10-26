@@ -7,6 +7,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import type { AttachmentRecord } from '../lib/types'
 import { attachments as attachmentsRepo } from '../data'
 import { requestAttachmentPrefetch } from '../lib/sync'
+import { isPicture } from '../lib/attachment-files'
 
 // Images in the feed never grow past their own size and never get taller than this.
 const MAX_MEDIA_HEIGHT = 360
@@ -23,8 +24,9 @@ export default function NoteImages({ noteId }: { noteId: number }) {
   const wheelAccumRef = useRef(0)
   const wheelCooldownRef = useRef<number | null>(null)
 
+  // Documents are listed under the text (NoteFiles).
   const attachments = (useLiveQuery(async () => {
-    return attachmentsRepo.listDisplayForNote(noteId)
+    return (await attachmentsRepo.listDisplayForNote(noteId)).filter(isPicture)
   }, [noteId]) ?? NONE) as AttachmentRecord[]
   const uploads = useUploadStates(attachments)
 

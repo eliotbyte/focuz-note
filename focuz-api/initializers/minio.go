@@ -21,7 +21,9 @@ type MinioConfig struct {
 	SecretKey        string
 	Bucket           string
 	UseSSL           bool
+	// MaxSize limits pictures (image/*); MaxDocumentSize every other allowed file.
 	MaxSize          int64
+	MaxDocumentSize  int64
 	FileTypes        []string
 	Expiry           time.Duration
 	ExternalEndpoint string
@@ -36,6 +38,7 @@ var Conf MinioConfig
 // If present, it overrides environment variables for upload-related fields.
 type uploadsConfigYAML struct {
 	MaxFileSize        int64    `yaml:"max_file_size"`
+	MaxDocumentSize    int64    `yaml:"max_document_size"`
 	AllowedFileTypes   []string `yaml:"allowed_file_types"`
 	PresignedURLExpiry int      `yaml:"presigned_url_expiry"` // seconds
 }
@@ -68,6 +71,7 @@ func InitMinio() error {
 		Bucket:           os.Getenv("MINIO_BUCKET"),
 		UseSSL:           parseBool(os.Getenv("MINIO_USE_SSL")),
 		MaxSize:          parseInt64(os.Getenv("MAX_FILE_SIZE"), 10485760),
+		MaxDocumentSize:  parseInt64(os.Getenv("MAX_DOCUMENT_SIZE"), 26214400),
 		FileTypes:        parseFileTypes(os.Getenv("ALLOWED_FILE_TYPES")),
 		Expiry:           parseExpiry(os.Getenv("PRESIGNED_URL_EXPIRY")),
 		ExternalEndpoint: os.Getenv("MINIO_EXTERNAL_ENDPOINT"),
@@ -93,6 +97,9 @@ func InitMinio() error {
 	if yamlCfg, err := loadUploadsConfig(); err == nil && yamlCfg != nil {
 		if yamlCfg.MaxFileSize > 0 {
 			Conf.MaxSize = yamlCfg.MaxFileSize
+		}
+		if yamlCfg.MaxDocumentSize > 0 {
+			Conf.MaxDocumentSize = yamlCfg.MaxDocumentSize
 		}
 		if len(yamlCfg.AllowedFileTypes) > 0 {
 			Conf.FileTypes = yamlCfg.AllowedFileTypes
@@ -163,7 +170,7 @@ func parseInt64(val string, def int64) int64 {
 
 func parseFileTypes(val string) []string {
 	if val == "" {
-		return []string{"image/jpeg", "image/png", "application/pdf"}
+		return DefaultFileTypes
 	}
 	return strings.Split(val, ",")
 }
@@ -187,11 +194,38 @@ func baseMIME(mime string) string {
 	return strings.TrimSpace(parts[0])
 }
 
+// DefaultFileTypes are the files a note may hold when nothing else is configured: pictures (the web app
+// sends WebP) and documents. Types are matched against what the content is, not what the client says.
+// Markdown is detected as text/plain.
+var DefaultFileTypes = []string{
+	"image/webp",
+	"application/pdf",
+	"text/plain", "text/csv", "text/rtf",
+	"application/msword",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	"application/vnd.ms-excel",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	"application/vnd.ms-powerpoint",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	"application/vnd.oasis.opendocument.text",
+	"application/vnd.oasis.opendocument.spreadsheet",
+	"application/vnd.oasis.opendocument.presentation",
+}
+
+// MaxUploadBody is the most an upload request may carry: the larger limit plus room for the form.
+func MaxUploadBody() int64 {
+	return max(Conf.MaxSize, Conf.MaxDocumentSize) + 1<<20
+}
+
 func CheckFileAllowed(size int64, mime string) error {
-	if size > Conf.MaxSize {
+	incoming := baseMIME(mime)
+	limit := Conf.MaxDocumentSize
+	if limit <= 0 || strings.HasPrefix(incoming, "image/") {
+		limit = Conf.MaxSize
+	}
+	if size > limit {
 		return fmt.Errorf("file size exceeds the limit")
 	}
-	incoming := baseMIME(mime)
 	allowed := false
 	for _, t := range Conf.FileTypes {
 		if baseMIME(t) == incoming {

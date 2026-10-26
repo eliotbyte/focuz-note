@@ -2379,6 +2379,57 @@ button:disabled { cursor: not-allowed; }
 .tile-stepper-btn:disabled { opacity: 0.4; box-shadow: none; }
 .tile-stepper-value { min-width: 2ch; text-align: center; font-size: var(--fs-ui); font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* ---------- Documents of a note: one droplet per file (icon, name, size, and an action at the end) ---------- */
+.file-list { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; min-width: 0; }
+.file-list > li { min-width: 0; max-width: 100%; }
+.file-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: var(--h-md);
+  border-radius: var(--r-pill);
+  color: var(--text-primary);
+  background: var(--drop-bg);
+  box-shadow: var(--shadow-drop);
+  transition: box-shadow var(--dur-micro) var(--ease-standard);
+}
+@media (hover: hover) { .file-chip:has(button.file-chip-main:hover), a.file-chip:hover { box-shadow: var(--shadow-drop-hover); } }
+.file-chip:has(button.file-chip-main:active) { box-shadow: var(--shadow-drop-press); }
+.file-chip-main {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  min-width: 0; height: 100%; padding: 0 var(--space-3);
+  border-radius: inherit; font-size: var(--fs-ui); text-align: left;
+}
+.file-chip-main:last-child { padding-right: var(--space-4); }
+.file-chip-icon { flex: none; display: grid; place-items: center; font-size: 18px; color: var(--text-muted); }
+.file-chip-name { min-width: 0; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip-size { flex: none; font-size: var(--fs-caption); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.file-chip-action {
+  flex: none; display: grid; place-items: center;
+  width: 28px; height: 28px; margin-right: 4px;
+  border-radius: var(--r-pill); font-size: 17px; color: var(--text-muted);
+}
+@media (hover: hover) { button.file-chip-action:not(:disabled):hover { color: var(--text-primary); background: rgba(var(--c-text) / 0.08); } }
+.file-chip .upload-badge { top: -6px; right: -6px; }
+
+/* A tile names its first document under the text. */
+.tile-files { flex: none; display: flex; align-items: center; gap: 0.35em; min-width: 0; color: var(--text-muted); font-size: 0.85em; }
+.tile-files svg { flex: none; font-size: 1.15em; }
+.tile-files-more { flex: none; font-variant-numeric: tabular-nums; }
+
+/* Reading a text, Markdown or CSV document inside the app: the content sits in a well. */
+.doc-preview-body {
+  max-height: min(60vh, 560px); overflow: auto; padding: var(--space-3);
+  border-radius: var(--r-md); background: var(--field-bg); box-shadow: var(--shadow-field);
+}
+/* A preview is read-only: task boxes in Markdown files can't be ticked. */
+.doc-preview-body input[type='checkbox'] { pointer-events: none; }
+.doc-preview-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--fs-small); }
+.doc-preview-table { border-collapse: collapse; font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
+.doc-preview-table th, .doc-preview-table td { padding: 4px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid rgba(var(--c-text) / 0.1); white-space: nowrap; }
+.doc-preview-table th { position: sticky; top: calc(-1 * var(--space-3)); font-weight: 600; background: var(--field-bg); }
+
 /* An image of a note that is still on its way to the server. */
 .upload-badge {
   position: absolute; top: 6px; right: 6px; z-index: 2;

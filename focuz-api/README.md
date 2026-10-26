@@ -3,7 +3,7 @@
 Backend API for a note-taking application with workspaces, notes, charts, and activities.
 
 **Status**: alpha  
-**Version**: 0.1.10
+**Version**: 0.1.11
 
 ## Quick Start
 
@@ -102,8 +102,9 @@ shared, made public as a whole or deleted. Folders (saved filters) are personal 
 - `GET /period-types` - get period types
 
 ### Attachments
-- `POST /upload` - upload a file
+- `POST /upload` - upload a picture or a document (type checked by content; see `config/uploads.yaml`)
 - `GET /files/{id}` - get a file
+- `GET /files/{id}/content` - the file itself; documents come as a download under their own name
 
 ### Sync (Offline)
 
@@ -188,6 +189,8 @@ Saved note filters with nested grouping and JSON parameters.
 - `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`, `RATE_LIMIT_WHITELIST`, `RATE_LIMIT_ENABLED`: tune/disable rate limiting.
 - `MINIO_EXTERNAL_ENDPOINT`: external hostname:port for presigned URLs; if empty, internal endpoint is used.
 - `MINIO_EXTERNAL_USE_SSL`: optional bool for presigned URL scheme when using `MINIO_EXTERNAL_ENDPOINT`. If unset, inferred from the endpoint scheme (`http://`/`https://`) or falls back to `MINIO_USE_SSL`.
+- `MAX_FILE_SIZE` (pictures, default 10 MB), `MAX_DOCUMENT_SIZE` (documents, default 25 MB), `ALLOWED_FILE_TYPES`
+  (comma-separated; empty = the built-in list). `config/uploads.yaml` overrides all three.
 - Files of pictures deleted through `/sync` are removed from MinIO after the push commits. At startup the API also removes files older than an hour that have no attachment row (skipped while the `attachments` table is empty); `ORPHAN_FILE_SWEEP=off` turns that sweep off.
 
 ## API Documentation

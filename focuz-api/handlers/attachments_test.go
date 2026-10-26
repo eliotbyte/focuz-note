@@ -167,6 +167,15 @@ func (s *E2ETestSuite) Test41_UploadAndGetFile() {
 		s.NoError(err3)
 		defer resp3.Body.Close()
 		s.Equal(http.StatusOK, resp3.StatusCode)
+
+		// A document comes as a download under its own name, never shown in the browser.
+		req4, _ := http.NewRequest("GET", s.baseURL+"/files/"+attachmentID+"/content", nil)
+		req4.Header.Set("Authorization", "Bearer "+s.ownerToken)
+		resp4, err4 := client2.Do(req4)
+		s.NoError(err4)
+		defer resp4.Body.Close()
+		s.Equal(http.StatusOK, resp4.StatusCode)
+		s.Equal("attachment; filename=test.txt", resp4.Header.Get("Content-Disposition"))
 	} else {
 		s.Fail("Upload response does not contain data")
 	}
@@ -302,8 +311,8 @@ func (s *E2ETestSuite) Test39D_UploadFile_TooLargeReturns413() {
 	json.NewDecoder(resp.Body).Decode(&noteResp)
 	noteID := int(noteResp["data"].(map[string]interface{})["id"].(float64))
 
-	// Build a payload bigger than MAX_FILE_SIZE (10MB in tests)
-	big := bytes.Repeat([]byte("a"), 11*1024*1024)
+	// Build a document bigger than MAX_DOCUMENT_SIZE (25 MB; pictures stop at 10 MB)
+	big := bytes.Repeat([]byte("a"), 26*1024*1024)
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, _ := writer.CreatePart(map[string][]string{

@@ -4,6 +4,8 @@ import SubdirectoryArrowRightRoundedIcon from '@mui/icons-material/SubdirectoryA
 import { renderNoteHtml } from '../lib/note-format/render'
 import { defaultServer, getServer, normalizeServerUrl, serverLabel } from '../lib/server'
 import { formatExactDateTime, formatRelativeShort } from '../lib/time'
+import { DocumentIcon } from './NoteFiles'
+import { documentKind } from '../lib/attachment-files'
 import { Avatar } from './ui/avatar'
 
 interface PublicNote {
@@ -119,7 +121,20 @@ function PublicNoteItem({ note, childrenOf, depth, fileUrl, collapseReplies }: {
         )}
         {/* Safe: markdown-it runs with html disabled; checkboxes are shown but can't be ticked. */}
         <div className="note-prose public-prose" dangerouslySetInnerHTML={{ __html: html }} />
-        {files.length > 0 && <ul className="text-sm">{files.map(a => <li key={a.id}><a className="link-btn" href={fileUrl(a.id)}>{a.fileName}</a></li>)}</ul>}
+        {files.length > 0 && (
+          <ul className="file-list" aria-label="Files">
+            {files.map(a => (
+              <li key={a.id}>
+                <a className="file-chip" href={fileUrl(a.id)} download={a.fileName} title={`Download ${a.fileName}`}>
+                  <span className="file-chip-main">
+                    <span className="file-chip-icon"><DocumentIcon kind={documentKind(a)} /></span>
+                    <span className="file-chip-name">{a.fileName}</span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
         {note.tags.length > 0 && <div className="flex flex-wrap gap-1.5">{note.tags.map(t => <span key={t} className="pill pill-tag">{t}</span>)}</div>}
         <footer className="flex items-center justify-between gap-3 text-small text-secondary">
           {replies.length > 0 ? (

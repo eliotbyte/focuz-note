@@ -23,6 +23,7 @@ import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import LinkOffRoundedIcon from '@mui/icons-material/LinkOffRounded'
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
+import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded'
 import FormatQuoteRoundedIcon from '@mui/icons-material/FormatQuoteRounded'
 import HorizontalRuleRoundedIcon from '@mui/icons-material/HorizontalRuleRounded'
 import TitleRoundedIcon from '@mui/icons-material/TitleRounded'
@@ -154,6 +155,8 @@ export interface FullscreenNoteEditorProps {
   canSubmit: boolean
   onPickImage?: () => void
   imagesDisabled?: boolean
+  onPickFile?: () => void
+  filesDisabled?: boolean
   /** Tags input, attachment thumbnails etc., shown under the text. */
   footer?: ReactNode
   placeholder?: string
@@ -175,7 +178,7 @@ export default function FullscreenNoteEditor(props: FullscreenNoteEditorProps) {
   )
 }
 
-function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmit, onPickImage, imagesDisabled, footer, placeholder, onOpenChange }: FullscreenNoteEditorProps) {
+function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmit, onPickImage, imagesDisabled, onPickFile, filesDisabled, footer, placeholder, onOpenChange }: FullscreenNoteEditorProps) {
   const submitRef = useRef(onSubmit)
   submitRef.current = onSubmit
   const canSubmitRef = useRef(canSubmit)
@@ -278,6 +281,9 @@ function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmi
           <LinkButton editor={editor} active={s.link} href={s.linkHref} />
           {onPickImage && (
             <ToolButton label="Add photo" disabled={imagesDisabled} onClick={onPickImage}><ImageOutlinedIcon fontSize="inherit" /></ToolButton>
+          )}
+          {onPickFile && (
+            <ToolButton label="Attach file" disabled={filesDisabled} onClick={onPickFile}><AttachFileRoundedIcon fontSize="inherit" /></ToolButton>
           )}
         </div>
         <div className="fse-group fse-group-end">

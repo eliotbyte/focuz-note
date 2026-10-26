@@ -916,7 +916,7 @@ func (h *SharingHandler) PublicFile(c *gin.Context) {
 	for _, n := range notes {
 		for _, a := range n.Attachments {
 			if a.ID == fileID {
-				serveAttachmentContent(c, a.ID, a.FileType, "public, max-age=300")
+				serveAttachmentContent(c, a.ID, a.FileType, a.FileName, "public, max-age=300")
 				return
 			}
 		}

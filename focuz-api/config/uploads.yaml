@@ -1,6 +1,20 @@
+# Pictures (image/*) may be up to max_file_size; every other file up to max_document_size.
 max_file_size: 10485760
+max_document_size: 26214400
+# Checked against the detected content, not the name. Markdown is detected as text/plain.
 allowed_file_types:
   - image/webp
   - application/pdf
   - text/plain
-presigned_url_expiry: 3600 
+  - text/csv
+  - text/rtf
+  - application/msword
+  - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+  - application/vnd.ms-excel
+  - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+  - application/vnd.ms-powerpoint
+  - application/vnd.openxmlformats-officedocument.presentationml.presentation
+  - application/vnd.oasis.opendocument.text
+  - application/vnd.oasis.opendocument.spreadsheet
+  - application/vnd.oasis.opendocument.presentation
+presigned_url_expiry: 3600

@@ -359,6 +359,9 @@ static stripes under reduced motion. Spinners: `.auth-spinner` (16px), `.upload-
 | Composer text | `.inline-editor` in an `.input` well | Rich text (tiptap, stored as Markdown): typed Markdown turns into formatting, a `.sel-bar` appears over selected text |
 | Composer tools | `.composer-tool` (photo, date) | 34px icon buttons in the bottom row, no material until hover; the date shows its day (`.has-label`) only when it is not today |
 | Picture thumbnail while writing | `.thumb-cell` (`.is-target` while dragging over) | `--c-media-bg`, `--r-md`, well shadow |
+| Document of a note | `.file-list` > `.file-chip` (`.file-chip-main`, `.file-chip-action`) | Droplet at `--h-md`: MUI Rounded icon for the kind (muted), name (truncated at 28ch), size in caption. Click downloads; text, Markdown and CSV open a preview. The end button is download (in the note) or remove (in the editor). Upload badge on the top-right corner. Same chip, as a link, on the public page |
+| Document preview | `DocumentPreviewDialog` (`.doc-preview-body`) | Dialog 45rem wide; the content in a well, max 60vh, scrolls. Text in mono `--fs-small`, Markdown through the note renderer, CSV as a table with a sticky header |
+| Documents of a tile | `.tile-files` | Caption line under the text: icon and first file name, "+N" for the rest |
 | Control on a picture | `.thumb-remove`, `.thumb-edit` | 24px dark disc with `CloseRounded` / `EditRounded` |
 | Remove × inside a pill | `.pill-x` | 18px round, muted |
 | Code to copy | `.code-block` | Well, mono caption |

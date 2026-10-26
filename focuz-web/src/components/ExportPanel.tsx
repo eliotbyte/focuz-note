@@ -40,12 +40,12 @@ function percent(s: ExportState): number {
 }
 
 function bannerText(s: ExportState): string {
-  if (s.status === 'decide') return 'Some pictures could not be downloaded'
+  if (s.status === 'decide') return 'Some files could not be downloaded'
   if (s.status === 'done') return 'Export ready'
   if (s.status === 'stopped') return 'Export stopped'
   if (s.status === 'failed') return 'Export failed'
   if (s.step === 'packing') return 'Packing the export…'
-  return `Exporting · ${s.done} of ${s.total} ${s.total === 1 ? 'picture' : 'pictures'}`
+  return `Exporting · ${s.done} of ${s.total} ${s.total === 1 ? 'file' : 'files'}`
 }
 
 /** Progress as a Sims-style needs bar; value null = working, amount unknown (barber stripes). */
@@ -121,14 +121,14 @@ function ExportOptionsDialog({ spaceId, spaceName }: { spaceId: number; spaceNam
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={withPictures} onChange={e => setWithPictures(e.target.checked)} />
-              Pictures
+              Pictures and files
             </label>
           </section>
 
           <section className="space-y-2">
             <div className="settings-label">Format</div>
             <p className="settings-note">
-              JSON. {withPictures ? 'With pictures, the file is a zip with the JSON and the pictures in it.' : 'Without pictures, it is a plain JSON file.'}
+              JSON. {withPictures ? 'With pictures and files, the export is a zip with the JSON and the files in it.' : 'Without them, it is a plain JSON file.'}
             </p>
           </section>
 
@@ -157,7 +157,7 @@ function ExportDetailsDialog({ s }: { s: ExportState }) {
   const name = s.request?.spaceName || 'space'
   const title = {
     running: 'Exporting your data',
-    decide: 'Some pictures could not be downloaded',
+    decide: 'Some files could not be downloaded',
     done: 'Export ready',
     stopped: 'Export stopped',
     failed: 'Export failed',
@@ -182,7 +182,7 @@ function ExportDetailsDialog({ s }: { s: ExportState }) {
                 <span className="truncate text-primary">{name}</span>
                 <span className="shrink-0 text-secondary">{s.done} / {s.total}</span>
               </div>
-              <Meter value={percent(s)} label={`Pictures: ${s.done} of ${s.total}`} />
+              <Meter value={percent(s)} label={`Files: ${s.done} of ${s.total}`} />
             </div>
           )}
           {running && s.step === 'pictures' && s.current && (
@@ -198,7 +198,7 @@ function ExportDetailsDialog({ s }: { s: ExportState }) {
           )}
           {s.status === 'decide' && (
             <p className="settings-error" role="alert">
-              {s.failedPictures} {s.failedPictures === 1 ? 'picture' : 'pictures'} could not be downloaded. The server may be unreachable, or the {s.failedPictures === 1 ? 'file is' : 'files are'} damaged there.
+              {s.failedPictures} {s.failedPictures === 1 ? 'file' : 'files'} could not be downloaded. The server may be unreachable, or the {s.failedPictures === 1 ? 'file is' : 'files are'} damaged there.
             </p>
           )}
           {s.status === 'done' && s.report && <p className="settings-ok" role="status">{s.report}</p>}

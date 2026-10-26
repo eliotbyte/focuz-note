@@ -18,6 +18,9 @@ import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
+import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded'
+import { EditableFileChip } from './NoteFiles'
+import { checkDocument, DOCUMENT_ACCEPT, isPicture, MAX_DOCUMENTS } from '../lib/attachment-files'
 import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ImageEditorDialog from './ImageEditorDialog'
@@ -67,7 +70,10 @@ export default function NoteEditor({
   )
   const textRef = useRef<InlineNoteEditorHandle | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const docInputRef = useRef<HTMLInputElement | null>(null)
+  // New pictures (already WebP) and new documents (as they are), uploaded on submit.
   const [attachments, setAttachments] = useState<File[]>([])
+  const [docs, setDocs] = useState<File[]>([])
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const allowActivitiesInline = mode === 'edit' ? true : featureFlags.noteCreateAddActivity
   const allowActivitiesInAddMenu = mode === 'edit' ? featureFlags.noteCreateAddActivity : allowActivitiesInline
@@ -84,11 +90,13 @@ export default function NoteEditor({
     return attachmentsRepo.listActiveSortedForNote(noteId)
   }, [noteId, mode]) ?? NO_ATTACHMENTS) as AttachmentRecord[]
   const existingUploads = useUploadStates(existingAttachments)
+  const existingPictures = useMemo(() => existingAttachments.filter(isPicture), [existingAttachments])
+  const existingDocs = useMemo(() => existingAttachments.filter(a => !isPicture(a)), [existingAttachments])
 
-  // A note needs text or at least one picture (one being added, or one it already has).
+  // A note needs text or at least one file (one being added, or one it already has).
   const canSubmit = useMemo(
-    () => value.text.trim().length > 0 || attachments.length > 0 || (mode === 'edit' && existingAttachments.length > 0),
-    [value.text, attachments.length, mode, existingAttachments.length],
+    () => value.text.trim().length > 0 || attachments.length > 0 || docs.length > 0 || (mode === 'edit' && existingAttachments.length > 0),
+    [value.text, attachments.length, docs.length, mode, existingAttachments.length],
   )
   // The day the note is about: a calendar button that shows the day only when it is not today.
   const dateInput = mode === 'reply' ? null : (
@@ -97,6 +105,7 @@ export default function NoteEditor({
   const maxReached = attachments.length >= MAX_ATTACHMENTS
   const attachmentsCountRef = useRef(0)
   attachmentsCountRef.current = attachments.length
+  const docsMaxReached = docs.length >= MAX_DOCUMENTS
 
   // Hard gate: never keep activities drafts in production for create/reply.
   useEffect(() => {
@@ -146,20 +155,43 @@ export default function NoteEditor({
     }
   }
 
+  // Stage documents as they are; the parent uploads them on submit with the pictures.
+  function addDocumentFiles(files: File[]) {
+    const accepted: File[] = []
+    for (const f of files) {
+      if (docs.length + accepted.length >= MAX_DOCUMENTS) {
+        notify('File not added', 'warning', { id: 'editor-max-files', description: `A note can have up to ${MAX_DOCUMENTS} files.` })
+        break
+      }
+      const check = checkDocument(f)
+      if (!check.ok) {
+        notify('File not added', 'warning', { description: `${f.name || 'The file'}: ${check.reason}.` })
+        continue
+      }
+      accepted.push(f)
+    }
+    if (accepted.length > 0) setDocs(prev => [...prev, ...accepted].slice(0, MAX_DOCUMENTS))
+  }
+
+  function addFiles(files: File[]) {
+    void addImageFiles(files.filter(isImageFile))
+    addDocumentFiles(files.filter(f => !isImageFile(f)))
+  }
+
   function onPaste(e: React.ClipboardEvent) {
     const files = filesFromDataTransfer(e.clipboardData)
     if (files.length === 0) return
-    // Keep text paste working when the clipboard has both text and an image.
+    // Keep text paste working when the clipboard has both text and a file.
     const text = e.clipboardData.getData('text/plain')
     if (!text) e.preventDefault()
-    void addImageFiles(files)
+    addFiles(files)
   }
 
   function onDrop(e: React.DragEvent) {
     const files = filesFromDataTransfer(e.dataTransfer)
     if (files.length === 0) return
     e.preventDefault()
-    void addImageFiles(files)
+    addFiles(files)
   }
 
   function collapseIfNeeded() {
@@ -185,16 +217,17 @@ export default function NoteEditor({
 
   function submit() {
     if (!canSubmit) return
-    if (onSubmitWithExtra) onSubmitWithExtra({ attachments })
+    if (onSubmitWithExtra) onSubmitWithExtra({ attachments: [...attachments, ...docs] })
     else onSubmit()
     setAttachments([])
+    setDocs([])
     setFullscreen(false)
     collapseIfNeeded()
   }
 
   function moveExisting(from: number, to: number) {
     if (!noteId) return
-    const ids = existingAttachments.map(a => a.id!)
+    const ids = existingPictures.map(a => a.id!)
     const [m] = ids.splice(from, 1)
     ids.splice(to, 0, m)
     void reorderNoteAttachments(noteId, ids).catch(() => {})
@@ -211,13 +244,13 @@ export default function NoteEditor({
 
   const thumbnails = (
     <>
-        {mode === 'edit' && existingAttachments.length > 0 && attachments.length === 0 && (
-          <div className="text-xs text-secondary">Adding new photos will be uploaded when you click Update.</div>
+        {mode === 'edit' && existingAttachments.length > 0 && attachments.length === 0 && docs.length === 0 && (
+          <div className="text-xs text-secondary">New photos and files are uploaded when you click Update.</div>
         )}
-        {(mode === 'edit' && existingAttachments.length > 0) && (
+        {(mode === 'edit' && existingPictures.length > 0) && (
           <SortableThumbs
             group="existing"
-            items={existingAttachments}
+            items={existingPictures}
             keyOf={att => `att-${att.id}`}
             onMove={moveExisting}
             render={(att) => (
@@ -266,6 +299,27 @@ export default function NoteEditor({
             )}
           />
         )}
+        {((mode === 'edit' && existingDocs.length > 0) || docs.length > 0) && (
+          <ul className="file-list" aria-label="Files">
+            {mode === 'edit' && existingDocs.map(att => (
+              <li key={`att-${att.id}`}>
+                <EditableFileChip
+                  fileName={att.fileName}
+                  fileSize={att.fileSize}
+                  fileType={att.fileType}
+                  onRemove={() => { if (att.id != null) void deleteLocalAttachment(att.id).catch(() => {}) }}
+                >
+                  <UploadBadge state={existingUploads.get(att.id!)} />
+                </EditableFileChip>
+              </li>
+            ))}
+            {docs.map((f, idx) => (
+              <li key={`doc-${fileKey(f)}`}>
+                <EditableFileChip fileName={f.name} fileSize={f.size} fileType={f.type} onRemove={() => setDocs(prev => prev.filter((_, i) => i !== idx))} />
+              </li>
+            ))}
+          </ul>
+        )}
     </>
   )
 
@@ -284,7 +338,7 @@ export default function NoteEditor({
           text={value.text}
           onChange={text => onChange({ ...valueRef.current, text })}
           onSubmit={submit}
-          placeholder={mode === 'reply' ? 'Reply…' : 'Add note… (paste or drop images here)'}
+          placeholder={mode === 'reply' ? 'Reply…' : 'Add note… (paste or drop pictures and files here)'}
           label={mode === 'reply' ? 'Reply' : mode === 'edit' ? 'Edit note' : 'Add note'}
         />
         <button
@@ -314,10 +368,18 @@ export default function NoteEditor({
         try { if (fileInputRef.current) fileInputRef.current.value = '' } catch {}
         await addImageFiles(files)
       }} />
+      <input ref={docInputRef} type="file" accept={DOCUMENT_ACCEPT} multiple className="hidden" onChange={e => {
+        const files = Array.from(e.target.files ?? [])
+        try { if (docInputRef.current) docInputRef.current.value = '' } catch {}
+        addFiles(files)
+      }} />
       <div className="flex items-center justify-end gap-2">
         <div className="flex-1 flex items-center gap-1 min-w-0">
           <button type="button" className="composer-tool" aria-label="Add photo" title="Add photo" disabled={maxReached} onClick={() => fileInputRef.current?.click()}>
             <ImageOutlinedIcon fontSize="inherit" />
+          </button>
+          <button type="button" className="composer-tool" aria-label="Attach file" title="Attach a file: PDF, Word, Excel, PowerPoint, text, Markdown, CSV" disabled={docsMaxReached} onClick={() => docInputRef.current?.click()}>
+            <AttachFileRoundedIcon fontSize="inherit" />
           </button>
           {dateInput}
           {allowActivitiesInAddMenu ? (
@@ -338,7 +400,7 @@ export default function NoteEditor({
           ) : null}
         </div>
         {onCancel && (
-          <button className="button button-secondary" onClick={() => { onCancel(); setAttachments([]); collapseIfNeeded() }}>Cancel</button>
+          <button className="button button-secondary" onClick={() => { onCancel(); setAttachments([]); setDocs([]); collapseIfNeeded() }}>Cancel</button>
         )}
         <button className="button button-default" onClick={submit} disabled={!canSubmit}>{submitLabel}</button>
       </div>
@@ -353,6 +415,8 @@ export default function NoteEditor({
         canSubmit={canSubmit}
         onPickImage={() => fileInputRef.current?.click()}
         imagesDisabled={maxReached}
+        onPickFile={() => docInputRef.current?.click()}
+        filesDisabled={docsMaxReached}
         placeholder={mode === 'reply' ? 'Reply…' : 'Write a note… Type "[ ] " for a checklist, "# " for a heading'}
         // Paste/drop of images inside the dialog bubbles (through the React portal) to this editor's handlers.
         footer={<div className="fse-meta">{dateInput}{tagsInput}{thumbnails}</div>}

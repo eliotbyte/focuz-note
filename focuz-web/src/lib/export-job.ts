@@ -133,9 +133,9 @@ export async function startExport(request: ExportRequest, opts: { skipUnavailabl
     })
     downloadBlob(res.blob, res.fileName)
     const parts = [`${res.noteCount} ${res.noteCount === 1 ? 'note' : 'notes'}`]
-    if (request.withPictures) parts.push(`${res.pictureCount} ${res.pictureCount === 1 ? 'picture' : 'pictures'}`)
+    if (request.withPictures) parts.push(`${res.pictureCount} ${res.pictureCount === 1 ? 'file' : 'files'}`)
     let report = `Exported ${parts.join(' and ')}.`
-    if (res.missingPictures > 0) report += ` ${res.missingPictures} ${res.missingPictures === 1 ? 'picture is' : 'pictures are'} not in the file.`
+    if (res.missingPictures > 0) report += ` ${res.missingPictures} ${res.missingPictures === 1 ? 'file is' : 'files are'} not in the export.`
     set({ status: 'done', report, current: null })
     notify('Export ready', 'success')
   } catch (e) {

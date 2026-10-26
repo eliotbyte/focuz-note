@@ -8,6 +8,7 @@ import (
 	"focuz-api/repository"
 	"focuz-api/types"
 	"image"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -99,7 +100,7 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 	}
 
 	// Limit request body size before reading multipart data
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, initializers.Conf.MaxSize)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, initializers.MaxUploadBody())
 
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -253,11 +254,20 @@ func (h *AttachmentsHandler) GetFileContent(c *gin.Context) {
 	if att == nil {
 		return
 	}
-	serveAttachmentContent(c, att.ID, att.FileType, "private, max-age=31536000, immutable")
+	serveAttachmentContent(c, att.ID, att.FileType, att.FileName, "private, max-age=31536000, immutable")
+}
+
+// attachmentDisposition makes a browser save the file under its own name, never show it.
+func attachmentDisposition(fileName string) string {
+	name := strings.TrimSpace(fileName)
+	if name == "" {
+		return "attachment"
+	}
+	return mime.FormatMediaType("attachment", map[string]string{"filename": name})
 }
 
 // serveAttachmentContent streams a stored file. Callers check access first.
-func serveAttachmentContent(c *gin.Context, id, fileType, cacheControl string) {
+func serveAttachmentContent(c *gin.Context, id, fileType, fileName, cacheControl string) {
 	obj, err := initializers.MinioClient.GetObject(c.Request.Context(), initializers.Conf.Bucket, id, minio.GetObjectOptions{})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, types.NewErrorResponse(types.ErrorCodeInternal, "storage unavailable"))
@@ -282,7 +292,7 @@ func serveAttachmentContent(c *gin.Context, id, fileType, cacheControl string) {
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Security-Policy", "sandbox; default-src 'none'")
 	if !strings.HasPrefix(contentType, "image/") {
-		c.Header("Content-Disposition", "attachment")
+		c.Header("Content-Disposition", attachmentDisposition(fileName))
 	}
 	c.DataFromReader(http.StatusOK, info.Size, contentType, obj, nil)
 }

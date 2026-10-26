@@ -17,8 +17,8 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
     setBusy(true); setError(null); setReport(null)
     try {
       const r = await importIntoSpace(spaceId, file)
-      const lines = [`Imported ${r.notes} ${r.notes === 1 ? 'note' : 'notes'} and ${r.pictures} ${r.pictures === 1 ? 'picture' : 'pictures'}.`]
-      if (r.skippedPictures > 0) lines.push(`${r.skippedPictures} ${r.skippedPictures === 1 ? 'picture was' : 'pictures were'} skipped (too large or unreadable).`)
+      const lines = [`Imported ${r.notes} ${r.notes === 1 ? 'note' : 'notes'} and ${r.pictures} ${r.pictures === 1 ? 'file' : 'files'}.`]
+      if (r.skippedPictures > 0) lines.push(`${r.skippedPictures} ${r.skippedPictures === 1 ? 'file was' : 'files were'} skipped (too large or unreadable).`)
       if (r.skippedActivities > 0) lines.push(`${r.skippedActivities} ${r.skippedActivities === 1 ? 'activity was' : 'activities were'} skipped (its type is not in this space).`)
       setReport(lines.join(' '))
       notify('Notes imported', 'success')
@@ -35,7 +35,7 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
       <section className="space-y-2">
         <div className="settings-label">Export</div>
         <p className="settings-note">
-          Saves the notes of {spaceName ? <b>{spaceName}</b> : 'this space'} to a file: text, tags, dates, activities and, if you tick it, the pictures.
+          Saves the notes of {spaceName ? <b>{spaceName}</b> : 'this space'} to a file: text, tags, dates, activities and, if you tick it, the pictures and files.
           With pictures, every picture is downloaded to this device first, so keep this tab open until the export is complete.
         </p>
         <button type="button" className="button" disabled={spaceId == null} onClick={() => { if (spaceId != null) openExportOptions({ spaceId, spaceName }) }}>

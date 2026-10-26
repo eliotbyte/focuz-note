@@ -6,6 +6,7 @@ import { activities as activitiesRepo, notes as notesRepo } from '../data'
 import NoteBody from './NoteBody'
 import { noteLabel } from '../lib/note-format/render'
 import NoteImages from './NoteImages'
+import NoteFiles from './NoteFiles'
 import { formatExactDateTime, formatRelativeShort, formatDurationShort, parseDurationToMs } from '../lib/time'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
 import { Pill } from './ui/pill'
@@ -119,6 +120,9 @@ export default function NoteCard({
 
         {/* Text */}
         <NoteBody className="text-primary" noteId={note.id} text={note.text} readOnly={!mayEdit} />
+
+        {/* Documents */}
+        <NoteFiles noteId={note.id!} />
 
         {/* Activities (pills) */}
         {activities.length > 0 && (

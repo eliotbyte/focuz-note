@@ -112,7 +112,8 @@ async function mergeNoteAttachments(n: any, noteLocalId: number): Promise<void> 
       await db.attachments.delete(d.id!)
       await db.jobs.where('attachmentId').equals(d.id!).delete()
     }
-    if (!hasData && !rec.deletedAt) await ensureDownloadJobInTx(attId, BACKGROUND_DOWNLOAD_PRIORITY)
+    // Documents are downloaded when someone opens them; pictures are wanted in the feed.
+    if (!hasData && !rec.deletedAt && rec.fileType.startsWith('image/')) await ensureDownloadJobInTx(attId, BACKGROUND_DOWNLOAD_PRIORITY)
   }
   // The server returns the complete attachment list of a note and hard-deletes removed files:
   // anything server-backed that is missing here was deleted on another device.
