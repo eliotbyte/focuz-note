@@ -21,7 +21,7 @@ import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded'
 import { EditableFileChip } from './NoteFiles'
 import { checkDocument, DOCUMENT_ACCEPT, isPicture, MAX_DOCUMENTS } from '../lib/attachment-files'
-import { codeFile, type LargeCode } from '../lib/note-format/code-paste'
+import { pasteFile, type LargePaste } from '../lib/note-format/code-paste'
 import { languageLabel } from '../lib/code-languages'
 import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
@@ -175,19 +175,20 @@ export default function NoteEditor({
     if (accepted.length > 0) setDocs(prev => [...prev, ...accepted].slice(0, MAX_DOCUMENTS))
   }
 
-  // Long pasted code becomes a Markdown file on the note; the toast can put it back into the text.
+  // Long pasted code or text becomes a Markdown file on the note; the toast can put it back into the text.
   const docsRef = useRef(docs)
   docsRef.current = docs
-  function onLargeCode(c: LargeCode) {
+  function onLargePaste(p: LargePaste) {
     const current = docsRef.current
     const taken = [...current.map(f => f.name), ...existingDocs.map(a => a.fileName)]
-    if (current.length >= MAX_DOCUMENTS) { c.keepInText(); return }
-    const file = codeFile(c.code, c.language, taken)
+    if (current.length >= MAX_DOCUMENTS) { p.keepInText(); return }
+    const file = pasteFile(p, taken)
     setDocs(prev => [...prev, file])
-    const lines = c.code.split('\n').length
+    const lines = p.content.split('\n').length
+    const what = p.kind === 'code' ? `${p.language ? languageLabel(p.language) + ' ' : ''}code` : 'text'
     notifyUndoable(
-      `${lines} lines of ${c.language ? languageLabel(c.language) + ' ' : ''}code saved as ${file.name}`,
-      { label: 'Keep in text', onClick: () => { setDocs(prev => prev.filter(f => f !== file)); c.keepInText() } },
+      `${lines} ${lines === 1 ? 'line' : 'lines'} of ${what} saved as ${file.name}`,
+      { label: 'Keep in text', onClick: () => { setDocs(prev => prev.filter(f => f !== file)); p.keepInText() } },
       { durationMs: 10000 },
     )
   }
@@ -359,7 +360,7 @@ export default function NoteEditor({
           onSubmit={submit}
           placeholder={mode === 'reply' ? 'Reply…' : 'Add note… (paste or drop pictures and files here)'}
           label={mode === 'reply' ? 'Reply' : mode === 'edit' ? 'Edit note' : 'Add note'}
-          onLargeCode={onLargeCode}
+          onLargePaste={onLargePaste}
         />
         <button
           type="button"
@@ -437,7 +438,7 @@ export default function NoteEditor({
         imagesDisabled={maxReached}
         onPickFile={() => docInputRef.current?.click()}
         filesDisabled={docsMaxReached}
-        onLargeCode={onLargeCode}
+        onLargePaste={onLargePaste}
         placeholder={mode === 'reply' ? 'Reply…' : 'Write a note… Type "[ ] " for a checklist, "# " for a heading'}
         // Paste/drop of images inside the dialog bubbles (through the React portal) to this editor's handlers.
         footer={<div className="fse-meta">{dateInput}{tagsInput}{thumbnails}</div>}

@@ -5,7 +5,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { codeBlockView } from './CodeBlockView'
 import { noteExtensions, normalizeEditorMarkdown } from '../lib/note-format/extensions'
-import type { LargeCode } from '../lib/note-format/code-paste'
+import type { LargePaste } from '../lib/note-format/code-paste'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent,
   DropdownMenuSubTrigger, DropdownMenuTrigger,
@@ -159,8 +159,8 @@ export interface FullscreenNoteEditorProps {
   imagesDisabled?: boolean
   onPickFile?: () => void
   filesDisabled?: boolean
-  /** Long pasted code; without it, it is pasted as a code block. */
-  onLargeCode?: (c: LargeCode) => void
+  /** Long pasted code or text; without it, it is pasted into the text. */
+  onLargePaste?: (c: LargePaste) => void
   /** Tags input, attachment thumbnails etc., shown under the text. */
   footer?: ReactNode
   placeholder?: string
@@ -182,16 +182,16 @@ export default function FullscreenNoteEditor(props: FullscreenNoteEditorProps) {
   )
 }
 
-function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmit, onPickImage, imagesDisabled, onPickFile, filesDisabled, onLargeCode, footer, placeholder, onOpenChange }: FullscreenNoteEditorProps) {
-  const largeCodeRef = useRef(onLargeCode)
-  largeCodeRef.current = onLargeCode
+function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmit, onPickImage, imagesDisabled, onPickFile, filesDisabled, onLargePaste, footer, placeholder, onOpenChange }: FullscreenNoteEditorProps) {
+  const largePasteRef = useRef(onLargePaste)
+  largePasteRef.current = onLargePaste
   const submitRef = useRef(onSubmit)
   submitRef.current = onSubmit
   const canSubmitRef = useRef(canSubmit)
   canSubmitRef.current = canSubmit
 
   const editor = useEditor({
-    extensions: noteExtensions({ placeholder, codeBlockView, onLargeCode: () => largeCodeRef.current }),
+    extensions: noteExtensions({ placeholder, codeBlockView, onLargePaste: () => largePasteRef.current }),
     content: initialText,
     contentType: 'markdown',
     autofocus: 'end',

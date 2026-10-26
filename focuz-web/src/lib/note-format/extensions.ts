@@ -4,7 +4,7 @@ import type { AnyExtension, NodeViewRenderer } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { lowlight } from '../code-languages'
-import { CodePaste, type LargeCode } from './code-paste'
+import { CodePaste, type LargePaste } from './code-paste'
 import { Link } from '@tiptap/extension-link'
 import { TaskList } from '@tiptap/extension-task-list'
 import { TaskItem } from '@tiptap/extension-task-item'
@@ -20,8 +20,8 @@ const NoteLink = Link.configure({ openOnClick: false, autolink: true, linkOnPast
 export function noteExtensions(opts: {
   placeholder?: string
   codeBlockView?: NodeViewRenderer
-  /** Where long pasted code goes (read at paste time); without it, it is pasted as a code block. */
-  onLargeCode?: () => ((c: LargeCode) => void) | undefined
+  /** Where long pasted code or text goes (read at paste time); without it, it is pasted into the text. */
+  onLargePaste?: () => ((c: LargePaste) => void) | undefined
 } = {}): AnyExtension[] {
   const codeBlock = CodeBlockLowlight.configure({ lowlight, defaultLanguage: null })
   return [
@@ -36,7 +36,7 @@ export function noteExtensions(opts: {
     TaskList,
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: opts.placeholder ?? 'Write a note…' }),
-    CodePaste.configure({ onLargeCode: opts.onLargeCode }),
+    CodePaste.configure({ onLargePaste: opts.onLargePaste }),
     Markdown,
   ]
 }

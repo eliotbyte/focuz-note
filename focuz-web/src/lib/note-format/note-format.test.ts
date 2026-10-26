@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { noteExtensions, normalizeEditorMarkdown } from './extensions'
 import { noteLabel, notePreviewText, renderNoteHtml, toggleTask } from './render'
-import { codeFile, handleCodePaste, LARGE_CODE_LINES, type LargeCode } from './code-paste'
+import { handleCodePaste, LARGE_CODE_LINES, LARGE_TEXT_CHARS, LARGE_TEXT_LINES, pasteFile, textFileBase, type LargePaste } from './code-paste'
 import { normalizeLanguage } from '../code-languages'
 
 describe('note rendering', () => {
@@ -118,22 +118,42 @@ describe('pasting code', () => {
 
   it('hands long code to the composer, which can still put it back', () => {
     editor.commands.setContent('')
-    let got: LargeCode | null = null
-    expect(handleCodePaste(editor, clip(lines(LARGE_CODE_LINES), 'csharp'), c => { got = c })).toBe(true)
+    let got: LargePaste | null = null
+    expect(handleCodePaste(editor, clip(lines(LARGE_CODE_LINES), 'csharp'), p => { got = p })).toBe(true)
+    expect(got!.kind).toBe('code')
     expect(got!.language).toBe('csharp')
     expect(editor.getMarkdown()).toBe('')
     got!.keepInText()
     expect(normalizeEditorMarkdown(editor.getMarkdown())).toMatch(/^```csharp\nline0\(\);/)
   })
 
-  it('leaves ordinary text to the normal paste', () => {
+  it('hands long plain text to the composer too: many lines, or one very long paragraph', () => {
+    let got: LargePaste | null = null
     editor.commands.setContent('')
-    expect(handleCodePaste(editor, clip(lines(50)), () => { throw new Error('not code') })).toBe(false)
+    expect(handleCodePaste(editor, clip(lines(LARGE_TEXT_LINES)), p => { got = p })).toBe(true)
+    expect(got!.kind).toBe('text')
+    got = null
+    expect(handleCodePaste(editor, clip('word '.repeat(LARGE_TEXT_CHARS / 5)), p => { got = p })).toBe(true)
+    expect(got!.kind).toBe('text')
+  })
+
+  it('leaves short text to the normal paste', () => {
+    editor.commands.setContent('')
+    expect(handleCodePaste(editor, clip(lines(LARGE_TEXT_LINES - 1)), () => { throw new Error('not long') })).toBe(false)
+    expect(handleCodePaste(editor, clip(lines(50)))).toBe(false)
   })
 
   it('writes long code to a Markdown file with a safe fence and a free name', () => {
-    const f = codeFile('a = "```"\n', 'python', ['Code (Python).md'])
+    const f = pasteFile({ kind: 'code', content: 'a = "```"', language: 'python' }, ['Code (Python).md'])
     expect(f.name).toBe('Code (Python) 2.md')
     expect(f.size).toBeGreaterThan(0)
+  })
+
+  it('names a text file after its first words', () => {
+    expect(textFileBase('# Meeting notes, 26 Oct\n\nWe agreed…')).toBe('Meeting notes, 26 Oct')
+    expect(textFileBase('- [ ] call: the "plumber"?')).toBe('call the plumber')
+    expect(textFileBase('Lorem ipsum dolor sit amet consectetur adipiscing elit sed do')).toBe('Lorem ipsum dolor sit amet consectetur')
+    expect(textFileBase('\n\n')).toBe('Pasted text')
+    expect(pasteFile({ kind: 'text', content: 'Hello', language: null }, ['Hello.md']).name).toBe('Hello 2.md')
   })
 })

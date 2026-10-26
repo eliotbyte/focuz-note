@@ -3,7 +3,7 @@
 Frontend for **focuz-note** (local-first notes).
 
 **Status**: alpha  
-**Version**: 0.1.14
+**Version**: 0.1.15
 
 ## Environment
 
@@ -61,6 +61,7 @@ E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8080 npm run test
 - Code blocks keep their language in the Markdown (```` ```csharp ````) and are highlighted with
   highlight.js (the grammars in `src/lib/code-languages.ts`; lowlight in the editors). Code pasted
   from VS Code keeps its language; code of 20+ lines pasted from a code editor or into a code block
-  becomes an attached `Code (<language>).md`, with "Keep in text" in the toast.
+  becomes an attached `Code (<language>).md`, with "Keep in text" in the toast. Long plain text
+  (20+ lines or 4000+ characters) goes the same way, to a `.md` named after its first words.
 - Conflicts (a note changed on two devices) keep the server version and save the local text as a
   separate note tagged `conflict`.

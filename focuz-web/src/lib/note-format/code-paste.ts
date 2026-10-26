@@ -1,7 +1,7 @@
-// Pasting code into a note. Code is what comes from a code editor (VS Code puts its language in
+// Pasting into a note. Code is what comes from a code editor (VS Code puts its language in
 // "vscode-editor-data") or what is pasted into a code block. Short code from VS Code becomes a code
-// block in that language; long code goes to a file attached to the note (the composer decides how),
-// with a way to keep it in the text instead.
+// block in that language. Long code, and long plain text, go to a file attached to the note (the
+// composer decides how), with a way to keep them in the text instead.
 
 import { Extension, type Editor } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
@@ -9,12 +9,17 @@ import { languageLabel, normalizeLanguage } from '../code-languages'
 
 /** Code of this many lines or more leaves the note's text for an attached file. */
 export const LARGE_CODE_LINES = 20
+/** Text leaves too at this many lines, or at this many characters (one long paragraph has one line). */
+export const LARGE_TEXT_LINES = 20
+export const LARGE_TEXT_CHARS = 4000
 
-export interface LargeCode {
-  code: string
-  /** A known language id, or null. */
+export interface LargePaste {
+  kind: 'code' | 'text'
+  /** The pasted text, line endings normalized. */
+  content: string
+  /** Code only: a known language id, or null. */
   language: string | null
-  /** Puts the code into the note as a code block after all, where it was pasted. */
+  /** Puts it into the note after all, where it was pasted: code as a code block, text as pasted. */
   keepInText: () => void
 }
 
@@ -25,26 +30,44 @@ function vscodeLanguage(data: DataTransfer): string | null | undefined {
   try { return normalizeLanguage((JSON.parse(raw) as { mode?: string }).mode) } catch { return null }
 }
 
-export function handleCodePaste(editor: Editor, data: DataTransfer | null, onLargeCode?: (c: LargeCode) => void): boolean {
-  if (!data) return false
-  const text = data.getData('text/plain')
-  if (!text) return false
+// "Keep in text" for plain text replays the normal paste; this lets it through the handler.
+let replaying = false
+
+export function handleCodePaste(editor: Editor, data: DataTransfer | null, onLargePaste?: (p: LargePaste) => void): boolean {
+  if (!data || replaying) return false
+  const raw = data.getData('text/plain')
+  if (!raw) return false
   const fromEditor = vscodeLanguage(data)
   const inCodeBlock = editor.isActive('codeBlock')
-  if (fromEditor === undefined && !inCodeBlock) return false
-
-  const code = text.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
-  const lines = code.split('\n').length
-  const language = fromEditor ?? (inCodeBlock ? normalizeLanguage(editor.getAttributes('codeBlock').language) : null)
+  const content = raw.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
+  const lines = content.split('\n').length
   const at = editor.state.selection.from
-  const insertBlock = () => {
-    const pos = Math.min(at, editor.state.doc.content.size)
-    if (inCodeBlock) editor.chain().focus().insertContentAt(pos, { type: 'text', text: code }).run()
-    else editor.chain().focus().insertContentAt(pos, { type: 'codeBlock', attrs: { language }, content: code ? [{ type: 'text', text: code }] : [] }).run()
+  const placeAt = () => Math.min(at, editor.state.doc.content.size)
+
+  if (fromEditor === undefined && !inCodeBlock) {
+    if (!onLargePaste || (lines < LARGE_TEXT_LINES && content.length < LARGE_TEXT_CHARS)) return false
+    const html = data.getData('text/html')
+    onLargePaste({
+      kind: 'text',
+      content,
+      language: null,
+      keepInText: () => {
+        editor.chain().focus().setTextSelection(placeAt()).run()
+        replaying = true
+        try { if (html) editor.view.pasteHTML(html); else editor.view.pasteText(raw) } finally { replaying = false }
+      },
+    })
+    return true
   }
 
-  if (lines >= LARGE_CODE_LINES && onLargeCode) {
-    onLargeCode({ code, language, keepInText: insertBlock })
+  const language = fromEditor ?? (inCodeBlock ? normalizeLanguage(editor.getAttributes('codeBlock').language) : null)
+  const insertBlock = () => {
+    if (inCodeBlock) editor.chain().focus().insertContentAt(placeAt(), { type: 'text', text: content }).run()
+    else editor.chain().focus().insertContentAt(placeAt(), { type: 'codeBlock', attrs: { language }, content: content ? [{ type: 'text', text: content }] : [] }).run()
+  }
+
+  if (lines >= LARGE_CODE_LINES && onLargePaste) {
+    onLargePaste({ kind: 'code', content, language, keepInText: insertBlock })
     return true
   }
   // Inside a code block the normal paste already keeps the text as it is.
@@ -53,29 +76,52 @@ export function handleCodePaste(editor: Editor, data: DataTransfer | null, onLar
   return true
 }
 
-/** The paste handler as an editor extension; onLargeCode is read when a paste happens. */
-export const CodePaste = Extension.create<{ onLargeCode?: () => ((c: LargeCode) => void) | undefined }>({
+/** The paste handler as an editor extension; onLargePaste is read when a paste happens. */
+export const CodePaste = Extension.create<{ onLargePaste?: () => ((p: LargePaste) => void) | undefined }>({
   name: 'codePaste',
   addOptions() {
-    return { onLargeCode: undefined }
+    return { onLargePaste: undefined }
   },
   addProseMirrorPlugins() {
     const editor = this.editor
     const options = this.options
     return [new Plugin({
       key: new PluginKey('codePaste'),
-      props: { handlePaste: (_view, event) => handleCodePaste(editor, event.clipboardData, options.onLargeCode?.()) },
+      props: { handlePaste: (_view, event) => handleCodePaste(editor, event.clipboardData, options.onLargePaste?.()) },
     })]
   },
 })
 
-/** A Markdown file holding one code block: the fence is longer than any run of backticks in the code. */
-export function codeFile(code: string, language: string | null, takenNames: string[]): File {
-  const longest = Math.max(0, ...Array.from(code.matchAll(/`+/g), m => m[0].length))
-  const fence = '`'.repeat(Math.max(3, longest + 1))
-  const body = `${fence}${language ?? ''}\n${code}\n${fence}\n`
-  const base = language ? `Code (${languageLabel(language)})` : 'Code'
+/** A free name: "<base>.md", else "<base> 2.md", "<base> 3.md"… */
+function freeName(base: string, takenNames: string[]): string {
   let name = `${base}.md`
   for (let n = 2; takenNames.includes(name); n++) name = `${base} ${n}.md`
-  return new File([body], name, { type: 'text/markdown' })
+  return name
+}
+
+/** The first words of a text, fit for a file name; "Pasted text" when there are none. */
+export function textFileBase(text: string): string {
+  const firstLine = text.split('\n').map(l => l.trim()).find(l => l.length > 0) ?? ''
+  const words = firstLine
+    .replace(/^(?:#{1,6}\s+|>\s*|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/, '')
+    .replace(/[\\/:*?"<>|\u0000-\u001f`*_~[\]#]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!words) return 'Pasted text'
+  if (words.length <= 40) return words
+  const cut = words.slice(0, 40)
+  const lastSpace = cut.lastIndexOf(' ')
+  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut).trim()
+}
+
+/** The Markdown file for a long paste: code as one fenced block, text as it is. */
+export function pasteFile(p: Pick<LargePaste, 'kind' | 'content' | 'language'>, takenNames: string[]): File {
+  if (p.kind === 'text') {
+    return new File([`${p.content}\n`], freeName(textFileBase(p.content), takenNames), { type: 'text/markdown' })
+  }
+  // The fence is longer than any run of backticks in the code.
+  const longest = Math.max(0, ...Array.from(p.content.matchAll(/`+/g), m => m[0].length))
+  const fence = '`'.repeat(Math.max(3, longest + 1))
+  const body = `${fence}${p.language ?? ''}\n${p.content}\n${fence}\n`
+  return new File([body], freeName(p.language ? `Code (${languageLabel(p.language)})` : 'Code', takenNames), { type: 'text/markdown' })
 }

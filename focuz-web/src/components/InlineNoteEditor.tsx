@@ -4,7 +4,7 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import { TextSelection } from '@tiptap/pm/state'
 import { codeBlockView } from './CodeBlockView'
 import { noteExtensions, normalizeEditorMarkdown } from '../lib/note-format/extensions'
-import type { LargeCode } from '../lib/note-format/code-paste'
+import type { LargePaste } from '../lib/note-format/code-paste'
 import { filesFromDataTransfer, hasFiles } from '../lib/clipboard'
 import { INLINE_TOOLS } from '../lib/selection-format'
 import { BUBBLE_OPTIONS, LinkButton, TOGGLE, ToolButton, useToolbarState } from './FullscreenNoteEditor'
@@ -23,7 +23,7 @@ export default function InlineNoteEditor({
   placeholder,
   label,
   handle,
-  onLargeCode,
+  onLargePaste,
 }: {
   text: string
   onChange: (text: string) => void
@@ -32,20 +32,20 @@ export default function InlineNoteEditor({
   placeholder: string
   label: string
   handle?: Ref<InlineNoteEditorHandle>
-  /** Long pasted code; without it, it is pasted as a code block. */
-  onLargeCode?: (c: LargeCode) => void
+  /** Long pasted code or text; without it, it is pasted into the text. */
+  onLargePaste?: (c: LargePaste) => void
 }) {
   const submitRef = useRef(onSubmit)
   submitRef.current = onSubmit
-  const largeCodeRef = useRef(onLargeCode)
-  largeCodeRef.current = onLargeCode
+  const largePasteRef = useRef(onLargePaste)
+  largePasteRef.current = onLargePaste
   // The last text this editor reported, so a change from outside (a reset after Create, the
   // full-screen editor) can be told apart from our own and loaded into the editor.
   const lastText = useRef(text)
   const linkInputId = useId()
 
   const editor = useEditor({
-    extensions: noteExtensions({ placeholder, codeBlockView, onLargeCode: () => largeCodeRef.current }),
+    extensions: noteExtensions({ placeholder, codeBlockView, onLargePaste: () => largePasteRef.current }),
     content: text,
     contentType: 'markdown',
     autofocus: 'end',
