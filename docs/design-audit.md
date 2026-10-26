@@ -17,9 +17,9 @@ Status is the state after the redesign in the same change: **Fixed**, **Partly f
 | Severity | Found | Fixed | Partly fixed | Open |
 |---|---|---|---|---|
 | Blocker | 0 | 0 | 0 | 0 |
-| Error | 16 | 15 | 1 | 0 |
-| Warning | 50 | 45 | 2 | 3 |
-| **Total** | **66** | **60** | **3** | **3** |
+| Error | 16 | 16 | 0 | 0 |
+| Warning | 50 | 46 | 2 | 2 |
+| **Total** | **66** | **62** | **2** | **2** |
 
 No blockers: every primary scenario (sign in, write, find, file, share, export) works with mouse and keyboard.
 The errors are contrast, invisible focus, theme leaks and colour-only state.
@@ -87,7 +87,7 @@ The errors are contrast, invisible focus, theme leaks and colour-only state.
 |---|---|---|---|
 | T1 | Warning | Tile-size slider is a native range with `accent-color`, unrelated to the rest. | Fixed: well track with a gel thumb (WebKit and Firefox). |
 | T2 | Warning | Tile hover lifts 1 px but has no glow; keyboard focus ring is accent on light (G4). | Fixed. |
-| T3 | Warning | Tiles of pictures still downloading are blank white squares with no hint. | Open: needs a loading state from `NoteImages`; out of scope for a visual pass. |
+| T3 | Warning | Tiles of pictures still downloading are blank white squares with no hint. | Fixed: cells still downloading show the media box with a small spinner; the tile's media is `aria-busy`. |
 
 ### Note editors (`FullscreenNoteEditor.tsx`, `SelectionFormatBar.tsx`, `ImageEditorDialog.tsx`)
 
@@ -137,7 +137,7 @@ The errors are contrast, invisible focus, theme leaks and colour-only state.
 | # | Sev | Finding | Status |
 |---|---|---|---|
 | X1 | Warning | Progress bars are hand-built per place; "Packing" pulses the bar (motion without information). | Fixed: `.meter` component (well + gel fill); packing shows Aqua barber stripes, static under reduced motion. |
-| X2 | Error | Progress bars are `aria-hidden` and the details dialog shows `done / total` only as text. | Partly fixed: meters get `role="progressbar"` with values; the banner still relies on its text. |
+| X2 | Error | Progress bars are `aria-hidden` and the details dialog shows `done / total` only as text. | Fixed: meters get `role="progressbar"` with values; the banner's meter is labelled and sits outside its button. |
 | X3 | Warning | "Stop" is a secondary button with red text only. | Fixed: danger droplet (`.button-danger-quiet`). |
 
 ### Spaces (`CreateSpaceDialog.tsx`, `SpaceSettingsDialog.tsx`, `NoteShareDialog.tsx`)

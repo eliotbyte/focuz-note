@@ -64,12 +64,15 @@ function ExportBanner({ s }: { s: ExportState }) {
   const finished = !isExportActive(s)
   return (
     <div className="fixed bottom-4 left-4 layer-banner flex w-72 max-w-[calc(100vw-2rem)] items-start gap-2 surface glass-float rounded-[var(--radius-control)] p-3 text-sm">
-      <button type="button" className="min-w-0 flex-1 text-left" onClick={openExportDetails}>
-        <div className="truncate text-primary">{bannerText(s)}</div>
+      {/* The meter sits outside the button: inside one, screen readers flatten it into the button's name. */}
+      <div className="min-w-0 flex-1">
+        <button type="button" className="block w-full truncate text-left text-primary" onClick={openExportDetails}>
+          {bannerText(s)}
+        </button>
         {s.status !== 'stopped' && s.status !== 'failed' && (
-          <Meter value={s.step === 'packing' ? null : percent(s)} className="mt-2" />
+          <Meter value={s.step === 'packing' ? null : percent(s)} label="Export progress" className="mt-2" />
         )}
-      </button>
+      </div>
       {finished && (
         <button type="button" className="icon-btn !p-1" aria-label="Dismiss" onClick={dismissExport}>
           <CloseRoundedIcon fontSize="inherit" />

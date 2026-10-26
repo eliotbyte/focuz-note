@@ -346,7 +346,8 @@ droplet, visible on hover/focus (always on touch).
 ### Progress
 
 `.meter` > `.meter-fill`: Sims-style needs bar. Well track 6px tall, `--r-pill`; the fill is a green gel
-with a highlight. Determinate: `role="progressbar"` with `aria-valuenow/min/max` on `.meter`.
+with a highlight. Determinate: `role="progressbar"` with `aria-valuenow/min/max` and an `aria-label` on `.meter`; never put a
+meter inside a button (its role is flattened into the button's name).
 Indeterminate (`.meter.is-indeterminate`): Aqua barber stripes moving at `--dur-expressive` per stripe,
 static stripes under reduced motion. Spinners: `.auth-spinner` (16px), `.upload-spinner` (12px).
 
@@ -373,7 +374,8 @@ static stripes under reduced motion. Spinners: `.auth-spinner` (16px), `.upload-
 - Empty list: `.feed-empty`, a dashed quiet well with one line of muted text that says what will appear,
   plus the action if there is one ("Create one with “New”").
 - Loading: show the layout's own skeleton or keep the last content; never a full-screen spinner after
-  sign-in. Pictures still downloading: their box with `--c-media-bg`.
+  sign-in. Pictures still downloading: their box with `--c-media-bg`; in tiles with a centred 12px
+  `.upload-spinner` (`.tile-media-loading`) and `aria-busy` on the tile's media.
 - Error: inline next to what failed, `--c-danger` text with an icon or a `role="alert"` line, plus a way to
   retry. Toasts only for events, not for continuous state (the status chip shows that).
 

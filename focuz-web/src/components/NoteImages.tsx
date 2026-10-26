@@ -488,11 +488,14 @@ export function NoteTileImages({ attachments, className }: { attachments: Attach
   usePrefetchWhenVisible(ref, shown.filter(a => !a.data))
   if (attachments.length === 0) return null
   const more = attachments.length - shown.length
+  const loading = shown.some(a => !a.data)
   return (
-    <div ref={ref} className={`tile-media tile-media-${shown.length} ${className ?? ''}`}>
+    <div ref={ref} className={`tile-media tile-media-${shown.length} ${className ?? ''}`} aria-busy={loading || undefined}>
       {shown.map((a, i) => (
         <div key={a.id ?? i} className="tile-media-cell">
-          {a.data ? <AttImg att={a} alt={a.fileName} className="tile-media-img" draggable={false} /> : null}
+          {a.data
+            ? <AttImg att={a} alt={a.fileName} className="tile-media-img" draggable={false} />
+            : <span className="tile-media-loading" title="Loading picture" aria-hidden><span className="upload-spinner" /></span>}
           <UploadBadge state={uploads.get(a.id!)} />
           {more > 0 && i === shown.length - 1 && <span className="tile-media-more">+{more}</span>}
         </div>
