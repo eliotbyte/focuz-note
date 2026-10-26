@@ -155,5 +155,8 @@ describe('pasting code', () => {
     expect(textFileBase('Lorem ipsum dolor sit amet consectetur adipiscing elit sed do')).toBe('Lorem ipsum dolor sit amet consectetur')
     expect(textFileBase('\n\n')).toBe('Pasted text')
     expect(pasteFile({ kind: 'text', content: 'Hello', language: null }, ['Hello.md']).name).toBe('Hello 2.md')
+    expect(textFileBase('Fixed the buttons and the corners. All in main')).toBe('Fixed the buttons and the corners')
+    expect(textFileBase('Done.')).toBe('Done')
+    expect(textFileBase('...')).toBe('Pasted text')
   })
 })

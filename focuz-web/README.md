@@ -3,7 +3,7 @@
 Frontend for **focuz-note** (local-first notes).
 
 **Status**: alpha  
-**Version**: 0.1.19
+**Version**: 0.1.20
 
 ## Environment
 
@@ -62,7 +62,7 @@ E2E_WEB_URL=http://localhost:8081 E2E_API_URL=http://localhost:8080 npm run test
   highlight.js (the grammars in `src/lib/code-languages.ts`; lowlight in the editors). Code pasted
   from VS Code keeps its language; code of 20+ lines pasted from a code editor or into a code block
   becomes an attached `Code (<language>).md`, with "Keep in text" in the toast. Long plain text
-  (20+ lines or 4000+ characters) goes the same way, to a `.md` named after its first words.
+  (20+ lines or 1500+ characters) goes the same way, to a `.md` named after its first words.
 - Search (FlexSearch, in the browser) covers the note text and tags; with the "search in file contents"
   switch in the search field it also covers the note's text, Markdown and CSV files. Sync fetches those
   in the background (up to 1 MB each; files pulled by older versions are fetched when the index is

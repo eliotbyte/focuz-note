@@ -1163,7 +1163,8 @@ button:disabled { cursor: not-allowed; }
 
 .note-prose { line-height: 1.55; overflow-wrap: anywhere; }
 .note-prose > * + * { margin-top: 0.6em; }
-.note-prose p { margin: 0; }
+/* Low specificity on purpose: the gap between blocks above must still part paragraphs. */
+:where(.note-prose) p { margin: 0; }
 .note-prose h1, .note-prose h2, .note-prose h3 { margin: 0; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; }
 .note-prose > h1, .note-prose > h2, .note-prose > h3 { margin-top: 0.9em; }
 .note-prose > :first-child { margin-top: 0; }

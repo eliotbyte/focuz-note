@@ -9,9 +9,9 @@ import { languageLabel, normalizeLanguage } from '../code-languages'
 
 /** Code of this many lines or more leaves the note's text for an attached file. */
 export const LARGE_CODE_LINES = 20
-/** Text leaves too at this many lines, or at this many characters (one long paragraph has one line). */
+/** Text leaves too at this many lines, or at this many characters: about where the composer starts to scroll (a few long paragraphs are few lines). */
 export const LARGE_TEXT_LINES = 20
-export const LARGE_TEXT_CHARS = 4000
+export const LARGE_TEXT_CHARS = 1500
 
 export interface LargePaste {
   kind: 'code' | 'text'
@@ -107,11 +107,13 @@ export function textFileBase(text: string): string {
     .replace(/[\\/:*?"<>|\u0000-\u001f`*_~[\]#]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  if (!words) return 'Pasted text'
-  if (words.length <= 40) return words
-  const cut = words.slice(0, 40)
+  // The first sentence, cut at a word to 40 characters.
+  const sentence = words.split(/(?<=[.!?…])\s/u)[0]
+  const cut = sentence.length <= 40 ? sentence : sentence.slice(0, 40)
   const lastSpace = cut.lastIndexOf(' ')
-  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut).trim()
+  const base = sentence.length <= 40 || lastSpace <= 20 ? cut : cut.slice(0, lastSpace)
+  // No punctuation at the end: "Done." would give "Done..md".
+  return base.replace(/[\s.,;!…–—-]+$/u, '') || 'Pasted text'
 }
 
 /** The Markdown file for a long paste: code as one fenced block, text as it is. */
