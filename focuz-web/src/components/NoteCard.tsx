@@ -20,6 +20,8 @@ import { canDeleteNote, canEditNotes, canWrite } from '../lib/roles'
 import { useNotePublicState } from '../lib/useSpaces'
 import NoteShareDialog from './NoteShareDialog'
 import NoteDetailsDialog from './NoteDetailsDialog'
+import NoteThreadDialog from './NoteThreadDialog'
+import { detachFromThread } from '../lib/thread-moves'
 import { PersonAvatar } from './ui/avatar'
 import NoteDateTip from './NoteDateTip'
 import { proseTail } from '../lib/note-tail'
@@ -53,7 +55,7 @@ export default function NoteCard({
   onManageFolders?: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [dialog, setDialog] = useState<'share' | 'details' | null>(null)
+  const [dialog, setDialog] = useState<'share' | 'details' | 'thread' | null>(null)
   const view = useSpaceView()
   const pub = useNotePublicState(note)
   const mayWrite = canWrite(view.role)
@@ -240,6 +242,8 @@ export default function NoteCard({
                 {onReplyClick && mayWrite && <DropdownMenuItem onSelect={() => onReplyClick()}>Reply</DropdownMenuItem>}
                 {onEdit && mayEdit && <DropdownMenuItem onSelect={() => onEdit()}>Edit</DropdownMenuItem>}
                 {onManageFolders && mayEdit && <DropdownMenuItem onSelect={() => onManageFolders()}>Folders…</DropdownMenuItem>}
+                {onEdit && mayEdit && <DropdownMenuItem onSelect={() => setDialog('thread')}>Move to thread…</DropdownMenuItem>}
+                {onEdit && mayEdit && note.parentId != null && <DropdownMenuItem onSelect={() => { void detachFromThread(note) }}>Detach from thread</DropdownMenuItem>}
                 <DropdownMenuItem onSelect={() => setDialog('share')}>Share…</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setDialog('details')}>Details</DropdownMenuItem>
                 {onDelete && mayDelete && <DropdownMenuItem onSelect={() => onDelete()}>Delete</DropdownMenuItem>}
@@ -252,6 +256,7 @@ export default function NoteCard({
 
       {dialog === 'share' && <NoteShareDialog note={note} onClose={() => setDialog(null)} onOpenNote={onOpenThread} />}
       {dialog === 'details' && <NoteDetailsDialog note={note} onClose={() => setDialog(null)} />}
+      {dialog === 'thread' && <NoteThreadDialog note={note} onClose={() => setDialog(null)} />}
     </SurfaceNoPad>
   )
 }

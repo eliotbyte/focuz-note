@@ -360,6 +360,22 @@ func (r *SyncRepository) validParentNote(parentID *int, spaceID int) (*int, erro
 	return parentID, nil
 }
 
+// parentMakesCycle reports whether parentID is noteID itself or one of its replies at any depth,
+// so making it the parent would close a loop.
+func parentMakesCycle(q querier, noteID, parentID int) (bool, error) {
+	var found bool
+	// UNION (not UNION ALL) stops on a loop already in the data.
+	err := q.QueryRow(`
+		WITH RECURSIVE up(id, parent_id) AS (
+			SELECT id, parent_id FROM note WHERE id = $1
+			UNION
+			SELECT n.id, n.parent_id FROM note n JOIN up ON n.id = up.parent_id
+		)
+		SELECT EXISTS(SELECT 1 FROM up WHERE id = $2)
+	`, parentID, noteID).Scan(&found)
+	return found, err
+}
+
 // validParentFilter is the filters counterpart of validParentNote.
 func (r *SyncRepository) validParentFilter(parentID *int, spaceID, userID int) (*int, error) {
 	if parentID == nil {
@@ -584,7 +600,8 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 		var serverModified time.Time
 		var noteSpaceID, noteAuthorID int
 		var noteDeleted bool
-		err := r.q.QueryRow(`SELECT modified_at, space_id, user_id, COALESCE(is_deleted, FALSE) FROM note WHERE id = $1`, *n.ID).Scan(&serverModified, &noteSpaceID, &noteAuthorID, &noteDeleted)
+		var noteParent sql.NullInt64
+		err := r.q.QueryRow(`SELECT modified_at, space_id, user_id, COALESCE(is_deleted, FALSE), parent_id FROM note WHERE id = $1`, *n.ID).Scan(&serverModified, &noteSpaceID, &noteAuthorID, &noteDeleted, &noteParent)
 		if err == sql.ErrNoRows {
 			// Ids are assigned by the server; an unknown id is never created implicitly.
 			reject(resp, "note", n.ID, n.ClientID, "not_found")
@@ -612,6 +629,20 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			parentID, err := r.validParentNote(n.ParentID, n.SpaceID)
 			if err != nil {
 				return nil, err
+			}
+			if parentID != nil {
+				// A note can't become a reply to itself or to one of its replies: keep the parent it has.
+				cycle, err := parentMakesCycle(r.q, *n.ID, *parentID)
+				if err != nil {
+					return nil, err
+				}
+				if cycle {
+					parentID = nil
+					if noteParent.Valid {
+						p := int(noteParent.Int64)
+						parentID = &p
+					}
+				}
 			}
 			var newModified time.Time
 			err = r.q.QueryRow(`

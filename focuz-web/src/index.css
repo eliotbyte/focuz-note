@@ -1938,6 +1938,10 @@ button:disabled { cursor: not-allowed; }
 }
 .folder-pick:hover:not(:disabled):not(.is-disabled) { background: rgba(var(--c-text) / 0.06); }
 .folder-pick:disabled, .folder-pick.is-disabled { cursor: default; color: var(--text-muted); }
+/* A note to pick as a parent: first line of text, then date, author and replies. */
+.thread-pick { min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
+.thread-pick-meta { display: block; font-size: var(--fs-caption); color: var(--text-muted); }
+.thread-pick-public { display: inline-flex; flex: none; font-size: 16px; color: rgb(var(--c-accent-ink)); }
 .folder-choice { display: flex; gap: 10px; align-items: flex-start; font-size: var(--fs-ui); cursor: pointer; }
 .folder-choice input { margin-top: 3px; }
 .folder-choice small { display: block; color: var(--text-muted); font-size: var(--fs-caption); }

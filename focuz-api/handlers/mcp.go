@@ -23,7 +23,7 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.3.5"
+	mcpServerVersion   = "0.3.6"
 	// Room for a file sent inline as base64 (attach_files); bigger files go through get_upload_link.
 	maxMCPBodyBytes = 16 << 20
 	mcpInstructions = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +
@@ -417,12 +417,15 @@ var mcpTools = []mcpTool{
 	},
 	{
 		Name:        "update_note",
-		Description: "Change a note's text, tags or date. Only the fields you send change.",
+		Description: "Change a note's text, tags or date, or move it to another thread with parentId. Only the fields you send change. " +
+			"parentId makes the note a reply to that note (same space; not the note itself or one of its replies), 0 makes it a note " +
+			"of its own. Its replies move with it.",
 		Schema: objectSchema(map[string]any{
-			"id":   idSchema,
-			"text": textSchema,
-			"tags": tagsSchema,
-			"date": dateSchema,
+			"id":       idSchema,
+			"text":     textSchema,
+			"tags":     tagsSchema,
+			"date":     dateSchema,
+			"parentId": map[string]any{"type": "integer", "description": "Note this one replies to; 0 for none"},
 		}, "id"),
 		Write: true,
 		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {

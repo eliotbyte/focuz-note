@@ -4,7 +4,7 @@ import { db, getKV, wipeLocalData } from './db'
 import { MEMBERS_KV } from './sync-pull'
 import { __resetSyncEngineForTests, ensureDefaultSpace, runSync, requestAttachmentPrefetch } from './sync'
 import { getAppState } from './app-state'
-import { addLocalAttachment, addLocalAttachments, updateNoteLocal, deleteLocalAttachment, reorderNoteAttachments, replaceLocalAttachment } from './local-writes'
+import { addLocalAttachment, addLocalAttachments, setNoteParentLocal, updateNoteLocal, deleteLocalAttachment, reorderNoteAttachments, replaceLocalAttachment } from './local-writes'
 import { listDisplayForNote } from '../data/attachments'
 import { processNextJob, retryFailedJobs, MAX_ATTEMPTS } from './jobs-worker'
 import { recoverLegacyConflicts, CONFLICT_TAG } from './sync-push'
@@ -68,6 +68,31 @@ describe('push', () => {
     expect(r.parentId).toBe(parent)
     expect(r.parentServerId).toBe(p.serverId)
     expect(r.isDirty).toBe(0)
+  })
+
+  it('moves a reply to another thread and out of it', async () => {
+    const space = await ensureDefaultSpace()
+    const a = await localNote(space, 'thread A')
+    const b = await localNote(space, 'thread B')
+    const reply = await localNote(space, 'reply', { parentId: a })
+    const deep = await localNote(space, 'reply to the reply', { parentId: reply })
+    await runSync(true)
+
+    // Not into its own replies: nothing changes.
+    expect(await setNoteParentLocal(reply, deep)).toBe(false)
+    expect(await setNoteParentLocal(reply, reply)).toBe(false)
+    expect((await db.notes.get(reply))!.isDirty).toBe(0)
+
+    expect(await setNoteParentLocal(reply, b)).toBe(true)
+    await runSync(true)
+    const rs = (await db.notes.get(reply))!.serverId!
+    expect(server.notes.get(rs)!.parent_id).toBe((await db.notes.get(b))!.serverId)
+    expect((await db.notes.get(deep))!.parentId).toBe(reply)
+
+    await setNoteParentLocal(reply, null)
+    await runSync(true)
+    expect(server.notes.get(rs)!.parent_id ?? null).toBeNull()
+    expect((await db.notes.get(reply))!.parentServerId).toBeNull()
   })
 
   it('keeps a note dirty when it is edited while the push is in flight', async () => {

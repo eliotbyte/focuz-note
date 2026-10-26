@@ -319,6 +319,13 @@ gloss and pinstripes, 56px), width `min(92vw, 32rem)` (settings 46rem, one fixed
 right: secondary(ies) then the primary gel last. Enter: Aqua sheet (from 8px above, fade),
 `--dur-medium` `--ease-enter`; scrim fades. Stacked dialogs pass `stacked`.
 
+Pick-to-move dialogs (move a folder, ⋮ → Move to thread…): a list of `.folder-pick` rows (`role="option"`);
+a click moves at once and closes, so there is only Cancel; the current place is marked "current" and
+disabled, places that are not allowed (the item itself, its own children or replies) are disabled with
+the reason in the row. A note row (`.thread-pick`, 44px) shows the note's first line, then date · author ·
+replies in `--fs-caption` muted; a public thread gets the planet icon in `--c-accent-ink`. Note moves end
+with an Undo toast, never a confirm dialog.
+
 ### Cards, tiles, list rows
 
 - Note card: glass, `--pad-surface`, gap 12 between images, text, tags, footer. Footer `--fs-small` muted.

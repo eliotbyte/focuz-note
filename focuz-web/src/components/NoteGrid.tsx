@@ -22,6 +22,8 @@ import { DocumentIcon } from './NoteFiles'
 import { documentKind, isPicture } from '../lib/attachment-files'
 import NoteShareDialog from './NoteShareDialog'
 import NoteDetailsDialog from './NoteDetailsDialog'
+import NoteThreadDialog from './NoteThreadDialog'
+import { detachFromThread } from '../lib/thread-moves'
 import NoteDateTip from './NoteDateTip'
 
 const NO_ATTACHMENTS: AttachmentRecord[] = []
@@ -178,7 +180,7 @@ function NoteTile({
   showParentPreview: boolean
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [dialog, setDialog] = useState<'share' | 'details' | null>(null)
+  const [dialog, setDialog] = useState<'share' | 'details' | 'thread' | null>(null)
   const view = useSpaceView()
   const pub = useNotePublicState(note)
   const mayEdit = canEditNotes(view.role)
@@ -264,6 +266,8 @@ function NoteTile({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={onOpen}>Open</DropdownMenuItem>
             {onManageFolders && mayEdit && <DropdownMenuItem onSelect={onManageFolders}>Folders…</DropdownMenuItem>}
+            {mayEdit && <DropdownMenuItem onSelect={() => setDialog('thread')}>Move to thread…</DropdownMenuItem>}
+            {mayEdit && note.parentId != null && <DropdownMenuItem onSelect={() => { void detachFromThread(note) }}>Detach from thread</DropdownMenuItem>}
             <DropdownMenuItem onSelect={() => setDialog('share')}>Share…</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setDialog('details')}>Details</DropdownMenuItem>
             {mayDelete && <DropdownMenuItem onSelect={onDelete}>Delete</DropdownMenuItem>}
@@ -275,6 +279,7 @@ function NoteTile({
         <div onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
           {dialog === 'share' && <NoteShareDialog note={note} onClose={() => setDialog(null)} />}
           {dialog === 'details' && <NoteDetailsDialog note={note} onClose={() => setDialog(null)} />}
+          {dialog === 'thread' && <NoteThreadDialog note={note} onClose={() => setDialog(null)} />}
         </div>
       )}
     </div>

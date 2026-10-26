@@ -96,6 +96,26 @@ export async function updateNoteLocal(localId: number, changes: { text?: string;
   emitLocalWrite()
 }
 
+/** Makes a note a reply to `parentLocalId` (a note of the same space), or a note of its own with null.
+ *  Its replies move with it. Returns false, changing nothing, when that would close a loop. */
+export async function setNoteParentLocal(localId: number, parentLocalId: number | null): Promise<boolean> {
+  let parentServerId: number | null = null
+  if (parentLocalId != null) {
+    const seen = new Set<number>()
+    let cur: number | null | undefined = parentLocalId
+    while (cur != null && !seen.has(cur)) {
+      if (cur === localId) return false
+      seen.add(cur)
+      cur = (await db.notes.get(cur))?.parentId
+    }
+    parentServerId = (await db.notes.get(parentLocalId))?.serverId ?? null
+  }
+  const now = new Date().toISOString()
+  await db.notes.update(localId, { parentId: parentLocalId, parentServerId, modifiedAt: now, isDirty: 1 })
+  emitLocalWrite()
+  return true
+}
+
 export async function addLocalAttachment(noteId: number, file: File): Promise<number> {
   const [id] = await addLocalAttachments(noteId, [file])
   return id

@@ -123,39 +123,6 @@ func (r *NotesRepository) CreateNote(userID int, text string, tags []string, par
 		}
 	}
 
-	if parentID != nil {
-		// Get all parent IDs in the chain
-		var parentIDs []int
-		currentID := *parentID
-		for {
-			var parentID sql.NullInt64
-			err = tx.QueryRow(`
-				SELECT parent_id FROM note WHERE id = $1
-			`, currentID).Scan(&parentID)
-			if err != nil {
-				return nil, err
-			}
-
-			parentIDs = append(parentIDs, currentID)
-
-			if !parentID.Valid {
-				break
-			}
-			currentID = int(parentID.Int64)
-		}
-
-		// Update reply_count for all parents
-		for _, pid := range parentIDs {
-			_, err = tx.Exec(`
-				UPDATE note SET reply_count = reply_count + 1
-				WHERE id = $1
-			`, pid)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -189,7 +156,7 @@ func (r *NotesRepository) GetNoteByID(id int) (*models.Note, error) {
 	var parentText sql.NullString
 	err := r.db.QueryRow(`
 		SELECT n.id, n.user_id, n.text, n.created_at, n.modified_at, n.date,
-		       n.parent_id, n.reply_count, n.is_deleted, n.space_id,
+		       n.parent_id, (SELECT COUNT(*) FROM note c WHERE c.parent_id = n.id AND c.is_deleted = FALSE), n.is_deleted, n.space_id,
 		       p.text AS parent_text
 		FROM note n
 		LEFT JOIN note p ON n.parent_id = p.id
@@ -304,7 +271,7 @@ func (r *NotesRepository) GetNotes(userID, spaceID int, filters models.NoteFilte
 	query := `
 		SELECT 
 		  n.id, n.user_id, n.text, n.created_at, n.modified_at, n.date,
-		  n.parent_id, p.text AS parent_text, n.reply_count, n.is_deleted, n.space_id,
+		  n.parent_id, p.text AS parent_text, (SELECT COUNT(*) FROM note c WHERE c.parent_id = n.id AND c.is_deleted = FALSE), n.is_deleted, n.space_id,
 		  COALESCE((SELECT ARRAY_AGG(DISTINCT t2.name)
 		           FROM tag t2 JOIN note_to_tag nt2 ON nt2.tag_id = t2.id
 		           WHERE nt2.note_id = n.id), ARRAY[]::text[]) AS tags,

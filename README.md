@@ -5,7 +5,7 @@ Integration repository that bundles:
 - `focuz-api/` (backend)
 
 **Status**: alpha  
-**Version**: 0.3.5 (changes: `CHANGELOG.md`)
+**Version**: 0.3.6 (changes: `CHANGELOG.md`)
 
 ## Environments (Docker Compose)
 
@@ -21,9 +21,9 @@ APP_ENV=test docker compose up -d --build
 
 ## Versions
 
-- **Focuz-Node**: `0.3.5` (this repo, see `package.json`)
-- **Focuz-Web**: `0.3.5` (see `focuz-web/package.json`)
-- **Focuz-API**: `0.3.5` (see `focuz-api/pkg/buildinfo`)
+- **Focuz-Node**: `0.3.6` (this repo, see `package.json`)
+- **Focuz-Web**: `0.3.6` (see `focuz-web/package.json`)
+- **Focuz-API**: `0.3.6` (see `focuz-api/pkg/buildinfo`)
 
 
 ## Tests
@@ -149,7 +149,7 @@ files, record and look up metrics, and organise spaces and folders. Serve it
 over HTTPS, like the sign-in (see the security checklist).
 
 Tools: `list_spaces`, `describe_space` (tags with counts, folders, metrics with last values), `list_notes`
-(with `query` for text search, `inTrash` for deleted notes), `get_note` (optionally with replies), `create_note`, `update_note`,
+(with `query` for text search, `inTrash` for deleted notes), `get_note` (optionally with replies), `create_note`, `update_note` (also moves a note to another thread or out of one),
 `delete_note`, `restore_note`, `list_metrics`, `create_metric`, `record_metrics` (saves values in a dated
 note and answers with the previous value), `get_metric_history` (values and stats, or one value per
 day/week/month/year for a chart), `remove_metric_value`, `attach_files`, `get_upload_link`, `get_file`, `delete_file`;

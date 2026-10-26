@@ -3,7 +3,7 @@
 Backend API for a note-taking application with workspaces, notes, charts, and activities.
 
 **Status**: alpha  
-**Version**: 0.3.5
+**Version**: 0.3.6
 
 ## Quick Start
 

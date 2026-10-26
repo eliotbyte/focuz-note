@@ -43,6 +43,8 @@ type noteEdit struct {
 	Text *string    `json:"text"`
 	Tags *[]string  `json:"tags"`
 	Date *time.Time `json:"date"`
+	// ParentID moves the note to another thread; null or 0 makes it a note of its own.
+	ParentID optInt `json:"parentId"`
 }
 
 type noteCreate struct {
@@ -106,16 +108,46 @@ func (h *NotesAPIHandler) editNote(userID, noteID int, edit noteEdit) (*models.N
 	if !access.CanEditNote(roleID) {
 		return nil, errForbidden("You can only read this space")
 	}
-	if edit.Text == nil && edit.Tags == nil && edit.Date == nil {
-		return nil, invalidInput("Nothing to change: send text, tags or date")
+	if edit.Text == nil && edit.Tags == nil && edit.Date == nil && !edit.ParentID.Set {
+		return nil, invalidInput("Nothing to change: send text, tags, date or parentId")
 	}
 	if edit.Text != nil && strings.TrimSpace(*edit.Text) == "" {
 		return nil, invalidInput("Text cannot be empty")
 	}
-	if _, err := h.sync.UpdateNoteByAPI(userID, noteID, note.SpaceID, edit.Text, edit.Tags, edit.Date); err != nil {
+	var parent *repository.ParentChange
+	if edit.ParentID.Set {
+		parent, err = h.parentChange(note, edit.ParentID.Value)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if _, err := h.sync.UpdateNoteByAPI(userID, noteID, note.SpaceID, edit.Text, edit.Tags, edit.Date, parent); err != nil {
 		return nil, err
 	}
 	return h.notes.GetNoteByID(noteID)
+}
+
+// parentChange checks a new parent for a note: a live note of the same space that is not the note
+// itself or one of its replies. nil or 0 detaches the note from its thread.
+func (h *NotesAPIHandler) parentChange(note *models.Note, parentID *int) (*repository.ParentChange, error) {
+	if parentID == nil || *parentID == 0 {
+		return &repository.ParentChange{}, nil
+	}
+	parent, err := h.notes.GetNoteByID(*parentID)
+	if err != nil {
+		return nil, err
+	}
+	if parent == nil || parent.IsDeleted || parent.SpaceID != note.SpaceID {
+		return nil, invalidInput("Parent note must be a live note in the same space")
+	}
+	cycle, err := h.sync.ParentMakesCycle(note.ID, parent.ID)
+	if err != nil {
+		return nil, err
+	}
+	if cycle {
+		return nil, invalidInput("A note can't reply to itself or to one of its replies")
+	}
+	return &repository.ParentChange{Parent: &parent.ID}, nil
 }
 
 func (h *NotesAPIHandler) createNote(userID int, req noteCreate) (*models.Note, error) {
@@ -168,7 +200,7 @@ func respondAPIError(c *gin.Context, err error) {
 	c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
 }
 
-// PATCH /notes/:id { text?, tags?, date? }
+// PATCH /notes/:id { text?, tags?, date?, parentId? }
 func (h *NotesAPIHandler) UpdateNote(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -177,7 +209,7 @@ func (h *NotesAPIHandler) UpdateNote(c *gin.Context) {
 	}
 	var edit noteEdit
 	if err := c.ShouldBindJSON(&edit); err != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "Invalid body: send text, tags or date (RFC 3339)"))
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "Invalid body: send text, tags, date (RFC 3339) or parentId"))
 		return
 	}
 	note, err := h.editNote(c.GetInt("userId"), id, edit)
