@@ -82,13 +82,24 @@ func (r *SpacesRepository) GetSpaceByID(id int) (*models.Space, error) {
 }
 
 // Returns the role_id for the user in the space, or 0 if the user is not a member.
+// GetUserRoleIDInSpace returns the user's role in a live space; 0 when they are not a member or the
+// space is deleted (a deleted space is gone for everyone until its owner restores it).
 func (r *SpacesRepository) GetUserRoleIDInSpace(userID, spaceID int) (int, error) {
+	return r.roleID(userID, spaceID, false)
+}
+
+// RoleIDInDeletedSpace is the role in a space that may be deleted; only restoring needs it.
+func (r *SpacesRepository) RoleIDInDeletedSpace(userID, spaceID int) (int, error) {
+	return r.roleID(userID, spaceID, true)
+}
+
+func (r *SpacesRepository) roleID(userID, spaceID int, includeDeleted bool) (int, error) {
 	var roleID int
 	err := r.db.QueryRow(`
-		SELECT role_id
-		FROM user_to_space
-		WHERE user_id = $1 AND space_id = $2 AND is_pending = FALSE
-	`, userID, spaceID).Scan(&roleID)
+		SELECT u.role_id
+		FROM user_to_space u JOIN space s ON s.id = u.space_id
+		WHERE u.user_id = $1 AND u.space_id = $2 AND u.is_pending = FALSE AND ($3 OR s.is_deleted = FALSE)
+	`, userID, spaceID, includeDeleted).Scan(&roleID)
 
 	if err != nil {
 		if err == sql.ErrNoRows {

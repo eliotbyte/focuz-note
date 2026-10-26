@@ -160,7 +160,7 @@ func main() {
 		notesRepo,
 		activityTypesRepo,
 	)
-	attachmentsHandler := handlers.NewAttachmentsHandler(attachmentsRepo, notesRepo, spacesRepo)
+	attachmentsHandler := handlers.NewAttachmentsHandler(attachmentsRepo, notesRepo, spacesRepo).WithFileRemover(files.Remove)
 	chartsHandler := handlers.NewChartsHandler(chartsRepo, spacesRepo, activityTypesRepo, notesRepo)
 	notificationsHandler := handlers.NewNotificationsHandler(notificationsRepo)
 	filtersHandler := handlers.NewFiltersHandler(filtersRepo, spacesRepo)
@@ -187,8 +187,9 @@ func main() {
 		log.Printf("PUBLIC_API_URL is not set: confirmation emails will contain the code only, without a link")
 	}
 	usersRepo := repository.NewUsersRepository(db)
-	notesAPIHandler.WithFiles(attachmentsRepo, tokens, authConfig.PublicAPIURL)
 	sharingHandler := handlers.NewSharingHandler(sharingRepo, usersRepo, notificationsRepo, notifier, mail, authConfig).WithTokens(tokens)
+	notesAPIHandler.WithFiles(attachmentsRepo, files.Remove, tokens, authConfig.PublicAPIURL).
+		WithManagement(spacesHandler, sharingHandler, filtersHandler)
 	authHandler := handlers.NewAuthHandler(usersRepo, authConfig, mail, tokens).OnEmailVerified(sharingHandler.OnEmailVerified)
 
 	r.GET("/auth/config", authHandler.Config)
@@ -283,6 +284,7 @@ func main() {
 		auth.POST("/upload", attachmentsHandler.UploadFile)
 		auth.GET("/files/:id", attachmentsHandler.GetFile)
 		auth.GET("/files/:id/content", attachmentsHandler.GetFileContent)
+		auth.DELETE("/files/:id", attachmentsHandler.DeleteFile)
 		auth.GET("/notifications/unread", notificationsHandler.ListUnread)
 		auth.POST("/notifications/mark-read", notificationsHandler.MarkRead)
 

@@ -19,6 +19,24 @@ type AttachmentsHandler struct {
 	attachmentsRepo *repository.AttachmentsRepository
 	notesRepo       *repository.NotesRepository
 	spacesRepo      *repository.SpacesRepository
+	removeFiles     func(ids []string)
+}
+
+// WithFileRemover sets what deletes the stored bytes of a removed file.
+func (h *AttachmentsHandler) WithFileRemover(fn func(ids []string)) *AttachmentsHandler {
+	h.removeFiles = fn
+	return h
+}
+
+// DELETE /files/:id — removes a file from its note (editors and above).
+func (h *AttachmentsHandler) DeleteFile(c *gin.Context) {
+	files := fileAccess{attachments: h.attachmentsRepo, notes: h.notesRepo, spaces: h.spacesRepo, removeFiles: h.removeFiles}
+	att, err := files.remove(c.GetInt("userId"), c.Param("id"))
+	if err != nil {
+		respondAPIError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"deleted": true, "id": att.ID, "noteId": att.NoteID}))
 }
 
 func NewAttachmentsHandler(a *repository.AttachmentsRepository, n *repository.NotesRepository, s *repository.SpacesRepository) *AttachmentsHandler {

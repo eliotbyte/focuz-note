@@ -50,6 +50,8 @@ type fileAccess struct {
 	attachments *repository.AttachmentsRepository
 	notes       *repository.NotesRepository
 	spaces      *repository.SpacesRepository
+	// removeFiles deletes stored bytes of removed attachments (nil: the startup sweep does it).
+	removeFiles func(ids []string)
 }
 
 type upload struct {
@@ -213,8 +215,8 @@ func readObject(id string, limit int64) ([]byte, error) {
 
 // WithFiles gives the handler what files and file links need. publicURL is where agents reach the
 // API (PUBLIC_API_URL); empty means the address the MCP request came to.
-func (h *NotesAPIHandler) WithFiles(attachments *repository.AttachmentsRepository, tokens *authtoken.Tokens, publicURL string) *NotesAPIHandler {
-	h.files = fileAccess{attachments: attachments, notes: h.notes, spaces: h.spaces}
+func (h *NotesAPIHandler) WithFiles(attachments *repository.AttachmentsRepository, removeFiles func([]string), tokens *authtoken.Tokens, publicURL string) *NotesAPIHandler {
+	h.files = fileAccess{attachments: attachments, notes: h.notes, spaces: h.spaces, removeFiles: removeFiles}
 	h.tokens = tokens
 	h.publicURL = strings.TrimRight(publicURL, "/")
 	return h

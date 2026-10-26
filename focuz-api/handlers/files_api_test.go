@@ -202,3 +202,25 @@ func (s *E2ETestSuite) Test330_AgentFiles() {
 	res = s.mcpTool(readTok, "get_file", map[string]any{"attachmentId": mdID})
 	s.Equal(false, res["isError"], blockText(res, 0))
 }
+
+func TestApplyFolderArgs(t *testing.T) {
+	params := map[string]any{"_order": 30.0, "includeTags": []string{"old"}, "notReply": true, "icon": "star"}
+	empty, green := "", "green"
+	err := applyFolderArgs(params, folderArgs{Rule: &folderRule{Tags: []string{"#work", " "}, Text: " plan ", Sort: "date,DESC"}, Icon: &empty, Color: &green})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(params)
+	want := `{"_order":30,"color":"green","excludeTags":[],"includeTags":["work"],"sort":"date,DESC","textContains":"plan"}`
+	if string(b) != want {
+		t.Fatalf("params:\n got %s\nwant %s", b, want)
+	}
+	bad := "unicorn"
+	if applyFolderArgs(map[string]any{}, folderArgs{Icon: &bad}) == nil || applyFolderArgs(map[string]any{}, folderArgs{Rule: &folderRule{Sort: "name"}}) == nil {
+		t.Error("unknown icon or sort must be refused")
+	}
+	zero := 0
+	if p := folderParent(optInt{Set: true, Value: &zero}); !p.Set || p.Value != nil {
+		t.Errorf("parentId 0 means the top level: %+v", p)
+	}
+}

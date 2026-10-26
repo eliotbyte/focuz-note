@@ -67,6 +67,10 @@ type NotesAPIHandler struct {
 	files     fileAccess
 	tokens    *authtoken.Tokens
 	publicURL string
+
+	spaceAdmin *SpacesHandler
+	sharing    *SharingHandler
+	folders    *FiltersHandler
 }
 
 func NewNotesAPIHandler(notes *repository.NotesRepository, spaces *repository.SpacesRepository, sync *repository.SyncRepository) *NotesAPIHandler {

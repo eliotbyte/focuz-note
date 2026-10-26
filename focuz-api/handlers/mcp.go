@@ -23,7 +23,7 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.3.1"
+	mcpServerVersion   = "0.3.2"
 	// Room for a file sent inline as base64 (attach_files); bigger files go through get_upload_link.
 	maxMCPBodyBytes = 16 << 20
 	mcpInstructions = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +
@@ -33,6 +33,8 @@ const (
 		"call record_metrics: it saves the value in a dated note and tells you the previous value. " +
 		"Read the past with get_metric_history (groupBy for chart data). Create a metric with create_metric " +
 		"only when list_metrics has nothing that fits. " +
+		"You can also create, rename and delete spaces, organise the user's folders (create_folder, update_folder, " +
+		"delete_folder) and look in the trash (list_notes inTrash, restore_note). Ask before deleting a space. " +
 		"Notes hold pictures and files: send text files and small files with attach_files (create_note takes files too), " +
 		"upload files from disk with curl to a get_upload_link link, and open a note's file with get_file. " +
 		"Dates are RFC 3339 timestamps, for example 2026-10-24T12:00:00Z; date filters also take YYYY-MM-DD."
@@ -265,6 +267,7 @@ var mcpTools = []mcpTool{
 		Schema: objectSchema(map[string]any{
 			"spaceId":  spaceSchema,
 			"query":    map[string]any{"type": "string", "description": "Words the text must contain"},
+			"inTrash":  map[string]any{"type": "boolean", "description": "List deleted notes instead (restore_note brings one back)"},
 			"page":     map[string]any{"type": "integer", "minimum": 1},
 			"pageSize": map[string]any{"type": "integer", "minimum": 1, "maximum": 100},
 			"tags":     tagsSchema,
@@ -278,6 +281,7 @@ var mcpTools = []mcpTool{
 			var a struct {
 				SpaceID  int      `json:"spaceId"`
 				Query    string   `json:"query"`
+				InTrash  bool     `json:"inTrash"`
 				Page     int      `json:"page"`
 				PageSize int      `json:"pageSize"`
 				Tags     []string `json:"tags"`
@@ -321,7 +325,7 @@ var mcpTools = []mcpTool{
 			}
 			notes, total, err := h.notes.GetNotes(userID, a.SpaceID, models.NoteFilters{
 				Tags: a.Tags, NotReply: a.NotReply, Page: a.Page, PageSize: a.PageSize,
-				SortField: sortField, SortOrder: order, DateFrom: dateFrom, DateTo: dateTo, Search: a.Query,
+				SortField: sortField, SortOrder: order, DateFrom: dateFrom, DateTo: dateTo, Search: a.Query, Deleted: a.InTrash,
 			})
 			if err != nil {
 				return nil, err

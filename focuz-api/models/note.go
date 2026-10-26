@@ -51,4 +51,6 @@ type NoteFilters struct {
 	DateTo    *time.Time `json:"dateTo"`
 	// Search keeps notes whose text contains every word, ignoring case (agents; the web app searches locally).
 	Search string `json:"search"`
+	// Deleted lists the trash instead of live notes.
+	Deleted bool `json:"deleted"`
 }

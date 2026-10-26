@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Focuz API
   description: API for a note-taking application with workspaces, notes, charts, and activities
-  version: 0.3.1
+  version: 0.3.2
   contact:
     name: Focuz Team
 servers:
@@ -638,6 +638,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/APIResponse'
+
+  /files/{id}:
+    delete:
+      summary: Remove a file from its note (editors and above); the note's modified_at moves so devices drop it
+      tags:
+        - Files
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: '{ deleted, id, noteId }'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '404':
+          description: No such file
 
   /links/upload/{token}:
     post:
@@ -1467,6 +1486,7 @@ paths:
                 parentId:
                   type: integer
                   nullable: true
+                  description: Left out keeps the folder where it is; null moves it to the top level
                 params:
                   type: object
       responses:

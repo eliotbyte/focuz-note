@@ -276,63 +276,34 @@ func (h *SharingHandler) ChangePassword(c *gin.Context) {
 
 // PATCH /spaces/:spaceId  {name}
 func (h *SharingHandler) RenameSpace(c *gin.Context) {
-	space, role, ok := h.member(c)
-	if !ok {
-		return
-	}
-	if !access.CanManage(role) {
-		forbidden(c, "Only admins can rename the space")
+	spaceID, err := strconv.Atoi(c.Param("spaceId"))
+	if err != nil {
+		badRequest(c, "Invalid space id")
 		return
 	}
 	var req struct {
 		Name string `json:"name"`
 	}
 	_ = c.ShouldBindJSON(&req)
-	name := strings.TrimSpace(req.Name)
-	if name == "" || utf8.RuneCountInString(name) > 100 {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "Name must be 1 to 100 characters"))
+	out, err := h.renameSpace(c.GetInt("userId"), spaceID, req.Name)
+	if err != nil {
+		respondAPIError(c, err)
 		return
 	}
-	if err := h.repo.RenameSpace(space.ID, name); err != nil {
-		h.fail(c, "rename space", err)
-		return
-	}
-	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"id": space.ID, "name": name}))
+	c.JSON(http.StatusOK, types.NewSuccessResponse(out))
 }
 
 // PATCH /spaces/:spaceId/delete — owner only; the personal space can't be deleted.
 func (h *SharingHandler) DeleteSpace(c *gin.Context) {
-	space, role, ok := h.member(c)
-	if !ok {
-		return
-	}
-	if access.Name(role) != access.Owner {
-		forbidden(c, "Only the owner can delete the space")
-		return
-	}
-	if space.IsPersonal {
-		badRequest(c, "Your personal space can't be deleted")
-		return
-	}
-	members, err := h.repo.Members([]int{space.ID})
+	spaceID, err := strconv.Atoi(c.Param("spaceId"))
 	if err != nil {
-		h.fail(c, "delete space members", err)
+		badRequest(c, "Invalid space id")
 		return
 	}
-	if err := h.repo.DeleteSpace(space.ID); err != nil {
-		h.fail(c, "delete space", err)
+	if err := h.deleteSpace(c.GetInt("userId"), spaceID); err != nil {
+		respondAPIError(c, err)
 		return
 	}
-	actor := c.GetInt("userId")
-	actorName := h.username(actor)
-	h.async(func() {
-		for _, m := range members {
-			if m.UserID == actor {
-				continue
-			}
-			h.deliver(notification{userID: m.UserID, kind: "space_deleted", payload: map[string]any{"spaceId": space.ID, "spaceName": space.Name, "actorName": actorName}})
-		}
-	})
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"ok": true}))
 }
 

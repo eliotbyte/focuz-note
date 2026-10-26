@@ -5,7 +5,7 @@ Integration repository that bundles:
 - `focuz-api/` (backend)
 
 **Status**: alpha  
-**Version**: 0.3.1 (changes: `CHANGELOG.md`)
+**Version**: 0.3.2 (changes: `CHANGELOG.md`)
 
 ## Environments (Docker Compose)
 
@@ -21,9 +21,9 @@ APP_ENV=test docker compose up -d --build
 
 ## Versions
 
-- **Focuz-Node**: `0.3.1` (this repo, see `package.json`)
-- **Focuz-Web**: `0.3.1` (see `focuz-web/package.json`)
-- **Focuz-API**: `0.3.1` (see `focuz-api/pkg/buildinfo`)
+- **Focuz-Node**: `0.3.2` (this repo, see `package.json`)
+- **Focuz-Web**: `0.3.2` (see `focuz-web/package.json`)
+- **Focuz-API**: `0.3.2` (see `focuz-api/pkg/buildinfo`)
 
 
 ## Tests
@@ -144,15 +144,18 @@ note, and the note's date is the value's date, so the feed shows what you record
 ## Agents (MCP)
 
 focuz answers the Model Context Protocol on `POST /mcp`, so an agent such as Claude can use your notes as
-its long-term memory: find, read, create, edit and delete notes, attach and open pictures and files, and
-record and look up metrics. Serve it
+its long-term memory: find, read, create, edit and delete notes, attach, open and remove pictures and
+files, record and look up metrics, and organise spaces and folders. Serve it
 over HTTPS, like the sign-in (see the security checklist).
 
 Tools: `list_spaces`, `describe_space` (tags with counts, folders, metrics with last values), `list_notes`
-(with `query` for text search), `get_note` (optionally with replies), `create_note`, `update_note`,
+(with `query` for text search, `inTrash` for deleted notes), `get_note` (optionally with replies), `create_note`, `update_note`,
 `delete_note`, `restore_note`, `list_metrics`, `create_metric`, `record_metrics` (saves values in a dated
 note and answers with the previous value), `get_metric_history` (values and stats, or one value per
-day/week/month/year for a chart), `remove_metric_value`, `attach_files`, `get_upload_link`, `get_file`.
+day/week/month/year for a chart), `remove_metric_value`, `attach_files`, `get_upload_link`, `get_file`, `delete_file`;
+spaces: `create_space`, `rename_space`, `delete_space`, `restore_space`; folders (personal, a rule over tags,
+text and metrics, with sort, icon and color): `create_folder`, `update_folder`, `delete_folder`, `restore_folder`.
+An agent has the user's role: a guest only reads, an editor writes notes, only the owner deletes a space.
 
 Files: an agent sends text files it writes (Markdown, CSV) and small files as base64 inside the call
 (`attach_files`, or `files` in `create_note`). Files on its disk go through `get_upload_link`: a signed link

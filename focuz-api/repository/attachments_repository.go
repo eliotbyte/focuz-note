@@ -63,6 +63,12 @@ func (r *AttachmentsRepository) CreateOrGetAttachment(noteID int, clientID *stri
 	return id, nil
 }
 
+// DeleteAttachment removes the row; the caller removes the stored file.
+func (r *AttachmentsRepository) DeleteAttachment(id string) error {
+	_, err := r.db.Exec(`DELETE FROM attachments WHERE id = $1`, id)
+	return err
+}
+
 func (r *AttachmentsRepository) GetAttachmentByID(attID string) (*Attachment, error) {
 	var a Attachment
 	err := r.db.QueryRow(`

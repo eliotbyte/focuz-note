@@ -35,6 +35,11 @@ A security review (2026-10) fixed these; keep them when changing code:
   published example value to its list.
 - `TRUSTED_PROXIES` and `RATE_LIMIT_WHITELIST` default to empty: any trusted address can set the
   client IP via `X-Forwarded-For`.
+- A deleted space is gone for its members: `SpacesRepository.GetUserRoleIDInSpace` (and `RoleOf`, sync's
+  `spaceRoles`) return 0 for it. Only restoring uses `RoleIDInDeletedSpace`.
+- Spaces, folders and file removal for REST and MCP go through the shared functions in
+  `handlers/manage_api.go` (`createSpace`, `renameSpace`, `deleteSpace`, `restoreSpace`, folder create/update/
+  delete, `fileAccess.remove`).
 - Every handler that writes checks the role, not just membership: `access.CanWrite` /
   `access.CanEditNote` / `access.CanManage` (`pkg/access`), the same rules as `/sync`. Guests are
   read-only. `roleID == 0` alone is only enough for reads.

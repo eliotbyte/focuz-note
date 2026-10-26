@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"focuz-api/globals"
 	"focuz-api/repository"
 	"focuz-api/types"
 	"net/http"
@@ -44,15 +43,12 @@ func (h *SpacesHandler) CreateSpace(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, err.Error()))
 		return
 	}
-	userID := c.GetInt("userId")
-
-	// Create the space with the current user as owner
-	space, err := h.spacesRepo.CreateSpace(req.Name, userID, req.Personal)
+	// The current user owns the new space.
+	space, err := createSpace(h.spacesRepo, c.GetInt("userId"), req.Name, req.Personal)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
+		respondAPIError(c, err)
 		return
 	}
-
 	c.JSON(http.StatusCreated, types.NewSuccessResponse(space))
 }
 
@@ -62,19 +58,8 @@ func (h *SpacesHandler) RestoreSpace(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "Invalid space ID"))
 		return
 	}
-	userID := c.GetInt("userId")
-	userRoleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, spaceID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
-		return
-	}
-	if userRoleID == 0 || userRoleID != globals.DefaultOwnerRoleID {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "No permission to restore space"))
-		return
-	}
-	err = h.spacesRepo.SetSpaceDeleted(spaceID, false)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
+	if err := restoreSpace(h.spacesRepo, c.GetInt("userId"), spaceID); err != nil {
+		respondAPIError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{"message": "Space restored successfully"}))

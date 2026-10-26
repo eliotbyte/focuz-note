@@ -272,7 +272,7 @@ func (r *NotesRepository) GetNotes(userID, spaceID int, filters models.NoteFilte
 	var conditions []string
 	var params []interface{}
 	idx := 1
-	conditions = append(conditions, "n.is_deleted = FALSE")
+	conditions = append(conditions, "n.is_deleted = "+strconv.FormatBool(filters.Deleted))
 	conditions = append(conditions, "n.space_id = $"+strconv.Itoa(idx))
 	params = append(params, spaceID)
 	idx++
