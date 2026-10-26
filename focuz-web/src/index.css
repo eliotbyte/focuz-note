@@ -1453,6 +1453,9 @@ button:disabled { cursor: not-allowed; }
 .fse-menu-item[data-highlighted], .fse-menu-item[data-state='open'] { background: var(--select-bg); box-shadow: var(--shadow-select); }
 .fse-menu-item[data-active] { color: rgb(var(--c-accent-ink)) !important; font-weight: 600; }
 .fse-menu-item > svg { color: var(--text-muted); }
+/* Attach menu: what the item adds, and under it in caption what it takes. */
+.attach-item { display: flex; flex-direction: column; padding: 5px 0; line-height: 1.25; }
+.attach-item-hint { font-size: var(--fs-caption); font-weight: 400; color: var(--text-muted); }
 .fse-menu-item[data-active] > svg { color: rgb(var(--c-accent-ink)); }
 .fse-menu-item > span:nth-of-type(1):not(.fse-h) { flex: 1 1 auto; }
 .fse-menu-item .fse-h + span { flex: 1 1 auto; }

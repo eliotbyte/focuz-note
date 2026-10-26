@@ -17,8 +17,7 @@ import FullscreenNoteEditor from './FullscreenNoteEditor'
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
-import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded'
+import AttachMenu from './AttachMenu'
 import { EditableFileChip } from './NoteFiles'
 import { checkDocument, DOCUMENT_ACCEPT, isPicture, MAX_DOCUMENTS } from '../lib/attachment-files'
 import { pasteFile, type LargePaste } from '../lib/note-format/code-paste'
@@ -396,12 +395,13 @@ export default function NoteEditor({
       }} />
       <div className="flex items-center justify-end gap-2">
         <div className="flex-1 flex items-center gap-1 min-w-0">
-          <button type="button" className="composer-tool" aria-label="Add photo" title="Add photo" disabled={maxReached} onClick={() => fileInputRef.current?.click()}>
-            <ImageOutlinedIcon fontSize="inherit" />
-          </button>
-          <button type="button" className="composer-tool" aria-label="Attach file" title="Attach a file: PDF, Word, Excel, PowerPoint, text, Markdown, CSV" disabled={docsMaxReached} onClick={() => docInputRef.current?.click()}>
-            <AttachFileRoundedIcon fontSize="inherit" />
-          </button>
+          <AttachMenu
+            triggerClassName="composer-tool"
+            onPickPicture={() => fileInputRef.current?.click()}
+            onPickFile={() => docInputRef.current?.click()}
+            picturesDisabled={maxReached}
+            filesDisabled={docsMaxReached}
+          />
           {dateInput}
           {allowActivitiesInAddMenu ? (
             <DropdownMenu>
