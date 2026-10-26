@@ -3,6 +3,8 @@
 // Rules:
 //  - a job that cannot run yet (note not on the server, backoff) never blocks the others;
 //  - "server unreachable" is not a job failure: the job just waits, attempts are not counted;
+//  - "too many requests" (429) is not one either: the whole queue pauses for THROTTLE_WAIT_MS;
+//  - a request the server refuses (other 4xx) fails at once: sending it again gives the same answer;
 //  - other errors are retried with exponential backoff and marked `failed` after MAX_ATTEMPTS,
 //    then only a manual retry (status popover) re-queues them.
 import { db } from './db'
@@ -12,11 +14,14 @@ import type { AttachmentRecord, JobRecord } from './types'
 export const MAX_ATTEMPTS = 5
 const RUNNING_STALE_MS = 3 * 60 * 1000
 const WAIT_FOR_NOTE_MS = 3000
+/** The API's rate limiter answers 429 with Retry-After: 1. Wait a little longer than that. */
+export const THROTTLE_WAIT_MS = 2000
 
 export type JobOutcome =
   | { kind: 'done' }
   | { kind: 'deferred' } // could not run yet, try the next job
   | { kind: 'offline'; error: unknown } // server unreachable: stop the queue until sync recovers
+  | { kind: 'throttled'; error: unknown } // rate limited: pause the queue, try the same job again
   | { kind: 'retry'; error: unknown }
   | { kind: 'failed'; error: unknown }
 
@@ -111,11 +116,14 @@ export async function runJob(job: JobRecord): Promise<JobOutcome> {
     if (job.kind === 'attachment-download') return await download(job)
     return { kind: 'done' }
   } catch (e) {
+    const status = (e as any)?.status
     if (isNetworkError(e)) return { kind: 'offline', error: e }
-    if ((e as any)?.status === 401) return { kind: 'offline', error: e }
+    if (status === 401) return { kind: 'offline', error: e }
+    if (status === 429) return { kind: 'throttled', error: e }
     if (isTransientError(e)) return { kind: 'retry', error: e }
-    // 404 on download: the file is gone on the server; retrying will not help.
-    if (job.kind === 'attachment-download' && (e as any)?.status === 404) return { kind: 'failed', error: e }
+    // The server refuses this request (a picture too small, a file type it does not take, a note that
+    // is gone, a 404 on download): retrying gives the same answer.
+    if (typeof status === 'number' && status >= 400 && status < 500) return { kind: 'failed', error: e }
     return { kind: 'retry', error: e }
   }
 }
@@ -132,6 +140,9 @@ async function settle(job: JobRecord, outcome: JobOutcome): Promise<void> {
       break
     case 'offline':
       await db.jobs.update(job.id!, { status: 'pending', updatedAt: nowIso, lastError: errorText(outcome.error) })
+      break
+    case 'throttled':
+      await db.jobs.update(job.id!, { status: 'pending', updatedAt: nowIso, nextAttemptAt: new Date(now + THROTTLE_WAIT_MS).toISOString(), lastError: errorText(outcome.error) })
       break
     case 'retry': {
       const attempts = (job.attempts ?? 0) + 1
@@ -161,7 +172,7 @@ function errorText(e: unknown): string {
  * Runs at most one job. Returns what happened so the caller can schedule the next tick.
  * `onFailed` is called when a job is given up on (for user notification).
  */
-export async function processNextJob(onFailed?: (job: JobRecord, error: unknown) => void): Promise<'did' | 'idle' | 'offline'> {
+export async function processNextJob(onFailed?: (job: JobRecord, error: unknown) => void): Promise<'did' | 'idle' | 'offline' | 'throttled'> {
   const candidates = await runnableJobs()
   for (const job of candidates) {
     if (!(await claim(job))) continue
@@ -171,6 +182,8 @@ export async function processNextJob(onFailed?: (job: JobRecord, error: unknown)
     if (finalKind === 'failed' && onFailed) onFailed(job, (outcome as any).error)
     if (outcome.kind === 'deferred') continue
     if (outcome.kind === 'offline') return 'offline'
+    // The limit is per user: the next job would get 429 too.
+    if (outcome.kind === 'throttled') return 'throttled'
     return 'did'
   }
   return 'idle'

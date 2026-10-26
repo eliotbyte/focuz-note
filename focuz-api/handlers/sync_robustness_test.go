@@ -271,5 +271,29 @@ func (s *E2ETestSuite) Test213_Attachments_KeepTheirPosition() {
 		},
 	}}})
 	s.Equal(http.StatusOK, status)
-	s.Equal([]string{last, first, second, third}, s.pulledAttachmentIDs(since, noteID))
+	want := []string{last, first, second, third}
+	s.Equal(want, s.pulledAttachmentIDs(since, noteID))
+
+	// The REST reads (and the MCP tools on top of them) list files in the same order.
+	idsOf := func(note map[string]any) []string {
+		ids := []string{}
+		atts, _ := note["attachments"].([]any)
+		for _, a := range atts {
+			ids = append(ids, a.(map[string]any)["id"].(string))
+		}
+		return ids
+	}
+	code, out := s.call("GET", fmt.Sprintf("/notes/%d", noteID), s.ownerToken, nil)
+	s.Require().Equal(http.StatusOK, code)
+	s.Equal(want, idsOf(out["data"].(map[string]any)))
+	code, out = s.call("GET", fmt.Sprintf("/notes?spaceId=%d&page=1&pageSize=100", s.createdSpaceID), s.ownerToken, nil)
+	s.Require().Equal(http.StatusOK, code)
+	found := false
+	for _, n := range out["data"].(map[string]any)["data"].([]any) {
+		if note := n.(map[string]any); int(note["id"].(float64)) == noteID {
+			found = true
+			s.Equal(want, idsOf(note))
+		}
+	}
+	s.True(found, "note in GET /notes")
 }

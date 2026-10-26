@@ -244,6 +244,7 @@ func (r *NotesRepository) GetNoteByID(id int) (*models.Note, error) {
 		SELECT id, file_name, file_type, file_size
 		FROM attachments
 		WHERE note_id = $1
+		ORDER BY position ASC NULLS LAST, created_at ASC, id ASC
 	`, note.ID)
 	if err != nil {
 		return nil, err
@@ -318,7 +319,7 @@ func (r *NotesRepository) GetNotes(userID, spaceID int, filters models.NoteFilte
 		      'fileName', att.file_name,
 		      'fileType', att.file_type,
 		      'fileSize', att.file_size
-		    ) ORDER BY att.id)
+		    ) ORDER BY att.position ASC NULLS LAST, att.created_at ASC, att.id ASC)
 		    FROM attachments att WHERE att.note_id = n.id
 		  ), '[]'::json) AS attachments
 		FROM note n

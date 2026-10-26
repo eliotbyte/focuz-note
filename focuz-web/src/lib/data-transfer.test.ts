@@ -6,6 +6,9 @@ import { readExport } from './export-format'
 // Pictures that are not on this device are fetched from the server; the tests answer for it.
 const fetchMock = vi.hoisted(() => vi.fn())
 vi.mock('./jobs-worker', () => ({ fetchAttachmentBlob: fetchMock }))
+// jsdom can't decode pictures: the import asks this for their size.
+const dimsMock = vi.hoisted(() => vi.fn())
+vi.mock('./image', async importOriginal => ({ ...(await importOriginal<typeof import('./image')>()), getImageDimensions: dimsMock }))
 
 // fake-indexeddb is the database here: pictures and files are real Blobs and Files.
 function bytesBlob(bytes: Uint8Array): Blob {
@@ -23,6 +26,7 @@ async function zipBytes(blob: Blob): Promise<Uint8Array> {
 const NOW = '2026-10-01T10:00:00.000Z'
 
 beforeEach(async () => {
+  dimsMock.mockReset().mockResolvedValue({ width: 1280, height: 720 })
   await Promise.all([db.notes.clear(), db.attachments.clear(), db.activities.clear(), db.activityTypes.clear(), db.jobs.clear()])
   await db.activityTypes.add({ serverId: 77, spaceId: 1, name: 'Mood', valueType: 'integer', createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
   await db.activityTypes.add({ serverId: 88, spaceId: 2, name: 'Mood', valueType: 'integer', createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
@@ -58,6 +62,28 @@ describe('export and import of a space', () => {
     expect(pics.map(p => p.fileName)).toEqual(['pic.webp'])
     const acts = await db.activities.where('noteId').equals(parentCopy.id!).toArray()
     expect(acts.map(a => a.valueRaw)).toEqual(['4'])
+  })
+
+  it('skips pictures the server would refuse, keeps documents and unreadable pictures', async () => {
+    const id = await db.notes.add({ spaceId: 1, text: 'old pictures', tags: [], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 4, clientId: 'o' } as never)
+    const add = (name: string, type: string, position: number) => db.attachments.add({ noteId: id as number, serverId: name, clientId: name, fileName: name, fileType: type, fileSize: 2, data: new Blob([new Uint8Array([position, 1])], { type }), position, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
+    await add('tiny.webp', 'image/webp', 0)
+    await add('big.webp', 'image/webp', 1)
+    await add('broken.webp', 'image/webp', 2)
+    await add('notes.md', 'text/markdown', 3)
+    dimsMock.mockImplementation(async (f: File) => {
+      if (f.name === 'tiny.webp') return { width: 300, height: 200 }
+      if (f.name === 'broken.webp') throw new Error('Failed to read image')
+      return { width: 1280, height: 720 }
+    })
+
+    const exported = await exportSpace(1, 'A', true)
+    const result = await importIntoSpace(2, fileOf(exported.fileName, await zipBytes(exported.blob)))
+    expect(result).toMatchObject({ notes: 1, pictures: 3, skippedPictures: 1 })
+    const copy = (await db.notes.where('spaceId').equals(2).toArray())[0]
+    const names = (await db.attachments.where('noteId').equals(copy.id!).toArray()).map(a => a.fileName).sort()
+    expect(names).toEqual(['big.webp', 'broken.webp', 'notes.md'])
+    expect(dimsMock).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'notes.md' }))
   })
 
   it('leaves activities out when the space has no such type', async () => {

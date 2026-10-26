@@ -530,7 +530,7 @@ func (r *SharingRepository) PublicNotes(s *Share) ([]PublicNote, error) {
 	var err error
 	cols := `n.id, n.parent_id, n.text, u.username, n.created_at, n.modified_at,
 		COALESCE((SELECT ARRAY_AGG(t.name ORDER BY t.name) FROM note_to_tag nt JOIN tag t ON t.id = nt.tag_id WHERE nt.note_id = n.id), ARRAY[]::text[]),
-		COALESCE((SELECT json_agg(json_build_object('id', a.id, 'fileName', a.file_name, 'fileType', a.file_type) ORDER BY a.modified_at, a.id)
+		COALESCE((SELECT json_agg(json_build_object('id', a.id, 'fileName', a.file_name, 'fileType', a.file_type) ORDER BY a.position ASC NULLS LAST, a.created_at ASC, a.id ASC)
 		          FROM attachments a WHERE a.note_id = n.id), '[]'::json)`
 	switch {
 	case s.NoteID == nil:

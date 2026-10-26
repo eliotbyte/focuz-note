@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { importIntoSpace } from '../lib/data-transfer'
+import { IMAGE_MIN_SHORT_SIDE } from '../lib/image'
 import { isExportActive, openExportOptions, useExportState } from '../lib/export-job'
 import { notify } from '../ui/notify'
 
@@ -18,7 +19,7 @@ export default function DataTab({ spaceId, spaceName, canWrite }: { spaceId: num
     try {
       const r = await importIntoSpace(spaceId, file)
       const lines = [`Imported ${r.notes} ${r.notes === 1 ? 'note' : 'notes'} and ${r.pictures} ${r.pictures === 1 ? 'file' : 'files'}.`]
-      if (r.skippedPictures > 0) lines.push(`${r.skippedPictures} ${r.skippedPictures === 1 ? 'file was' : 'files were'} skipped (too large or unreadable).`)
+      if (r.skippedPictures > 0) lines.push(`${r.skippedPictures} ${r.skippedPictures === 1 ? 'file was' : 'files were'} skipped: too large, unreadable, or a picture smaller than notes take (${IMAGE_MIN_SHORT_SIDE} px on the short side).`)
       if (r.skippedActivities > 0) lines.push(`${r.skippedActivities} ${r.skippedActivities === 1 ? 'activity was' : 'activities were'} skipped (its type is not in this space).`)
       setReport(lines.join(' '))
       notify('Notes imported', 'success')

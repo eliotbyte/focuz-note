@@ -5,6 +5,7 @@ import { activities as activitiesRepo, attachments as attachmentsRepo, notes as 
 import { createOrUpdateLocalActivity, addLocalAttachments } from './local-writes'
 import { fetchAttachmentBlob } from './jobs-worker'
 import { MAX_DOCUMENT_BYTES } from './attachment-files'
+import { getImageDimensions, validateImageGeometry } from './image'
 import type { NoteRecord } from './types'
 import {
   EXPORT_FORMAT,
@@ -216,6 +217,18 @@ export async function exportSpace(spaceId: number, spaceName: string, withPictur
 }
 
 /**
+ * False for a picture the server refuses (too small, too narrow): older notes may have such pictures,
+ * uploaded before the server checked. A picture that can't be read here is left to the server.
+ */
+async function pictureAccepted(file: File): Promise<boolean> {
+  try {
+    return validateImageGeometry(await getImageDimensions(file)).ok
+  } catch {
+    return true
+  }
+}
+
+/**
  * Adds the notes of an export file to a space as new notes. Existing notes are not changed. The new
  * notes are saved on this device and sync like any other note.
  */
@@ -248,9 +261,12 @@ export async function importIntoSpace(spaceId: number, file: File): Promise<Impo
     const files: File[] = []
     for (const p of n.pictures) {
       const bytes = pictures.get(p.file)
-      const limit = p.fileType.startsWith('image/') ? MAX_PICTURE_BYTES : MAX_DOCUMENT_BYTES
+      const isPicture = p.fileType.startsWith('image/')
+      const limit = isPicture ? MAX_PICTURE_BYTES : MAX_DOCUMENT_BYTES
       if (!bytes || bytes.byteLength > limit) { result.skippedPictures++; continue }
-      files.push(new File([bytes as BlobPart], p.fileName, { type: p.fileType }))
+      const f = new File([bytes as BlobPart], p.fileName, { type: p.fileType })
+      if (isPicture && !(await pictureAccepted(f))) { result.skippedPictures++; continue }
+      files.push(f)
     }
     if (files.length > 0) {
       await addLocalAttachments(localId, files)

@@ -133,6 +133,8 @@ function AgentsTab() {
   const [error, setError] = useState<string | null>(null)
   // The secret of a token just created. It is not stored anywhere on the page and is gone after "Done".
   const [secret, setSecret] = useState<string | null>(null)
+  // The token whose row asks "Revoke?" (in the dialog, not window.confirm, like the other destructive actions).
+  const [confirmId, setConfirmId] = useState<number | null>(null)
   const mcpUrl = `${getServer() ?? ''}/mcp`
   const command = secret ? `claude mcp add --transport http focuz ${mcpUrl} --header "Authorization: Bearer ${secret}"` : ''
 
@@ -154,12 +156,13 @@ function AgentsTab() {
   }
 
   async function revoke(t: ApiTokenInfo) {
-    if (!window.confirm(`Revoke "${t.name}"? Agents that use it stop working at once.`)) return
+    setBusy(true)
     try {
       await revokeApiToken(t.id)
+      setConfirmId(null)
       notify('Token revoked', 'success')
       await load()
-    } catch (e) { notify(errorText(e), 'error') }
+    } catch (e) { notify(errorText(e), 'error') } finally { setBusy(false) }
   }
 
   async function copyCommand() {
@@ -178,7 +181,7 @@ function AgentsTab() {
 
       {secret && (
         <div className="space-y-2">
-          <div className="settings-label">New token</div>
+          <div className="settings-label">Token created</div>
           <p className="settings-note">Copy this command now. The token is shown only once; if you lose it, revoke it and make a new one.</p>
           <code className="code-block">{command}</code>
           <div className="flex gap-2">
@@ -204,15 +207,26 @@ function AgentsTab() {
         {tokens === null && !error && <p className="settings-note">Loading…</p>}
         {tokens?.length === 0 && <p className="settings-note">No tokens yet.</p>}
         {tokens?.map(t => (
-          <div key={t.id} className="settings-danger">
-            <div className="min-w-0">
-              <b className="truncate block">{t.name} <span className="text-xs font-normal text-secondary">· {t.scope === 'read' ? 'read only' : 'read and write'}</span></b>
-              <p className="font-mono text-xs">{t.prefix}…</p>
-              <p>
-                Created {new Date(t.createdAt).toLocaleDateString()} · {t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleString()}` : 'never used'}
-              </p>
+          <div key={t.id} className="space-y-2">
+            <div className="settings-danger">
+              <div className="min-w-0">
+                <b className="truncate block">{t.name} <span className="text-xs font-normal text-secondary">· {t.scope === 'read' ? 'read only' : 'read and write'}</span></b>
+                <p className="font-mono text-xs">{t.prefix}…</p>
+                <p>
+                  Created {new Date(t.createdAt).toLocaleDateString()} · {t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleString()}` : 'never used'}
+                </p>
+              </div>
+              <button type="button" className="button button-secondary" disabled={confirmId === t.id} onClick={() => setConfirmId(t.id)}>Revoke…</button>
             </div>
-            <button type="button" className="button button-secondary" onClick={() => { void revoke(t) }}>Revoke</button>
+            {confirmId === t.id && (
+              <div className="settings-confirm" role="alertdialog" aria-label={`Confirm revoking ${t.name}`}>
+                <p>Revoke “{t.name}”? Agents that use it stop working at once.</p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" className="button button-secondary" onClick={() => setConfirmId(null)}>Cancel</button>
+                  <button type="button" className="button button-danger" disabled={busy} onClick={() => { void revoke(t) }}>Revoke</button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

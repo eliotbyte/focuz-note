@@ -431,6 +431,40 @@ describe('attachment jobs', () => {
     expect((await db.attachments.toArray())[0].data).toBeTruthy()
   })
 
+  it('waits out the rate limit without using up attempts', async () => {
+    const space = await ensureDefaultSpace()
+    const id = await localNote(space, 'many photos')
+    await addLocalAttachments(id, [1, 2].map(n => new File([new Uint8Array([n])], `${n}.webp`, { type: 'image/webp' })))
+    await runSync(true)
+    await db.jobs.toCollection().modify({ nextAttemptAt: null })
+    server.failures.push({ match: /^POST \/upload/, status: 429, times: MAX_ATTEMPTS + 2 })
+    for (let i = 0; i < MAX_ATTEMPTS + 2; i++) {
+      // The queue pauses after a 429 instead of trying the next file right away.
+      expect(await processNextJob()).toBe('throttled')
+      await db.jobs.toCollection().modify({ nextAttemptAt: null })
+    }
+    const jobs = await db.jobs.toArray()
+    expect(jobs.map(j => [j.status, j.attempts])).toEqual([['pending', 0], ['pending', 0]])
+    await drainJobs()
+    const sid = (await db.notes.get(id))!.serverId!
+    expect([...server.attachments.values()].filter(a => a.note_id === sid)).toHaveLength(2)
+  })
+
+  it('gives up at once on a file the server refuses', async () => {
+    const space = await ensureDefaultSpace()
+    const id = await localNote(space, 'tiny photo')
+    await addLocalAttachment(id, new File([new Uint8Array([1])], 'tiny.webp', { type: 'image/webp' }))
+    await runSync(true)
+    await db.jobs.toCollection().modify({ nextAttemptAt: null })
+    server.failures.push({ match: /^POST \/upload/, status: 400, times: 1 })
+    const onFailed = vi.fn()
+    expect(await processNextJob(onFailed)).toBe('did')
+    const job = (await db.jobs.toArray())[0]
+    expect(job.status).toBe('failed')
+    expect(job.attempts).toBe(1)
+    expect(onFailed).toHaveBeenCalledTimes(1)
+  })
+
   it('does not change image order when an image is downloaded', async () => {
     const n = server.addNote('remote')
     server.addAttachment(n.id, 'first.webp')

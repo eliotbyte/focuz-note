@@ -10,7 +10,7 @@ import { api, getApiBase, isNetworkError, isTransientError } from './api'
 import { authBC, clearAuthToken, emitAuthRequired, getAuthToken, isAuthRequired, setAuthTokenLS, setLastUsername } from './auth'
 import { pushDirty, recoverLegacyConflicts } from './sync-push'
 import { pullSince } from './sync-pull'
-import { ensureDownloadJob, processNextJob, releaseStaleRunningJobs, retryFailedJobs } from './jobs-worker'
+import { ensureDownloadJob, processNextJob, releaseStaleRunningJobs, retryFailedJobs, THROTTLE_WAIT_MS } from './jobs-worker'
 
 export { isAuthRequired, onAuthRequired, getLastUsername } from './auth'
 export { validateActivityValue } from './activity-values'
@@ -288,6 +288,7 @@ async function jobTick() {
     try {
       const r = await processNextJob((job, error) => markJobFailed(job.kind, String((error as any)?.message || error || '')))
       if (r === 'did') next = 0
+      else if (r === 'throttled') next = THROTTLE_WAIT_MS
       else if (r === 'offline') {
         // Server unreachable: let the sync backoff probe the server, resume jobs after it succeeds.
         jobsPausedOffline = true
