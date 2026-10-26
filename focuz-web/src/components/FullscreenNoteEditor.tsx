@@ -24,7 +24,6 @@ import FormatListNumberedRoundedIcon from '@mui/icons-material/FormatListNumbere
 import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import LinkOffRoundedIcon from '@mui/icons-material/LinkOffRounded'
-import AttachMenu from './AttachMenu'
 import FormatQuoteRoundedIcon from '@mui/icons-material/FormatQuoteRounded'
 import HorizontalRuleRoundedIcon from '@mui/icons-material/HorizontalRuleRounded'
 import TitleRoundedIcon from '@mui/icons-material/TitleRounded'
@@ -154,14 +153,12 @@ export interface FullscreenNoteEditorProps {
   onSubmit: () => void
   submitLabel: string
   canSubmit: boolean
-  onPickImage?: () => void
-  imagesDisabled?: boolean
-  onPickFile?: () => void
-  filesDisabled?: boolean
   /** Long pasted code or text; without it, it is pasted into the text. */
   onLargePaste?: (c: LargePaste) => void
   /** Tags input, attachment thumbnails etc., shown under the text. */
   footer?: ReactNode
+  /** Tools of the note itself (attach, date): at the start of the row with the submit button. */
+  actionsStart?: ReactNode
   placeholder?: string
 }
 
@@ -181,7 +178,7 @@ export default function FullscreenNoteEditor(props: FullscreenNoteEditorProps) {
   )
 }
 
-function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmit, onPickImage, imagesDisabled, onPickFile, filesDisabled, onLargePaste, footer, placeholder, onOpenChange }: FullscreenNoteEditorProps) {
+function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmit, onLargePaste, footer, actionsStart, placeholder, onOpenChange }: FullscreenNoteEditorProps) {
   const largePasteRef = useRef(onLargePaste)
   largePasteRef.current = onLargePaste
   const submitRef = useRef(onSubmit)
@@ -284,16 +281,6 @@ function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmi
           <ToolButton label="Numbered list" shortcut="Mod-Shift-7" active={s.orderedList} onClick={() => chain().toggleOrderedList().run()}><FormatListNumberedRoundedIcon fontSize="inherit" /></ToolButton>
           <ToolButton label="Checklist" shortcut="Mod-Shift-9" active={s.taskList} onClick={() => chain().toggleTaskList().run()}><ChecklistRoundedIcon fontSize="inherit" /></ToolButton>
           <LinkButton editor={editor} active={s.link} href={s.linkHref} />
-          {onPickImage && onPickFile && (
-            <AttachMenu
-              triggerClassName="fse-tool"
-              onPickPicture={onPickImage}
-              onPickFile={onPickFile}
-              picturesDisabled={imagesDisabled}
-              filesDisabled={filesDisabled}
-              onCloseAutoFocus={e => { e.preventDefault(); editor.commands.focus() }}
-            />
-          )}
         </div>
         <div className="fse-group fse-group-end">
           <ToolButton label="Exit full screen" shortcut="Esc" onClick={() => onOpenChange(false)}><CloseFullscreenRoundedIcon fontSize="inherit" /></ToolButton>
@@ -322,6 +309,7 @@ function EditorBody({ initialText, onTextChange, onSubmit, submitLabel, canSubmi
       <div className="fse-footer">
         {footer}
         <div className="fse-actions">
+          {actionsStart && <div className="fse-actions-start">{actionsStart}</div>}
           <span className="fse-hint">{keys('Mod-Enter')} to {submitLabel.toLowerCase()}</span>
           <button type="button" className="button" disabled={!canSubmit} onClick={() => onSubmit()}>{submitLabel}</button>
         </div>

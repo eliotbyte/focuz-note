@@ -1374,7 +1374,8 @@ button:disabled { cursor: not-allowed; }
   .fse-overlay[data-state='open'] { animation: fade-in var(--dur-medium) var(--ease-enter); }
 }
 
-.fse-frame { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+/* The corners come down from .fse, so the pinstriped toolbar is rounded like the sheet. */
+.fse-frame { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; border-radius: inherit; }
 .fse-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1484,6 +1485,8 @@ button:disabled { cursor: not-allowed; }
 }
 .fse-meta { display: flex; flex-direction: column; gap: 8px; }
 .fse-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+/* The note's tools (attach, date) at the start of the row, as in the composer. */
+.fse-actions-start { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
 .fse-hint { font-size: var(--fs-caption); color: var(--text-muted); }
 .fse-text-btn { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-small); color: var(--text-muted); }
 .fse-text-btn:hover { color: var(--text-primary); }

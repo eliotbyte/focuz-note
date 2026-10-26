@@ -4,8 +4,8 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
 
 /**
- * One paperclip for everything a note can hold: a menu with "Picture" and "File". Used by the
- * composer (as a composer tool) and the full-screen editor (as a toolbar tool).
+ * One paperclip for everything a note can hold: a menu with "Picture" and "File". It sits with the
+ * note's other tools next to the submit button, in the composer and in the full-screen editor.
  */
 export default function AttachMenu({
   onPickPicture,
@@ -13,15 +13,12 @@ export default function AttachMenu({
   picturesDisabled,
   filesDisabled,
   triggerClassName,
-  onCloseAutoFocus,
 }: {
   onPickPicture: () => void
   onPickFile: () => void
   picturesDisabled?: boolean
   filesDisabled?: boolean
   triggerClassName: string
-  /** The full-screen editor gives the focus back to the text instead of the button. */
-  onCloseAutoFocus?: (e: Event) => void
 }) {
   return (
     <DropdownMenu>
@@ -32,13 +29,11 @@ export default function AttachMenu({
           aria-label="Attach"
           title="Attach a picture or a file"
           disabled={picturesDisabled && filesDisabled}
-          // Keep the text's selection: the toolbar never takes the focus from the editor.
-          onMouseDown={e => e.preventDefault()}
         >
           <AttachFileRoundedIcon fontSize="inherit" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="fse-menu" onCloseAutoFocus={onCloseAutoFocus}>
+      <DropdownMenuContent align="start" className="fse-menu">
         <DropdownMenuItem className="fse-menu-item" disabled={picturesDisabled} onSelect={onPickPicture}>
           <ImageOutlinedIcon fontSize="inherit" className="icon-sm" />
           <span className="attach-item"><span>Picture</span><span className="attach-item-hint">{picturesDisabled ? 'Up to 10 per note' : 'JPG, PNG, WebP, HEIC'}</span></span>

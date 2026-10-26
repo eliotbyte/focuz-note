@@ -342,6 +342,16 @@ export default function NoteEditor({
     </>
   )
 
+  // The note's own tools sit with its submit button, in the composer and in the full-screen editor.
+  const attachMenu = (
+    <AttachMenu
+      triggerClassName="composer-tool"
+      onPickPicture={() => fileInputRef.current?.click()}
+      onPickFile={() => docInputRef.current?.click()}
+      picturesDisabled={maxReached}
+      filesDisabled={docsMaxReached}
+    />
+  )
   const tagsInput = <TagsInput value={value.tags} onChange={tags => onChange({ ...value, tags })} placeholder="Add tags" spaceId={spaceId} />
 
   return (
@@ -395,13 +405,7 @@ export default function NoteEditor({
       }} />
       <div className="flex items-center justify-end gap-2">
         <div className="flex-1 flex items-center gap-1 min-w-0">
-          <AttachMenu
-            triggerClassName="composer-tool"
-            onPickPicture={() => fileInputRef.current?.click()}
-            onPickFile={() => docInputRef.current?.click()}
-            picturesDisabled={maxReached}
-            filesDisabled={docsMaxReached}
-          />
+          {attachMenu}
           {dateInput}
           {allowActivitiesInAddMenu ? (
             <DropdownMenu>
@@ -434,14 +438,11 @@ export default function NoteEditor({
         onSubmit={submit}
         submitLabel={submitLabel}
         canSubmit={canSubmit}
-        onPickImage={() => fileInputRef.current?.click()}
-        imagesDisabled={maxReached}
-        onPickFile={() => docInputRef.current?.click()}
-        filesDisabled={docsMaxReached}
         onLargePaste={onLargePaste}
         placeholder={mode === 'reply' ? 'Reply…' : 'Write a note… Type "[ ] " for a checklist, "# " for a heading'}
         // Paste/drop of images inside the dialog bubbles (through the React portal) to this editor's handlers.
-        footer={<div className="fse-meta">{dateInput}{tagsInput}{thumbnails}</div>}
+        footer={<div className="fse-meta">{tagsInput}{thumbnails}</div>}
+        actionsStart={<>{attachMenu}{dateInput}</>}
       />
       {editingIdx != null && attachments[editingIdx] && (
         <ImageEditorDialog
