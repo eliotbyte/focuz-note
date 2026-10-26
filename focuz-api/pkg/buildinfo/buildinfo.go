@@ -4,5 +4,5 @@ package buildinfo
 // Keep in sync with:
 // - focuz-web/package.json
 // - package.json (integration repo)
-const Version = "0.1.18"
+const Version = "0.1.19"
 

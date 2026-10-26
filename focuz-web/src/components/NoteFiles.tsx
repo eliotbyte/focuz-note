@@ -42,20 +42,20 @@ export default function NoteFiles({ noteId, mayEdit = false }: { noteId: number;
   const all = (useLiveQuery(() => attachmentsRepo.listDisplayForNote(noteId), [noteId]) ?? NONE) as AttachmentRecord[]
   const files = useMemo(() => all.filter(a => !isPicture(a)), [all])
   const uploads = useUploadStates(files)
-  const [preview, setPreview] = useState<AttachmentRecord | null>(null)
+  const [preview, setPreview] = useState<PreviewSource | null>(null)
   if (files.length === 0) return null
   return (
     <>
       <ul className="file-list" aria-label="Files">
         {files.map(a => (
           <li key={a.id}>
-            <FileChip att={a} onPreview={() => setPreview(a)}>
+            <FileChip att={a} onPreview={() => setPreview(attachmentSource(a, mayEdit))}>
               <UploadBadge state={uploads.get(a.id!)} />
             </FileChip>
           </li>
         ))}
       </ul>
-      {preview && <DocumentPreviewDialog att={preview} mayEdit={mayEdit} onClose={() => setPreview(null)} />}
+      {preview && <DocumentPreviewDialog doc={preview} onClose={() => setPreview(null)} />}
     </>
   )
 }
@@ -100,18 +100,27 @@ function FileChip({ att, onPreview, children }: { att: AttachmentRecord; onPrevi
   )
 }
 
-/** A document in the editor: name and size, and a button that takes it off the note. */
-export function EditableFileChip({ fileName, fileSize, fileType, onRemove, children }: {
-  fileName: string; fileSize: number; fileType: string; onRemove: () => void; children?: React.ReactNode
+/**
+ * A document in the editor: name and size, and a button that takes it off the note. onOpen: the name
+ * opens the file (to read or edit it) when it can be shown in the app.
+ */
+export function EditableFileChip({ fileName, fileSize, fileType, onRemove, onOpen, children }: {
+  fileName: string; fileSize: number; fileType: string; onRemove: () => void; onOpen?: () => void; children?: React.ReactNode
 }) {
   const kind = documentKind({ fileName, fileType })
+  const opens = !!onOpen && canPreview({ fileName, fileType, fileSize })
+  const inner = (
+    <>
+      <span className={`file-chip-icon file-kind-${kind}`}><DocumentIcon kind={kind} /></span>
+      <span className="file-chip-name">{fileName}</span>
+      <span className="file-chip-size">{formatBytes(fileSize)}</span>
+    </>
+  )
   return (
     <div className="file-chip">
-      <span className="file-chip-main">
-        <span className={`file-chip-icon file-kind-${kind}`}><DocumentIcon kind={kind} /></span>
-        <span className="file-chip-name">{fileName}</span>
-        <span className="file-chip-size">{formatBytes(fileSize)}</span>
-      </span>
+      {opens
+        ? <button type="button" className="file-chip-main" onClick={onOpen} title={`Open ${fileName}`}>{inner}</button>
+        : <span className="file-chip-main">{inner}</span>}
       <button type="button" className="file-chip-action" onClick={onRemove} aria-label={`Remove ${fileName}`} title="Remove">
         <CloseRoundedIcon fontSize="inherit" />
       </button>
@@ -126,42 +135,63 @@ function downloadError(e: unknown): string {
   return 'The server could not be reached. Try again in a moment.'
 }
 
+/** A file the preview can show: an attachment of a note, or a file still waiting in the editor. */
+export interface PreviewSource {
+  fileName: string
+  fileType: string
+  fileSize: number
+  load: () => Promise<Blob>
+  /** Saves edited text; without it, the file is read-only. */
+  save?: (blob: Blob) => Promise<void>
+}
+
+export function attachmentSource(att: AttachmentRecord, mayEdit: boolean): PreviewSource {
+  return {
+    fileName: att.fileName,
+    fileType: att.fileType,
+    fileSize: att.fileSize,
+    load: () => documentBlob(att),
+    save: mayEdit && att.id != null ? async blob => { await replaceLocalAttachment(att.id!, blob) } : undefined,
+  }
+}
+
 /**
  * Reads a document inside the app: text, Markdown (through the note renderer, no HTML) and CSV here;
  * PDF (pdf.js, pages drawn on canvas) and Word (mammoth, cleaned HTML) in DocumentViewers.
+ * stacked: opened from the full-screen editor, so it goes above it.
  */
-function DocumentPreviewDialog({ att, mayEdit, onClose }: { att: AttachmentRecord; mayEdit: boolean; onClose: () => void }) {
+export function DocumentPreviewDialog({ doc, onClose, stacked }: { doc: PreviewSource; onClose: () => void; stacked?: boolean }) {
   const [blob, setBlob] = useState<Blob | null>(null)
   const [text, setText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   // The text being edited; null while reading.
   const [draft, setDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const kind = previewKind(att)
+  const kind = previewKind(doc)
   const textual = kind === 'text' || kind === 'markdown' || kind === 'csv'
   useEffect(() => {
     let cancelled = false
-    documentBlob(att)
+    doc.load()
       .then(async b => {
         const t = textual ? await b.text() : null
         if (!cancelled) { setBlob(b); setText(t) }
       })
       .catch(e => { if (!cancelled) setError(downloadError(e)) })
     return () => { cancelled = true }
-  }, [att, textual])
+  }, [doc, textual])
   const onViewError = useCallback((message: string) => setError(message), [])
   const html = useMemo(() => (kind === 'markdown' && text != null ? renderNoteHtml(text) : ''), [kind, text])
   const rows = useMemo(() => (kind === 'csv' && text != null ? parseCsv(text) : null), [kind, text])
   const loading = <p className="text-secondary">Loading…</p>
-  const editable = mayEdit && textual && text != null && att.id != null
+  const editable = !!doc.save && textual && text != null
   const changed = draft != null && draft !== text
 
   async function save() {
-    if (draft == null || att.id == null) return
+    if (draft == null || !doc.save) return
     setSaving(true)
     try {
-      await replaceLocalAttachment(att.id, new Blob([draft], { type: att.fileType || 'text/plain' }))
-      notify(`${att.fileName} saved`, 'success')
+      await doc.save(new Blob([draft], { type: doc.fileType || 'text/plain' }))
+      notify(`${doc.fileName} saved`, 'success')
       onClose()
     } catch {
       notify('Could not save the file', 'error')
@@ -172,8 +202,8 @@ function DocumentPreviewDialog({ att, mayEdit, onClose }: { att: AttachmentRecor
   return (
     // Unsaved edits are not dropped by Esc or a click outside: Cancel or Save.
     <Dialog open onOpenChange={o => { if (!o && !changed) onClose() }}>
-      <DialogContent className="p-5 space-y-4 w-[min(92vw,45rem)]">
-        <DialogTitle className="truncate pr-8">{att.fileName}</DialogTitle>
+      <DialogContent stacked={stacked} className="p-5 space-y-4 w-[min(92vw,45rem)]">
+        <DialogTitle className="truncate pr-8">{doc.fileName}</DialogTitle>
         <DialogDescription className="sr-only">Contents of the file</DialogDescription>
         {draft != null ? (
           <textarea
@@ -181,7 +211,7 @@ function DocumentPreviewDialog({ att, mayEdit, onClose }: { att: AttachmentRecor
             value={draft}
             onChange={e => setDraft(e.target.value)}
             spellCheck={kind !== 'csv'}
-            aria-label={`Text of ${att.fileName}`}
+            aria-label={`Text of ${doc.fileName}`}
             autoFocus
           />
         ) : (
@@ -212,7 +242,7 @@ function DocumentPreviewDialog({ att, mayEdit, onClose }: { att: AttachmentRecor
             type="button"
             className="button"
             disabled={!blob}
-            onClick={() => { void documentBlob(att).then(b => saveBlob(b, att.fileName)).catch(e => notify('Could not download the file', 'error', { description: downloadError(e) })) }}
+            onClick={() => { void doc.load().then(b => saveBlob(b, doc.fileName)).catch(e => notify('Could not download the file', 'error', { description: downloadError(e) })) }}
           >
             <FileDownloadRoundedIcon fontSize="inherit" aria-hidden /> Download
           </button>

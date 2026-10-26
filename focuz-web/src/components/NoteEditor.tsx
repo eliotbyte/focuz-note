@@ -18,7 +18,7 @@ import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import AttachMenu from './AttachMenu'
-import { EditableFileChip } from './NoteFiles'
+import { attachmentSource, DocumentPreviewDialog, EditableFileChip, type PreviewSource } from './NoteFiles'
 import { checkDocument, DOCUMENT_ACCEPT, isPicture, MAX_DOCUMENTS } from '../lib/attachment-files'
 import { pasteFile, type LargePaste } from '../lib/note-format/code-paste'
 import { languageLabel } from '../lib/code-languages'
@@ -75,6 +75,8 @@ export default function NoteEditor({
   // New pictures (already WebP) and new documents (as they are), uploaded on submit.
   const [attachments, setAttachments] = useState<File[]>([])
   const [docs, setDocs] = useState<File[]>([])
+  // A file opened from the editor's list, to read or edit it.
+  const [openDoc, setOpenDoc] = useState<PreviewSource | null>(null)
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const allowActivitiesInline = mode === 'edit' ? true : featureFlags.noteCreateAddActivity
   const allowActivitiesInAddMenu = mode === 'edit' ? featureFlags.noteCreateAddActivity : allowActivitiesInline
@@ -327,6 +329,7 @@ export default function NoteEditor({
                   fileSize={att.fileSize}
                   fileType={att.fileType}
                   onRemove={() => { if (att.id != null) void deleteLocalAttachment(att.id).catch(() => {}) }}
+                  onOpen={() => setOpenDoc(attachmentSource(att, true))}
                 >
                   <UploadBadge state={existingUploads.get(att.id!)} />
                 </EditableFileChip>
@@ -334,13 +337,27 @@ export default function NoteEditor({
             ))}
             {docs.map((f, idx) => (
               <li key={`doc-${fileKey(f)}`}>
-                <EditableFileChip fileName={f.name} fileSize={f.size} fileType={f.type} onRemove={() => setDocs(prev => prev.filter((_, i) => i !== idx))} />
+                <EditableFileChip fileName={f.name} fileSize={f.size} fileType={f.type} onRemove={() => setDocs(prev => prev.filter((_, i) => i !== idx))} onOpen={() => setOpenDoc(stagedSource(f))} />
               </li>
             ))}
           </ul>
         )}
     </>
   )
+
+  // A file not uploaded yet: edits replace it in the list, keeping its name and place.
+  function stagedSource(file: File): PreviewSource {
+    return {
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      load: async () => file,
+      save: async blob => {
+        const next = new File([blob], file.name, { type: file.type || 'text/markdown' })
+        setDocs(prev => prev.map(f => (f === file ? next : f)))
+      },
+    }
+  }
 
   // The note's own tools sit with its submit button, in the composer and in the full-screen editor.
   const attachMenu = (
@@ -444,6 +461,7 @@ export default function NoteEditor({
         footer={<div className="fse-meta">{tagsInput}{thumbnails}</div>}
         actionsStart={<>{attachMenu}{dateInput}</>}
       />
+      {openDoc && <DocumentPreviewDialog doc={openDoc} stacked={fullscreen} onClose={() => setOpenDoc(null)} />}
       {editingIdx != null && attachments[editingIdx] && (
         <ImageEditorDialog
           image={attachments[editingIdx]}
