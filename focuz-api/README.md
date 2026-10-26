@@ -3,7 +3,7 @@
 Backend API for a note-taking application with workspaces, notes, charts, and activities.
 
 **Status**: alpha  
-**Version**: 0.1.9
+**Version**: 0.1.10
 
 ## Quick Start
 
@@ -188,6 +188,7 @@ Saved note filters with nested grouping and JSON parameters.
 - `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`, `RATE_LIMIT_WHITELIST`, `RATE_LIMIT_ENABLED`: tune/disable rate limiting.
 - `MINIO_EXTERNAL_ENDPOINT`: external hostname:port for presigned URLs; if empty, internal endpoint is used.
 - `MINIO_EXTERNAL_USE_SSL`: optional bool for presigned URL scheme when using `MINIO_EXTERNAL_ENDPOINT`. If unset, inferred from the endpoint scheme (`http://`/`https://`) or falls back to `MINIO_USE_SSL`.
+- Files of pictures deleted through `/sync` are removed from MinIO after the push commits. At startup the API also removes files older than an hour that have no attachment row (skipped while the `attachments` table is empty); `ORPHAN_FILE_SWEEP=off` turns that sweep off.
 
 ## API Documentation
 

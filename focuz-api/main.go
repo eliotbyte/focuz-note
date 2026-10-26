@@ -8,11 +8,13 @@ import (
 	"focuz-api/pkg/appenv"
 	"focuz-api/pkg/authcfg"
 	"focuz-api/pkg/authtoken"
+	"focuz-api/pkg/filestore"
 	"focuz-api/pkg/jwtsecret"
 	"focuz-api/pkg/mailer"
 	"focuz-api/pkg/notify"
 	"focuz-api/repository"
 	"focuz-api/websocket"
+	"context"
 	"log"
 	"os"
 	"strconv"
@@ -91,7 +93,20 @@ func main() {
 	apiTokensRepo := repository.NewAPITokensRepository(db)
 
 	// New repos for sync and tags
-	syncRepo := repository.NewSyncRepository(db)
+	// Files of deleted pictures are removed after the deleting push commits; files left behind
+	// earlier (or by a failed removal) are swept once at startup.
+	files := &filestore.Store{Client: initializers.MinioClient, Bucket: initializers.Conf.Bucket}
+	syncRepo := repository.NewSyncRepository(db).WithFileRemover(files.Remove)
+	if os.Getenv("ORPHAN_FILE_SWEEP") != "off" {
+		go func() {
+			n, err := files.SweepOrphans(context.Background(), db, time.Hour)
+			if err != nil {
+				log.Printf("Orphan file sweep failed: %v", err)
+			} else if n > 0 {
+				log.Printf("Orphan file sweep removed %d files without an attachment", n)
+			}
+		}()
+	}
 	tagsRepo := repository.NewTagsRepository(db)
 
 	// Set Gin to release mode in production (before gin.New, which already logs in debug mode)

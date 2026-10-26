@@ -24,9 +24,20 @@ type SyncRepository struct {
 	q querier
 	// touched collects the spaces changed by the current push (nil outside a push).
 	touched map[int]bool
+	// deletedAttachments collects the attachments whose rows the current push deleted.
+	deletedAttachments []string
+	// removeFiles deletes the stored files of deleted attachments; called only after commit.
+	removeFiles func(ids []string)
 }
 
 func NewSyncRepository(db *sql.DB) *SyncRepository { return &SyncRepository{db: db, q: db} }
+
+// WithFileRemover sets what removes the files of attachments a push deleted. It runs after the
+// push committed, so a rolled-back push never loses a file the database still points to.
+func (r *SyncRepository) WithFileRemover(fn func(ids []string)) *SyncRepository {
+	r.removeFiles = fn
+	return r
+}
 
 func (r *SyncRepository) GetChangesSince(userID int, accessibleSpaceIDs []int, since time.Time) (*types.SyncPullResponse, error) {
 	resp := &types.SyncPullResponse{}
@@ -316,6 +327,9 @@ func (r *SyncRepository) ApplyChanges(userID int, payload types.SyncPushRequest)
 	}
 	for id := range txRepo.touched {
 		resp.TouchedSpaces = append(resp.TouchedSpaces, id)
+	}
+	if r.removeFiles != nil && len(txRepo.deletedAttachments) > 0 {
+		r.removeFiles(txRepo.deletedAttachments)
 	}
 	return resp, nil
 }
@@ -746,10 +760,11 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 					}
 					// Handle soft delete via is_deleted flag
 					if a.IsDeleted != nil && *a.IsDeleted {
-						// Hard delete attachment record and object metadata only; actual object cleanup can be async/out-of-scope
+						// Hard delete the row; ApplyChanges removes the stored file once the push commits.
 						if _, err := r.q.Exec(`DELETE FROM attachments WHERE id = $1`, a.ID); err != nil {
 							return nil, err
 						}
+						r.deletedAttachments = append(r.deletedAttachments, a.ID)
 					}
 				}
 			}
