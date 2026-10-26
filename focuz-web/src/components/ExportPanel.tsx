@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog'
+import DatePicker from './DatePicker'
+import { parseDay } from '../lib/calendar'
 import {
   closeExportDialog,
   dismissExport,
@@ -82,6 +84,12 @@ function ExportBanner({ s }: { s: ExportState }) {
   )
 }
 
+/** A picked day as it is written in the export settings ("26 Oct 2026"). */
+function shownDay(day: string): string {
+  const p = parseDay(day)
+  return p ? new Date(p.year, p.month, p.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : day
+}
+
 function ExportOptionsDialog({ spaceId, spaceName }: { spaceId: number; spaceName: string }) {
   const [withPictures, setWithPictures] = useState(true)
   const [from, setFrom] = useState('')
@@ -90,62 +98,58 @@ function ExportOptionsDialog({ spaceId, spaceName }: { spaceId: number; spaceNam
 
   return (
     <Dialog open onOpenChange={open => { if (!open) closeExportDialog() }}>
-      <DialogContent stacked aria-describedby={undefined} className="p-5">
-        <DialogTitle>Export notes</DialogTitle>
-        <DialogDescription className="mt-1">
+      <DialogContent stacked className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <DialogTitle>Export notes</DialogTitle>
+          <button type="button" className="icon-btn icon-btn-close !p-1" aria-label="Close" onClick={closeExportDialog}>
+            <CloseRoundedIcon fontSize="inherit" />
+          </button>
+        </div>
+        <DialogDescription className="mt-1 text-sm">
           {spaceName ? <>Notes of <b>{spaceName}</b>, saved as a file on this device.</> : 'Notes of this space, saved as a file on this device.'}
         </DialogDescription>
 
-        <div className="mt-5 space-y-5">
-          <section className="space-y-2">
-            <div className="settings-label">Date range</div>
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <label className="flex items-center gap-2 text-secondary">
-                <span>From</span>
-                <input type="date" aria-label="From" className="input !w-auto !py-1" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} />
-              </label>
-              <label className="flex items-center gap-2 text-secondary">
-                <span>To</span>
-                <input type="date" aria-label="To" className="input !w-auto !py-1" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} />
-              </label>
-            </div>
-            <p className="settings-note">By the date of each note. Leave both empty to export all notes.</p>
-            {!rangeOk && <p className="settings-error" role="alert">The start date is after the end date.</p>}
-          </section>
+        <div className="mt-4">
+          <label className="export-check">
+            <input type="checkbox" checked disabled />
+            Notes: text, tags, dates and activities
+          </label>
+          <label className="export-check">
+            <input type="checkbox" checked={withPictures} onChange={e => setWithPictures(e.target.checked)} />
+            Pictures and files
+          </label>
+        </div>
 
-          <section className="space-y-2">
-            <div className="settings-label">What to export</div>
-            <label className="flex items-center gap-2 text-sm text-secondary">
-              <input type="checkbox" checked disabled />
-              Notes: text, tags, dates and activities
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={withPictures} onChange={e => setWithPictures(e.target.checked)} />
-              Pictures and files
-            </label>
-          </section>
+        <div className="mt-4 space-y-1">
+          <p className="export-setting">
+            Format: <span className="text-primary">{withPictures ? 'zip with JSON and the files' : 'JSON'}</span>
+          </p>
+          <p className="export-setting" title="By the date of each note">
+            From:{' '}
+            <DatePicker label="Start date" value={from} max={to || undefined} resetLabel="Reset" onChange={setFrom} onReset={() => setFrom('')}>
+              <button type="button" className="link-btn">{from ? shownDay(from) : 'the oldest note'}</button>
+            </DatePicker>
+            , to:{' '}
+            <DatePicker label="End date" value={to} min={from || undefined} resetLabel="Reset" onChange={setTo} onReset={() => setTo('')}>
+              <button type="button" className="link-btn">{to ? shownDay(to) : 'the newest note'}</button>
+            </DatePicker>
+          </p>
+          {!rangeOk && <p className="settings-error" role="alert">The start date is after the end date.</p>}
+        </div>
 
-          <section className="space-y-2">
-            <div className="settings-label">Format</div>
-            <p className="settings-note">
-              JSON. {withPictures ? 'With pictures and files, the export is a zip with the JSON and the files in it.' : 'Without them, it is a plain JSON file.'}
-            </p>
-          </section>
-
-          <div className="flex justify-end gap-2">
-            <button type="button" className="button button-secondary" onClick={closeExportDialog}>Cancel</button>
-            <button
-              type="button"
-              className="button"
-              disabled={!rangeOk}
-              onClick={() => {
-                void startExport({ spaceId, spaceName, withPictures, from, to })
-                openExportDetails()
-              }}
-            >
-              Export
-            </button>
-          </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" className="button button-secondary" onClick={closeExportDialog}>Cancel</button>
+          <button
+            type="button"
+            className="button"
+            disabled={!rangeOk}
+            onClick={() => {
+              void startExport({ spaceId, spaceName, withPictures, from, to })
+              openExportDetails()
+            }}
+          >
+            Export
+          </button>
         </div>
       </DialogContent>
     </Dialog>

@@ -5,7 +5,7 @@ Integration repository that bundles:
 - `focuz-api/` (backend)
 
 **Status**: alpha  
-**Version**: 0.2.1 (changes: `CHANGELOG.md`)
+**Version**: 0.2.2 (changes: `CHANGELOG.md`)
 
 ## Environments (Docker Compose)
 
@@ -21,9 +21,9 @@ APP_ENV=test docker compose up -d --build
 
 ## Versions
 
-- **Focuz-Node**: `0.2.1` (this repo, see `package.json`)
-- **Focuz-Web**: `0.2.1` (see `focuz-web/package.json`)
-- **Focuz-API**: `0.2.1` (see `focuz-api/pkg/buildinfo`)
+- **Focuz-Node**: `0.2.2` (this repo, see `package.json`)
+- **Focuz-Web**: `0.2.2` (see `focuz-web/package.json`)
+- **Focuz-API**: `0.2.2` (see `focuz-api/pkg/buildinfo`)
 
 
 ## Tests

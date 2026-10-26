@@ -27,6 +27,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ImageEditorDialog from './ImageEditorDialog'
 import InlineNoteEditor, { type InlineNoteEditorHandle } from './InlineNoteEditor'
 import { dayOf, withDay } from '../lib/note-date'
+import DatePicker from './DatePicker'
 
 const MAX_ATTACHMENTS = 10
 const NO_ATTACHMENTS: AttachmentRecord[] = []
@@ -481,34 +482,29 @@ export default function NoteEditor({
 
 /** The note's day as a calendar button; the day is written next to it only when it is not today. */
 function NoteDateButton({ date, onChange }: { date?: string; onChange: (date: string) => void }) {
-  const input = useRef<HTMLInputElement | null>(null)
   const day = dayOf(date ?? new Date())
   const isToday = day === dayOf(new Date())
   const [y, m, d] = day.split('-').map(Number)
   const shown = new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(y !== new Date().getFullYear() ? { year: 'numeric' } : {}) })
+  // A note always has a day, so the reset button goes back to today.
   return (
-    <span className="relative inline-flex">
+    <DatePicker
+      label="Note date"
+      value={day}
+      resetLabel="Today"
+      onChange={v => onChange(withDay(date ?? new Date(), v))}
+      onReset={() => onChange(withDay(date ?? new Date(), dayOf(new Date())))}
+    >
       <button
         type="button"
         className={`composer-tool ${isToday ? '' : 'has-label'}`}
         aria-label={`Note date: ${shown}`}
         title="Note date"
-        onClick={() => { try { input.current?.showPicker() } catch { input.current?.focus() } }}
       >
         <CalendarTodayRoundedIcon fontSize="inherit" />
         {!isToday && <span className="composer-tool-label">{shown}</span>}
       </button>
-      {/* The browser's own date picker, opened from the button. Clearing it is ignored: a note always has a day. */}
-      <input
-        ref={input}
-        type="date"
-        className="composer-date-input"
-        tabIndex={-1}
-        aria-hidden
-        value={day}
-        onChange={e => { if (e.target.value) onChange(withDay(date ?? new Date(), e.target.value)) }}
-      />
-    </span>
+    </DatePicker>
   )
 }
 

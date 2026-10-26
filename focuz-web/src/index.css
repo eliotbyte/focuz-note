@@ -270,7 +270,7 @@
   element that uses it; an element (or variant) changes colour by setting only --gel-tint.
 */
 :where(.button, .brand, .auth-logo, .fse-tool, .settings-switch input, .filter-chip-select, .look-swatch,
-  .bell-badge, .meter-fill) {
+  .bell-badge, .meter-fill, .cal-day) {
   --gel-tint: var(--c-accent);
   --gel-bg:
     linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.14) 46%, rgba(255, 255, 255, 0) 50%),
@@ -1322,7 +1322,6 @@ button:disabled { cursor: not-allowed; }
 .composer-tool.has-label { padding: 0 10px 0 8px; color: var(--text-primary); background: rgba(var(--c-text) / 0.06); }
 .composer-tool-label { font-size: var(--fs-small); font-weight: 600; white-space: nowrap; }
 /* The browser's date picker opens from the button; the field itself is never seen. */
-.composer-date-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
 
 /* Picture thumbnails while writing. */
 .thumb-cell { border-radius: var(--r-md); background: rgb(var(--c-media-bg)); box-shadow: var(--shadow-field); }
@@ -2307,6 +2306,65 @@ button:disabled { cursor: not-allowed; }
 .picture-field { display: flex; align-items: center; gap: 14px; }
 .picture-field-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
+
+/* ---------- Date picker: a month calendar in a popover, month and year wheels from its title ---------- */
+.cal { width: 300px; max-width: calc(100vw - 2rem); padding: 10px; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: var(--h-md); margin-bottom: 4px; }
+.cal-title {
+  display: inline-flex; align-items: center; gap: 2px; height: var(--h-sm); padding: 0 10px 0 2px;
+  border-radius: var(--r-sm); font-size: var(--fs-ui); font-weight: 600; color: var(--text-primary);
+}
+.cal-title svg { color: var(--text-muted); transition: transform var(--dur-small) var(--ease-standard); }
+.cal-title[aria-expanded='true'] svg { transform: rotate(90deg); }
+@media (hover: hover) { .cal-title:hover { background: rgba(var(--c-text) / 0.07); } }
+.cal-grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.cal-weekday { height: 28px; font-size: var(--fs-caption); font-weight: 600; color: var(--text-muted); text-align: center; }
+.cal-grid td { padding: 1px 0; text-align: center; }
+.cal-day {
+  width: 36px; height: 36px; border-radius: var(--r-pill); font-size: var(--fs-ui); color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-micro), box-shadow var(--dur-micro), color var(--dur-micro), transform var(--dur-instant);
+}
+.cal-day.is-outside { color: var(--text-faint); }
+.cal-day.is-today { color: rgb(var(--c-accent-ink)); font-weight: 600; box-shadow: inset 0 0 0 1px rgb(var(--c-accent) / 0.6); }
+@media (hover: hover) { .cal-day:hover:not(:disabled):not(.is-selected) { background: var(--select-bg); box-shadow: var(--shadow-select); } }
+.cal-day:active:not(:disabled) { transform: scale(var(--press-scale)); }
+.cal-day.is-selected { color: rgb(var(--c-on-accent)); font-weight: 600; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3); background: var(--gel-bg); box-shadow: var(--shadow-gel); }
+.cal-day:disabled { color: var(--text-faint); opacity: 0.45; cursor: not-allowed; }
+.cal-foot { display: flex; justify-content: space-between; margin-top: 6px; }
+.cal-foot.is-end { justify-content: flex-end; gap: 4px; }
+.cal-foot .filter-btn { height: var(--h-sm); padding: 0 10px; font-size: var(--fs-ui); font-weight: 600; }
+/* Same height as the day grid (weekdays + 6 weeks), so the popover doesn't jump between the views. */
+.cal-wheels { position: relative; display: grid; grid-template-columns: 3fr 2fr; gap: 8px; }
+.cal-wheels::before {
+  content: ''; position: absolute; inset-inline: 0; top: 50%; height: 36px; translate: 0 -50%;
+  border-block: 1px solid rgb(var(--c-accent) / 0.7); pointer-events: none;
+}
+.cal-wheel {
+  height: 252px; overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y mandatory; padding-block: 108px;
+  scrollbar-width: none; border-radius: var(--r-sm);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 32%, #000 68%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 32%, #000 68%, transparent);
+}
+.cal-wheel::-webkit-scrollbar { display: none; }
+.cal-wheel:focus-visible { outline-offset: -2px; }
+.cal-wheel-item {
+  display: flex; align-items: center; justify-content: center; height: 36px; scroll-snap-align: center;
+  font-size: var(--fs-ui); color: var(--text-muted); cursor: pointer; user-select: none;
+}
+.cal-wheel-item[aria-selected='true'] { color: var(--text-primary); font-weight: 600; }
+.cal-wheel-item[aria-disabled='true'] { color: var(--text-faint); }
+
+/* Export options: Telegram-like rows of checkboxes, then one line per setting with its value as a link. */
+.export-check {
+  display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 8px; margin-inline: -8px;
+  border-radius: var(--r-sm); font-size: var(--fs-ui); color: var(--text-primary); cursor: pointer;
+}
+.export-check input { width: 18px; height: 18px; flex: none; }
+.export-check:has(input:disabled) { color: var(--text-muted); cursor: default; }
+@media (hover: hover) { .export-check:hover:not(:has(input:disabled)) { background: rgba(var(--c-text) / 0.06); } }
+.export-setting { font-size: var(--fs-ui); line-height: 1.6; color: var(--text-muted); }
+.export-setting .link-btn { font-weight: 600; }
 
 /* ---------- Progress: a Sims-style needs bar ---------- */
 .meter {
