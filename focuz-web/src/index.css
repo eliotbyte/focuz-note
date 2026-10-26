@@ -686,13 +686,14 @@ input[type="checkbox"] {
 /* Note card footer at the end of the last row, like the time in a chat bubble. The footer is pinned
    to the bottom right; the last row ends with an invisible spacer of the footer's size (NoteCard
    measures it into --note-foot-w/-h). Where the row has room, the spacer and so the footer share
-   its last line; otherwise the spacer wraps and the footer takes the line below. Text that ends in
-   a list, code or a table, and pictures, keep the footer on a line of its own. */
+   its last line; otherwise the spacer wraps and the footer takes the line below. In text, NoteCard
+   marks the last line (data-foot-tail: a paragraph, a heading or the last list item); text that ends
+   in code or a table, and pictures, keep the footer on a line of its own. */
 .note-body { position: relative; }
 .note-body.is-foot-inline > .note-foot { position: absolute; right: 0; bottom: 0; max-width: 100%; height: var(--note-foot-h, 26px); align-items: center; }
 .note-body.is-foot-inline > :is(.note-row, .file-list, .note-prose):nth-last-child(2) { margin-block-end: 0; }
 .note-body.is-foot-inline > :is(.note-row, .file-list):nth-last-child(2)::after,
-.note-body.is-foot-inline > .note-prose:nth-last-child(2) > :is(p, h1, h2, h3, h4, h5, h6):last-child::after {
+.note-body.is-foot-inline > .note-prose:nth-last-child(2) [data-foot-tail='inline']::after {
   content: '';
   display: inline-block;
   flex: none;
@@ -700,7 +701,7 @@ input[type="checkbox"] {
   height: var(--note-foot-h, 26px);
   vertical-align: bottom;
 }
-.note-body.is-foot-inline > .note-prose:nth-last-child(2):not(:has(> :is(p, h1, h2, h3, h4, h5, h6):last-child))::after {
+.note-body.is-foot-inline > .note-prose:nth-last-child(2)[data-foot-tail='block']::after {
   content: '';
   display: block;
   height: calc(var(--note-foot-h, 26px) + 6px);

@@ -329,8 +329,9 @@ right: secondary(ies) then the primary gel last. Enter: Aqua sheet (from 8px abo
   The footer (author, date, ⋮) does not take a row of its own when the last row has room for it: like
   the time in a chat bubble it sits at the right end of the last line of text, files, metrics or tags,
   centred on that line (`.note-body.is-foot-inline`, a spacer of the footer's measured size ends the
-  last row). Text that ends in a list, code or a table, a picture alone, and a note with replies (the
-  replies link takes the left of the footer) keep the footer row.
+  last row). In text that is a paragraph, a heading or the last item of a list or a quote, nested
+  lists followed down (`lib/note-tail.ts`). Text that ends in code or a table, a picture alone, and a
+  note with replies (the replies link takes the left of the footer) keep the footer row.
 - Tile: glass square, `--r-lg`, hover lifts 2px with the hot-track glow; picture tiles keep text on a
   dark fade.
 - Tree rows (`.filter-row`): 32px, `--r-sm`; hover tint 6 %; selected = selection glow + 600.

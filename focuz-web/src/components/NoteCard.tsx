@@ -22,6 +22,7 @@ import NoteShareDialog from './NoteShareDialog'
 import NoteDetailsDialog from './NoteDetailsDialog'
 import { PersonAvatar } from './ui/avatar'
 import NoteDateTip from './NoteDateTip'
+import { proseTail } from '../lib/note-tail'
 
 export default function NoteCard({
   note,
@@ -81,12 +82,20 @@ export default function NoteCard({
     const body = bodyRef.current, foot = footRef.current
     if (!footInline || !body || !foot) return
     // The footer takes the height of the last row's items (or of a text line), so it sits centred on them.
+    // In text, the line it joins is marked data-foot-tail (CSS adds the spacer there).
     const measure = () => {
       const inner = foot.querySelector<HTMLElement>('.note-footer')
       const prev = foot.previousElementSibling as HTMLElement | null
       let tail = 0
-      if (prev?.classList.contains('note-prose')) tail = parseFloat(getComputedStyle(prev.lastElementChild ?? prev).lineHeight) || 0
-      else if (prev?.matches('.note-row, .file-list') && prev.lastElementChild) tail = (prev.lastElementChild as HTMLElement).offsetHeight
+      if (prev?.classList.contains('note-prose')) {
+        const { el, inline } = proseTail(prev)
+        for (const old of prev.querySelectorAll('[data-foot-tail]')) if (old !== el) old.removeAttribute('data-foot-tail')
+        if (prev !== el) prev.removeAttribute('data-foot-tail')
+        el.setAttribute('data-foot-tail', inline ? 'inline' : 'block')
+        if (inline) tail = parseFloat(getComputedStyle(el).lineHeight) || 0
+      } else if (prev?.matches('.note-row, .file-list') && prev.lastElementChild) {
+        tail = (prev.lastElementChild as HTMLElement).offsetHeight
+      }
       body.style.setProperty('--note-foot-w', `${Math.ceil(foot.offsetWidth)}px`)
       body.style.setProperty('--note-foot-h', `${Math.ceil(Math.max(inner?.offsetHeight ?? 0, tail))}px`)
     }
@@ -94,7 +103,10 @@ export default function NoteCard({
     const ro = new ResizeObserver(measure)
     ro.observe(foot)
     ro.observe(body)
-    return () => ro.disconnect()
+    // New text replaces the rendered HTML, and with it the mark.
+    const mo = new MutationObserver(measure)
+    mo.observe(body, { childList: true, subtree: true })
+    return () => { ro.disconnect(); mo.disconnect() }
   }, [footInline])
   // The note on its own (showFullDate) is already open; in the feed a click anywhere on the card opens it.
   const openable = !!onOpenThread && !showFullDate
