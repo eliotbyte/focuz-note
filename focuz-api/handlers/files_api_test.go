@@ -224,3 +224,24 @@ func TestApplyFolderArgs(t *testing.T) {
 		t.Errorf("parentId 0 means the top level: %+v", p)
 	}
 }
+
+func (s *E2ETestSuite) Test331_AgentPictureOnlyNote() {
+	tok, _ := s.newUser("pictureonly")
+	space := s.createSpace(tok, "Pictures")
+	// A picture alone makes a note; a refused picture makes none.
+	res := s.mcpTool(tok, "create_note", map[string]any{"spaceId": space, "files": []any{
+		map[string]any{"fileName": "small.png", "base64": base64.StdEncoding.EncodeToString(testPNG(300))},
+	}})
+	s.Equal(true, res["isError"])
+	s.Contains(blockText(res, 0), "small.png: The picture is not accepted")
+	s.NotContains(blockText(res, 0), "was created")
+	res = s.mcpTool(tok, "list_notes", map[string]any{"spaceId": space})
+	s.Contains(blockText(res, 0), `"total": 0`)
+	res = s.mcpTool(tok, "create_note", map[string]any{"spaceId": space, "files": []any{
+		map[string]any{"fileName": "big.png", "base64": base64.StdEncoding.EncodeToString(testPNG(520))},
+	}})
+	s.Require().Equal(false, res["isError"], blockText(res, 0))
+	s.Contains(blockText(res, 0), "big.png")
+	res = s.mcpTool(tok, "create_note", map[string]any{"spaceId": space, "text": " "})
+	s.Equal(true, res["isError"])
+}

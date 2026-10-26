@@ -51,6 +51,8 @@ type noteCreate struct {
 	Tags     []string   `json:"tags"`
 	Date     *time.Time `json:"date"`
 	ParentID *int       `json:"parentId"`
+	// withFiles: files come with the note, so it may have no text (a picture alone), as in the app.
+	withFiles bool
 }
 
 // NotesAPIHandler serves note edits for REST (PATCH /notes/:id) and the MCP endpoint (POST /mcp).
@@ -124,7 +126,7 @@ func (h *NotesAPIHandler) createNote(userID int, req noteCreate) (*models.Note, 
 	if !access.CanWrite(roleID) {
 		return nil, errForbidden("You can only read this space")
 	}
-	if strings.TrimSpace(req.Text) == "" {
+	if strings.TrimSpace(req.Text) == "" && !req.withFiles {
 		return nil, invalidInput("Text is required")
 	}
 	if req.ParentID != nil {

@@ -326,6 +326,11 @@ right: secondary(ies) then the primary gel last. Enter: Aqua sheet (from 8px abo
   clicks and selecting text does not open it. The relative date is the link to the note (`.note-date-link`).
   ⋮ (`.note-more`, 26px icon button) ends the footer row: hidden until the card is hovered, its place
   kept so nothing shifts, always shown on touch. No overlay or tint on hover.
+  The footer (author, date, ⋮) does not take a row of its own when the last row has room for it: like
+  the time in a chat bubble it sits at the right end of the last line of text, files, metrics or tags,
+  centred on that line (`.note-body.is-foot-inline`, a spacer of the footer's measured size ends the
+  last row). Text that ends in a list, code or a table, a picture alone, and a note with replies (the
+  replies link takes the left of the footer) keep the footer row.
 - Tile: glass square, `--r-lg`, hover lifts 2px with the hot-track glow; picture tiles keep text on a
   dark fade.
 - Tree rows (`.filter-row`): 32px, `--r-sm`; hover tint 6 %; selected = selection glow + 600.

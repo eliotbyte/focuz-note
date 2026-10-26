@@ -23,7 +23,7 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.3.3"
+	mcpServerVersion   = "0.3.4"
 	// Room for a file sent inline as base64 (attach_files); bigger files go through get_upload_link.
 	maxMCPBodyBytes = 16 << 20
 	mcpInstructions = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +
@@ -369,7 +369,8 @@ var mcpTools = []mcpTool{
 	{
 		Name: "create_note",
 		Description: "Create a note in a space where you are an editor or admin. For a reply, set parentId to a note in the same space. " +
-			"files attaches text files or small files given inline (see attach_files); for files on disk create the note, then use get_upload_link.",
+			"files attaches text files or small files given inline (see attach_files); with files the text may be empty (a picture alone). " +
+			"For files on disk create the note, then use get_upload_link.",
 		Schema: objectSchema(map[string]any{
 			"spaceId":  spaceSchema,
 			"text":     textSchema,
@@ -377,7 +378,7 @@ var mcpTools = []mcpTool{
 			"date":     dateSchema,
 			"parentId": map[string]any{"type": "integer", "description": "Note this one replies to"},
 			"files":    filesSchema,
-		}, "spaceId", "text"),
+		}, "spaceId"),
 		Write: true,
 		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
 			var a struct {
@@ -387,12 +388,20 @@ var mcpTools = []mcpTool{
 			if err := decodeArgs(raw, &a); err != nil {
 				return nil, err
 			}
-			// Check the inline files before the note exists.
+			// Check the inline files (content, size, picture rules) before the note exists.
 			for _, f := range a.Files {
-				if _, err := f.bytes(); err != nil {
+				data, err := f.bytes()
+				if err != nil {
+					return nil, err
+				}
+				if _, _, err := checkContent(bytesUpload(0, f.FileName, data)); err != nil {
+					if ce, ok := err.(*clientError); ok {
+						return nil, &clientError{status: ce.status, code: ce.code, message: cleanFileName(f.FileName) + ": " + ce.message}
+					}
 					return nil, err
 				}
 			}
+			a.noteCreate.withFiles = len(a.Files) > 0
 			note, err := h.createNote(userID, a.noteCreate)
 			if err != nil || len(a.Files) == 0 {
 				return note, err

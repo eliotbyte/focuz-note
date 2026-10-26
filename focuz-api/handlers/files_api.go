@@ -147,42 +147,52 @@ func checkPicture(r io.Reader) error {
 	return nil
 }
 
-// store checks and saves a file in a note. The type comes from the content, never from the name.
-func (f fileAccess) store(userID int, u upload) (*storedFile, error) {
-	if _, err := f.writableNote(userID, u.NoteID); err != nil {
-		return nil, err
-	}
+// checkContent applies the upload policy to a file: type by content (never by name), size, and the
+// picture rules. It returns the content type and whether the file is a picture.
+func checkContent(u upload) (string, bool, error) {
 	src, err := u.Open()
 	if err != nil {
-		return nil, invalidInput("cannot open uploaded file")
+		return "", false, invalidInput("cannot open uploaded file")
 	}
 	mt, err := mimetype.DetectReader(src)
 	_ = src.Close()
 	if err != nil || mt == nil {
-		return nil, invalidInput("failed to detect file type")
+		return "", false, invalidInput("failed to detect file type")
 	}
 	contentType := strings.Split(mt.String(), ";")[0]
 	if err := initializers.CheckFileAllowed(u.Size, contentType); err != nil {
-		return nil, invalidInput(err.Error())
+		return "", false, invalidInput(err.Error())
 	}
 	picture := strings.HasPrefix(contentType, "image/")
 	if picture {
 		src, err := u.Open()
 		if err != nil {
-			return nil, invalidInput("cannot open uploaded file")
+			return "", false, invalidInput("cannot open uploaded file")
 		}
 		err = checkPicture(src)
 		_ = src.Close()
 		if err != nil {
-			return nil, err
+			return "", false, err
 		}
+	}
+	return contentType, picture, nil
+}
+
+// store checks and saves a file in a note.
+func (f fileAccess) store(userID int, u upload) (*storedFile, error) {
+	if _, err := f.writableNote(userID, u.NoteID); err != nil {
+		return nil, err
+	}
+	contentType, picture, err := checkContent(u)
+	if err != nil {
+		return nil, err
 	}
 	name := cleanFileName(u.Name)
 	id, err := f.attachments.CreateOrGetAttachment(u.NoteID, u.ClientID, name, contentType, u.Size, u.Position)
 	if err != nil {
 		return nil, err
 	}
-	src, err = u.Open()
+	src, err := u.Open()
 	if err != nil {
 		return nil, err
 	}
