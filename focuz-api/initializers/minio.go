@@ -195,10 +195,10 @@ func baseMIME(mime string) string {
 }
 
 // DefaultFileTypes are the files a note may hold when nothing else is configured: pictures (the web app
-// sends WebP) and documents. Types are matched against what the content is, not what the client says.
+// sends WebP; agents and other API clients usually have JPEG or PNG) and documents. Types are matched against what the content is, not what the client says.
 // Markdown is detected as text/plain.
 var DefaultFileTypes = []string{
-	"image/webp",
+	"image/webp", "image/jpeg", "image/png",
 	"application/pdf",
 	"text/plain", "text/csv", "text/rtf",
 	"application/msword",

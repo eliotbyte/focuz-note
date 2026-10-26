@@ -9,6 +9,7 @@ import (
 
 	"focuz-api/models"
 	"focuz-api/pkg/access"
+	"focuz-api/pkg/authtoken"
 	"focuz-api/repository"
 	"focuz-api/types"
 
@@ -62,6 +63,10 @@ type NotesAPIHandler struct {
 	activities    *repository.ActivitiesRepository
 	activityTypes *repository.ActivityTypesRepository
 	filters       *repository.FiltersRepository
+
+	files     fileAccess
+	tokens    *authtoken.Tokens
+	publicURL string
 }
 
 func NewNotesAPIHandler(notes *repository.NotesRepository, spaces *repository.SpacesRepository, sync *repository.SyncRepository) *NotesAPIHandler {

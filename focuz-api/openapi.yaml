@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Focuz API
   description: API for a note-taking application with workspaces, notes, charts, and activities
-  version: 0.3.0
+  version: 0.3.1
   contact:
     name: Focuz Team
 servers:
@@ -638,6 +638,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/APIResponse'
+
+  /links/upload/{token}:
+    post:
+      summary: Upload a file to a note through a signed link from the MCP tool get_upload_link (no Authorization)
+      tags:
+        - Files
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: '{ attachmentId, noteId, fileName, fileType, size, picture }'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '401':
+          description: The link is not valid or has expired
+
+  /links/file/{token}:
+    get:
+      summary: Download a file through a signed link from the MCP tool get_file (no Authorization)
+      tags:
+        - Files
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The file, as an attachment
+        '401':
+          description: The link is not valid or has expired
 
   /notes/{id}:
     get:

@@ -187,6 +187,7 @@ func main() {
 		log.Printf("PUBLIC_API_URL is not set: confirmation emails will contain the code only, without a link")
 	}
 	usersRepo := repository.NewUsersRepository(db)
+	notesAPIHandler.WithFiles(attachmentsRepo, tokens, authConfig.PublicAPIURL)
 	sharingHandler := handlers.NewSharingHandler(sharingRepo, usersRepo, notificationsRepo, notifier, mail, authConfig).WithTokens(tokens)
 	authHandler := handlers.NewAuthHandler(usersRepo, authConfig, mail, tokens).OnEmailVerified(sharingHandler.OnEmailVerified)
 
@@ -202,6 +203,9 @@ func main() {
 	// Public read-only links (no sign-in); unguessable tokens, rate-limited like everything else.
 	r.GET("/public/:token", sharingHandler.PublicView)
 	r.GET("/public/:token/files/:fileId", sharingHandler.PublicFile)
+	// File links for agents (get_upload_link, get_file): signed, short-lived, for one note or file.
+	r.POST("/links/upload/:token", notesAPIHandler.UploadByLink)
+	r.GET("/links/file/:token", notesAPIHandler.DownloadByLink)
 
 	auth := r.Group("/", handlers.AuthMiddleware(tokens, apiTokensRepo))
 	{

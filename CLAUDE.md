@@ -47,6 +47,11 @@ A security review (2026-10) fixed these; keep them when changing code:
   scope themselves). Token management needs a sign-in, never a token. `SetPassword` revokes them all.
   Keep MCP tools on the same functions as the REST handlers (`handlers/notes_api.go`) so role rules
   stay in one place.
+- File links (`/links/upload/:token`, `/links/file/:token`, for agents) are issued and checked only through
+  `pkg/authtoken` (`IssueFileLink` / `VerifyFileLink`): their own audience, one kind and one target (a note
+  or an attachment), 15 minutes, `token_version`. On use the handler checks the user's current role, like
+  any request. Every upload path goes through `fileAccess.store` (`handlers/files_api.go`): type by content,
+  size, picture geometry.
 - The WebSocket takes the token as the `bearer.<token>` subprotocol next to `focuz.v1`, never in the
   URL. The access log writes the URL path only.
 - An e-mail sign-up whose code is still valid can't be replaced by a new sign-up (account takeover);

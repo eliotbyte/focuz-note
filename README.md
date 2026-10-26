@@ -5,7 +5,7 @@ Integration repository that bundles:
 - `focuz-api/` (backend)
 
 **Status**: alpha  
-**Version**: 0.3.0 (changes: `CHANGELOG.md`)
+**Version**: 0.3.1 (changes: `CHANGELOG.md`)
 
 ## Environments (Docker Compose)
 
@@ -21,9 +21,9 @@ APP_ENV=test docker compose up -d --build
 
 ## Versions
 
-- **Focuz-Node**: `0.3.0` (this repo, see `package.json`)
-- **Focuz-Web**: `0.3.0` (see `focuz-web/package.json`)
-- **Focuz-API**: `0.3.0` (see `focuz-api/pkg/buildinfo`)
+- **Focuz-Node**: `0.3.1` (this repo, see `package.json`)
+- **Focuz-Web**: `0.3.1` (see `focuz-web/package.json`)
+- **Focuz-API**: `0.3.1` (see `focuz-api/pkg/buildinfo`)
 
 
 ## Tests
@@ -144,14 +144,23 @@ note, and the note's date is the value's date, so the feed shows what you record
 ## Agents (MCP)
 
 focuz answers the Model Context Protocol on `POST /mcp`, so an agent such as Claude can use your notes as
-its long-term memory: find, read, create, edit and delete notes, and record and look up metrics. Serve it
+its long-term memory: find, read, create, edit and delete notes, attach and open pictures and files, and
+record and look up metrics. Serve it
 over HTTPS, like the sign-in (see the security checklist).
 
 Tools: `list_spaces`, `describe_space` (tags with counts, folders, metrics with last values), `list_notes`
 (with `query` for text search), `get_note` (optionally with replies), `create_note`, `update_note`,
 `delete_note`, `restore_note`, `list_metrics`, `create_metric`, `record_metrics` (saves values in a dated
 note and answers with the previous value), `get_metric_history` (values and stats, or one value per
-day/week/month/year for a chart), `remove_metric_value`.
+day/week/month/year for a chart), `remove_metric_value`, `attach_files`, `get_upload_link`, `get_file`.
+
+Files: an agent sends text files it writes (Markdown, CSV) and small files as base64 inside the call
+(`attach_files`, or `files` in `create_note`). Files on its disk go through `get_upload_link`: a signed link
+for one note, valid 15 minutes, that it posts to with `curl -F "file=@photo.jpg" '<url>'`. `get_file` returns
+a picture as an image the agent can see and a text file as text, plus a 15-minute download link for any file.
+Links need no token, so they are as private as the agent keeps them; they stop working when the password
+changes. Pictures may be JPEG, PNG or WebP (at least 480 px on the short side). Set `PUBLIC_API_URL` when the
+API is behind a proxy, so the links carry the public address.
 
 1. Create a personal token while signed in: `POST /me/api-tokens` with `{"name": "Claude", "scope": "write"}`.
    The token (`fct_…`) is shown once. Use `"scope": "read"` for an agent that should only read.

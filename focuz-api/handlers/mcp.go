@@ -8,9 +8,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"focuz-api/models"
@@ -21,15 +23,18 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.3.0"
-	maxMCPBodyBytes    = 1 << 20
-	mcpInstructions    = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +
+	mcpServerVersion   = "0.3.1"
+	// Room for a file sent inline as base64 (attach_files); bigger files go through get_upload_link.
+	maxMCPBodyBytes = 16 << 20
+	mcpInstructions = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +
 		"Start with list_spaces, then describe_space: it shows the tags, folders and metrics of a space, so you " +
 		"know where things are. Find notes with list_notes (query searches the text). " +
 		"Metrics are numbers the user tracks over time (weight, spending, sleep). When the user reports one, " +
 		"call record_metrics: it saves the value in a dated note and tells you the previous value. " +
 		"Read the past with get_metric_history (groupBy for chart data). Create a metric with create_metric " +
 		"only when list_metrics has nothing that fits. " +
+		"Notes hold pictures and files: send text files and small files with attach_files (create_note takes files too), " +
+		"upload files from disk with curl to a get_upload_link link, and open a note's file with get_file. " +
 		"Dates are RFC 3339 timestamps, for example 2026-10-24T12:00:00Z; date filters also take YYYY-MM-DD."
 )
 
@@ -58,6 +63,16 @@ type mcpTool struct {
 	Schema      map[string]any
 	Write       bool
 	run         func(h *NotesAPIHandler, userID int, args json.RawMessage) (any, error)
+	// runWith replaces run for tools that need more than the user (the API's address for links).
+	runWith func(h *NotesAPIHandler, ctx mcpCtx, args json.RawMessage) (any, error)
+}
+
+// mcpBlocks is a tool result that is not just JSON text, such as a picture the agent should see.
+type mcpBlocks []gin.H
+
+func jsonBlock(v any) gin.H {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	return gin.H{"type": "text", "text": string(b)}
 }
 
 // POST /mcp
@@ -85,11 +100,16 @@ func (h *NotesAPIHandler) MCP(c *gin.Context) {
 		c.Status(http.StatusAccepted)
 		return
 	}
-	result, rpcErr := h.dispatch(c.GetInt("userId"), c.GetString(scopeKey), req)
+	ctx := mcpCtx{UserID: c.GetInt("userId"), BaseURL: requestBaseURL(c, h.publicURL)}
+	result, rpcErr := h.dispatchWith(ctx, c.GetString(scopeKey), req)
 	c.JSON(http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result, Error: rpcErr})
 }
 
 func (h *NotesAPIHandler) dispatch(userID int, scope string, req rpcRequest) (any, *rpcError) {
+	return h.dispatchWith(mcpCtx{UserID: userID}, scope, req)
+}
+
+func (h *NotesAPIHandler) dispatchWith(ctx mcpCtx, scope string, req rpcRequest) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
 		return gin.H{
@@ -118,28 +138,44 @@ func (h *NotesAPIHandler) dispatch(userID int, scope string, req rpcRequest) (an
 		if !ok {
 			return nil, &rpcError{Code: -32602, Message: "Unknown tool: " + p.Name}
 		}
-		text, isError := h.runTool(userID, scope, tool, p.Arguments)
-		return gin.H{"content": []gin.H{{"type": "text", "text": text}}, "isError": isError}, nil
+		blocks, isError := h.callTool(ctx, scope, tool, p.Arguments)
+		return gin.H{"content": blocks, "isError": isError}, nil
 	}
 	return nil, &rpcError{Code: -32601, Message: "Method not found"}
 }
 
-// runTool returns the text the agent sees and whether it is an error the agent should react to.
-func (h *NotesAPIHandler) runTool(userID int, scope string, tool mcpTool, args json.RawMessage) (string, bool) {
+// callTool returns the content the agent sees and whether it is an error the agent should react to.
+func (h *NotesAPIHandler) callTool(ctx mcpCtx, scope string, tool mcpTool, args json.RawMessage) ([]gin.H, bool) {
+	text := func(s string) []gin.H { return []gin.H{{"type": "text", "text": s}} }
 	if tool.Write && scope == "read" {
-		return "This token is read-only", true
+		return text("This token is read-only"), true
 	}
-	out, err := tool.run(h, userID, args)
+	var out any
+	var err error
+	if tool.runWith != nil {
+		out, err = tool.runWith(h, ctx, args)
+	} else {
+		out, err = tool.run(h, ctx.UserID, args)
+	}
 	if err != nil {
 		var ce *clientError
 		if errors.As(err, &ce) {
-			return ce.message, true
+			return text(ce.message), true
 		}
 		slog.Error("mcp tool failed", "tool", tool.Name, "error", err)
-		return "Something went wrong, try again", true
+		return text("Something went wrong, try again"), true
 	}
-	b, _ := json.MarshalIndent(out, "", "  ")
-	return string(b), false
+	if blocks, ok := out.(mcpBlocks); ok {
+		return blocks, false
+	}
+	return []gin.H{jsonBlock(out)}, false
+}
+
+// runTool is callTool for a result read as text (the first block).
+func (h *NotesAPIHandler) runTool(userID int, scope string, tool mcpTool, args json.RawMessage) (string, bool) {
+	blocks, isError := h.callTool(mcpCtx{UserID: userID}, scope, tool, args)
+	s, _ := blocks[0]["text"].(string)
+	return s, isError
 }
 
 func mcpToolByName(name string) (mcpTool, bool) {
@@ -188,6 +224,15 @@ var (
 	tagsSchema  = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Tags without #"}
 	dateSchema  = map[string]any{"type": "string", "format": "date-time", "description": "Note date, RFC 3339. Defaults to the creation time."}
 
+	filesSchema = map[string]any{
+		"type": "array",
+		"items": objectSchema(map[string]any{
+			"fileName": map[string]any{"type": "string", "description": "Name with extension: report.md, data.csv, chart.png"},
+			"text":     map[string]any{"type": "string", "description": "Content of a text file (Markdown, plain text, CSV)"},
+			"base64":   map[string]any{"type": "string", "description": "Content of any other file, standard Base64 (a data: URL works too). Only for small files"},
+		}, "fileName"),
+		"description": "Files to attach, each with text or base64",
+	}
 	metricRefSchema = map[string]any{"type": []string{"string", "integer"}, "description": "Metric name (any case) or id from list_metrics"}
 )
 
@@ -285,8 +330,9 @@ var mcpTools = []mcpTool{
 		},
 	},
 	{
-		Name:        "get_note",
-		Description: "Get one note with its tags, metric values and attachments. includeReplies adds its replies (up to 100, oldest first).",
+		Name: "get_note",
+		Description: "Get one note with its tags, metric values and attachments. includeReplies adds its replies (up to 100, oldest first). " +
+			"Open an attachment with get_file and its id (the url in the list may not be reachable from outside).",
 		Schema: objectSchema(map[string]any{
 			"id":             idSchema,
 			"includeReplies": map[string]any{"type": "boolean"},
@@ -317,22 +363,43 @@ var mcpTools = []mcpTool{
 		},
 	},
 	{
-		Name:        "create_note",
-		Description: "Create a note in a space where you are an editor or admin. For a reply, set parentId to a note in the same space.",
+		Name: "create_note",
+		Description: "Create a note in a space where you are an editor or admin. For a reply, set parentId to a note in the same space. " +
+			"files attaches text files or small files given inline (see attach_files); for files on disk create the note, then use get_upload_link.",
 		Schema: objectSchema(map[string]any{
 			"spaceId":  spaceSchema,
 			"text":     textSchema,
 			"tags":     tagsSchema,
 			"date":     dateSchema,
 			"parentId": map[string]any{"type": "integer", "description": "Note this one replies to"},
+			"files":    filesSchema,
 		}, "spaceId", "text"),
 		Write: true,
 		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
-			var a noteCreate
+			var a struct {
+				noteCreate
+				Files []fileIn `json:"files"`
+			}
 			if err := decodeArgs(raw, &a); err != nil {
 				return nil, err
 			}
-			return h.createNote(userID, a)
+			// Check the inline files before the note exists.
+			for _, f := range a.Files {
+				if _, err := f.bytes(); err != nil {
+					return nil, err
+				}
+			}
+			note, err := h.createNote(userID, a.noteCreate)
+			if err != nil || len(a.Files) == 0 {
+				return note, err
+			}
+			if _, err := h.attachFiles(userID, note.ID, a.Files); err != nil {
+				if ce, ok := err.(*clientError); ok {
+					return nil, &clientError{status: ce.status, code: ce.code, message: fmt.Sprintf("Note %d was created, but a file was refused: %s", note.ID, ce.message)}
+				}
+				return nil, err
+			}
+			return h.notes.GetNoteByID(note.ID)
 		},
 	},
 	{
@@ -516,6 +583,77 @@ var mcpTools = []mcpTool{
 				return nil, err
 			}
 			return gin.H{"removed": true, "noteId": a.NoteID}, nil
+		},
+	},
+	{
+		Name: "attach_files",
+		Description: "Attach files to a note: text files you write (Markdown, plain text, CSV) as text, small other files as base64. " +
+			"Pictures (JPEG, PNG, WebP; at least 480 px on the short side) show in the note; documents (PDF, Word, Excel, PowerPoint, " +
+			"OpenDocument, RTF) show as files. The type is read from the content. For a file on disk, use get_upload_link instead.",
+		Schema: objectSchema(map[string]any{
+			"noteId": idSchema,
+			"files":  filesSchema,
+		}, "noteId", "files"),
+		Write: true,
+		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
+			var a struct {
+				NoteID int      `json:"noteId"`
+				Files  []fileIn `json:"files"`
+			}
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			if len(a.Files) == 0 {
+				return nil, invalidInput("files is required: [{fileName, text | base64}]")
+			}
+			saved, err := h.attachFiles(userID, a.NoteID, a.Files)
+			if err != nil {
+				if len(saved) > 0 {
+					names := make([]string, len(saved))
+					for i, f := range saved {
+						names[i] = f.Name
+					}
+					if ce, ok := err.(*clientError); ok {
+						return nil, &clientError{status: ce.status, code: ce.code, message: ce.message + " (already attached: " + strings.Join(names, ", ") + ")"}
+					}
+				}
+				return nil, err
+			}
+			return gin.H{"noteId": a.NoteID, "files": saved}, nil
+		},
+	},
+	{
+		Name: "get_upload_link",
+		Description: "Get a link to upload files from disk to a note, for example photos: run the returned curl command " +
+			"(curl -F \"file=@photo.jpg\" '<url>'), one file per request. The link works for 15 minutes and only for this note; " +
+			"it needs no token, so do not share it.",
+		Schema: objectSchema(map[string]any{"noteId": idSchema}, "noteId"),
+		Write:  true,
+		runWith: func(h *NotesAPIHandler, ctx mcpCtx, raw json.RawMessage) (any, error) {
+			var a struct {
+				NoteID int `json:"noteId"`
+			}
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			return h.uploadLink(ctx, a.NoteID)
+		},
+	},
+	{
+		Name: "get_file",
+		Description: "Open a file of a note by its attachment id (from get_note or list_notes). A picture comes back as an image you can see, " +
+			"a text, Markdown or CSV file as text; any file also gets a download link for 15 minutes (curl -o name '<url>', no token needed).",
+		Schema: objectSchema(map[string]any{
+			"attachmentId": map[string]any{"type": "string", "description": "Attachment id"},
+		}, "attachmentId"),
+		runWith: func(h *NotesAPIHandler, ctx mcpCtx, raw json.RawMessage) (any, error) {
+			var a struct {
+				AttachmentID string `json:"attachmentId"`
+			}
+			if err := decodeArgs(raw, &a); err != nil {
+				return nil, err
+			}
+			return h.getFile(ctx, a.AttachmentID)
 		},
 	},
 }

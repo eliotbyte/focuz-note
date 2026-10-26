@@ -1,43 +1,19 @@
 package handlers
 
 import (
-	"context"
 	"focuz-api/initializers"
-	"focuz-api/pkg/access"
-	"focuz-api/pkg/imagegeom"
 	"focuz-api/repository"
 	"focuz-api/types"
-	"image"
+	"io"
 	"mime"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"mime/multipart"
-
-	"github.com/gabriel-vasile/mimetype"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
-	_ "golang.org/x/image/webp"
 )
-
-// checkPictureSize reads the picture's dimensions from its header and applies the note picture rules.
-func checkPictureSize(file *multipart.FileHeader) error {
-	f, err := file.Open()
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	cfg, _, err := image.DecodeConfig(f)
-	if err != nil {
-		return &clientError{status: http.StatusBadRequest, code: types.ErrorCodeValidation, message: "The picture could not be read"}
-	}
-	if err := imagegeom.Check(cfg.Width, cfg.Height); err != nil {
-		return &clientError{status: http.StatusBadRequest, code: types.ErrorCodeValidation, message: "The picture is not accepted: " + err.Error()}
-	}
-	return nil
-}
 
 type AttachmentsHandler struct {
 	attachmentsRepo *repository.AttachmentsRepository
@@ -83,19 +59,10 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 		position = &pos
 	}
 
-	note, err := h.notesRepo.GetNoteByID(noteID)
-	if err != nil || note == nil || note.IsDeleted {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeInvalidRequest, "invalid note"))
-		return
-	}
-
-	roleID, err := h.spacesRepo.GetUserRoleIDInSpace(userID, note.SpaceID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
-		return
-	}
-	if !access.CanEditNote(roleID) {
-		c.JSON(http.StatusForbidden, types.NewErrorResponse(types.ErrorCodeForbidden, "no access"))
+	files := fileAccess{attachments: h.attachmentsRepo, notes: h.notesRepo, spaces: h.spacesRepo}
+	// Note and role first, so nobody without access gets the body read.
+	if _, err := files.writableNote(userID, noteID); err != nil {
+		respondAPIError(c, err)
 		return
 	}
 
@@ -113,82 +80,20 @@ func (h *AttachmentsHandler) UploadFile(c *gin.Context) {
 		return
 	}
 
-	// Detect real MIME type from file content, not from client header
-	sniff, openErr := file.Open()
-	if openErr != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "cannot open uploaded file"))
-		return
-	}
-	mt, detectErr := mimetype.DetectReader(sniff)
-	_ = sniff.Close()
-	if detectErr != nil || mt == nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, "failed to detect file type"))
-		return
-	}
-	detectedCT := initializers.Conf.FileTypes[0]
-	// use base MIME from detection
-	detectedCT = strings.Split(mt.String(), ";")[0]
-
-	// Validate against server-side policy
-	if err := initializers.CheckFileAllowed(file.Size, detectedCT); err != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(types.ErrorCodeValidation, err.Error()))
-		return
-	}
-	if detectedCT == "image/webp" {
-		if err := checkPictureSize(file); err != nil {
-			respondAPIError(c, err)
-			return
-		}
-	}
-
-	// Upload file to MinIO using detected content type
-	attachmentID, err := h.uploadFileToMinIO(file, noteID, clientIDPtr, detectedCT, position)
+	stored, err := files.store(userID, upload{
+		NoteID: noteID, Name: file.Filename, Size: file.Size, ClientID: clientIDPtr, Position: position,
+		Open: func() (io.ReadCloser, error) { return file.Open() },
+	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.InternalError(c, err))
+		respondAPIError(c, err)
 		return
 	}
-
-	// Note: note.modified_at is intentionally not touched here. GET /sync already returns notes whose
-	// attachments changed, and bumping the note version would make the uploading client's next
-	// edit of that note look like a concurrent change (sync conflict).
 
 	c.JSON(http.StatusCreated, types.NewSuccessResponse(map[string]interface{}{
-		"attachment_id": attachmentID,
+		"attachment_id": stored.ID,
 		"filename":      file.Filename,
 		"size":          file.Size,
 	}))
-}
-
-func (h *AttachmentsHandler) uploadFileToMinIO(file *multipart.FileHeader, noteID int, clientID *string, contentType string, position *int) (string, error) {
-	// Create attachment record with server-detected content type
-	attachmentID, err := h.attachmentsRepo.CreateOrGetAttachment(noteID, clientID, file.Filename, contentType, file.Size, position)
-	if err != nil {
-		return "", err
-	}
-
-	// Open the file (fresh reader after detection)
-	src, err := file.Open()
-	if err != nil {
-		return "", err
-	}
-	defer src.Close()
-
-	// Upload to MinIO
-	_, err = initializers.MinioClient.PutObject(
-		context.Background(),
-		initializers.Conf.Bucket,
-		attachmentID,
-		src,
-		file.Size,
-		minio.PutObjectOptions{
-			ContentType: contentType,
-		},
-	)
-	if err != nil {
-		return "", err
-	}
-
-	return attachmentID, nil
 }
 
 // authorizedAttachment loads the attachment and checks that the user can access its note.

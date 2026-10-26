@@ -4,6 +4,8 @@ max_document_size: 26214400
 # Checked against the detected content, not the name. Markdown is detected as text/plain.
 allowed_file_types:
   - image/webp
+  - image/jpeg
+  - image/png
   - application/pdf
   - text/plain
   - text/csv
