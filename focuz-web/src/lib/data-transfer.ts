@@ -4,7 +4,7 @@ import { db } from './db'
 import { activities as activitiesRepo, attachments as attachmentsRepo, notes as notesRepo } from '../data'
 import { createOrUpdateLocalActivity, addLocalAttachments } from './local-writes'
 import { fetchAttachmentBlob } from './jobs-worker'
-import { MAX_DOCUMENT_BYTES } from './attachment-files'
+import { isPicture, MAX_DOCUMENT_BYTES } from './attachment-files'
 import { getImageDimensions, validateImageGeometry } from './image'
 import type { NoteRecord } from './types'
 import {
@@ -19,12 +19,20 @@ import {
   type ExportPicture,
 } from './export-format'
 
+/** What goes into the export next to the notes: pictures, other files (documents), both or neither. */
+export interface ExportInclude {
+  pictures: boolean
+  files: boolean
+}
+
 export interface ExportResult {
   blob: Blob
   fileName: string
   noteCount: number
   pictureCount: number
-  /** Pictures that were not on this device, so not in the file. */
+  /** Documents (non-picture files) in the export. */
+  fileCount: number
+  /** Pictures and files that were not on this device, so not in the file. */
   missingPictures: number
 }
 
@@ -131,12 +139,17 @@ export function inDateRange(iso: string, from?: string, to?: string): boolean {
   return (!from || day >= from) && (!to || day <= to)
 }
 
+/** Whether an attachment goes into an export with these choices. */
+function included(a: { fileType: string }, include: ExportInclude): boolean {
+  return isPicture(a) ? include.pictures : include.files
+}
+
 /**
- * Downloads every picture of these notes that is not on this device yet. Pictures that fail are
- * counted, not fetched again here. Skipped pictures are counted apart, and are not an error.
+ * Downloads every included picture and file of these notes that is not on this device yet. Ones that
+ * fail are counted, not fetched again here. Skipped pictures are counted apart, and are not an error.
  */
-async function loadMissingPictures(noteIds: number[], control: ExportControl, onProgress?: ExportOptions['onProgress']): Promise<{ failed: number }> {
-  const missing = await db.attachments.where('noteId').anyOf(noteIds).filter(a => !a.deletedAt && !a.data && !!a.serverId).toArray()
+async function loadMissingPictures(noteIds: number[], include: ExportInclude, control: ExportControl, onProgress?: ExportOptions['onProgress']): Promise<{ failed: number }> {
+  const missing = await db.attachments.where('noteId').anyOf(noteIds).filter(a => !a.deletedAt && !a.data && !!a.serverId && included(a, include)).toArray()
   let done = 0
   let failed = 0
   onProgress?.(done, missing.length)
@@ -156,17 +169,18 @@ async function loadMissingPictures(noteIds: number[], control: ExportControl, on
 }
 
 /**
- * Exports the live notes of a space. With withPictures, the pictures are downloaded first. If some
+ * Exports the live notes of a space. The included pictures and files are downloaded first. If some
  * cannot be downloaded, this throws MissingPicturesError unless skipUnavailable is set. Stopping
  * through the control throws ExportCancelledError.
  */
-export async function exportSpace(spaceId: number, spaceName: string, withPictures: boolean, options: ExportOptions = {}): Promise<ExportResult> {
+export async function exportSpace(spaceId: number, spaceName: string, include: ExportInclude, options: ExportOptions = {}): Promise<ExportResult> {
+  const withPictures = include.pictures || include.files
   const control = options.control ?? new ExportControl()
   const live = (await db.notes.where('spaceId').equals(spaceId).filter(n => !n.deletedAt && inDateRange(n.date ?? n.createdAt, options.from, options.to)).toArray())
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const ids = new Set(live.map(n => n.id!))
   if (withPictures) {
-    const { failed } = await loadMissingPictures(live.map(n => n.id!), control, options.onProgress)
+    const { failed } = await loadMissingPictures(live.map(n => n.id!), include, control, options.onProgress)
     if (control.cancelled) throw new ExportCancelledError()
     if (failed > 0 && !options.skipUnavailable) throw new MissingPicturesError(failed)
   }
@@ -176,7 +190,7 @@ export async function exportSpace(spaceId: number, spaceName: string, withPictur
 
   for (const n of live) {
     const acts = await activitiesRepo.listDecoratedForNote(n.id!)
-    const atts = withPictures ? await attachmentsRepo.listActiveSortedForNote(n.id!) : []
+    const atts = withPictures ? (await attachmentsRepo.listActiveSortedForNote(n.id!)).filter(a => included(a, include)) : []
     const pics: ExportPicture[] = []
     for (const a of atts) {
       if (!a.data) { missingPictures++; continue }
@@ -211,7 +225,8 @@ export async function exportSpace(spaceId: number, spaceName: string, withPictur
     blob: writeExport(doc, pictures),
     fileName,
     noteCount: notes.length,
-    pictureCount: notes.reduce((sum, n) => sum + n.pictures.length, 0),
+    pictureCount: notes.reduce((sum, n) => sum + n.pictures.filter(isPicture).length, 0),
+    fileCount: notes.reduce((sum, n) => sum + n.pictures.filter(p => !isPicture(p)).length, 0),
     missingPictures,
   }
 }

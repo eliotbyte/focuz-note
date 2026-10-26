@@ -91,7 +91,8 @@ function shownDay(day: string): string {
 }
 
 function ExportOptionsDialog({ spaceId, spaceName }: { spaceId: number; spaceName: string }) {
-  const [withPictures, setWithPictures] = useState(true)
+  const [pictures, setPictures] = useState(true)
+  const [files, setFiles] = useState(true)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const rangeOk = !from || !to || from <= to
@@ -106,23 +107,24 @@ function ExportOptionsDialog({ spaceId, spaceName }: { spaceId: number; spaceNam
           </button>
         </div>
         <DialogDescription className="mt-1 text-sm">
-          {spaceName ? <>Notes of <b>{spaceName}</b>, saved as a file on this device.</> : 'Notes of this space, saved as a file on this device.'}
+          {spaceName ? <>Notes of <b>{spaceName}</b></> : 'Notes of this space'} with their text, tags, dates and activities, saved as a file on this device.
         </DialogDescription>
 
         <div className="mt-4">
           <label className="export-check">
-            <input type="checkbox" checked disabled />
-            Notes: text, tags, dates and activities
+            <input type="checkbox" checked={pictures} onChange={e => setPictures(e.target.checked)} />
+            Pictures
           </label>
           <label className="export-check">
-            <input type="checkbox" checked={withPictures} onChange={e => setWithPictures(e.target.checked)} />
-            Pictures and files
+            <input type="checkbox" checked={files} onChange={e => setFiles(e.target.checked)} />
+            Files
+            <span className="export-check-hint">PDF, Word, text, Markdown, CSV</span>
           </label>
         </div>
 
         <div className="mt-4 space-y-1">
           <p className="export-setting">
-            Format: <span className="text-primary">{withPictures ? 'zip with JSON and the files' : 'JSON'}</span>
+            Format: <span className="text-primary">{pictures || files ? 'zip with JSON and the files' : 'JSON'}</span>
           </p>
           <p className="export-setting" title="By the date of each note">
             From:{' '}
@@ -144,7 +146,7 @@ function ExportOptionsDialog({ spaceId, spaceName }: { spaceId: number; spaceNam
             className="button"
             disabled={!rangeOk}
             onClick={() => {
-              void startExport({ spaceId, spaceName, withPictures, from, to })
+              void startExport({ spaceId, spaceName, include: { pictures, files }, from, to })
               openExportDetails()
             }}
           >

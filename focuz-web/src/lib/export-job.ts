@@ -7,13 +7,15 @@ import {
   ExportCancelledError,
   ExportControl,
   MissingPicturesError,
+  type ExportInclude,
 } from './data-transfer'
 import { notify } from '../ui/notify'
 
 export interface ExportRequest {
   spaceId: number
   spaceName: string
-  withPictures: boolean
+  /** Pictures and other files to put next to the notes. */
+  include: ExportInclude
   /** YYYY-MM-DD, empty for no bound. */
   from: string
   to: string
@@ -100,13 +102,18 @@ export function dismissExport(): void {
   set({ ...initial })
 }
 
+/** Whether the export downloads and packs pictures or files, not only the notes. */
+function hasAttachments(request: ExportRequest): boolean {
+  return request.include.pictures || request.include.files
+}
+
 /** Starts the export. Does nothing while one is already running. */
 export async function startExport(request: ExportRequest, opts: { skipUnavailable?: boolean } = {}): Promise<void> {
   if (state.status === 'running') return
   control = new ExportControl()
   set({
     status: 'running',
-    step: request.withPictures ? 'pictures' : 'packing',
+    step: hasAttachments(request) ? 'pictures' : 'packing',
     request,
     done: 0,
     total: 0,
@@ -117,7 +124,7 @@ export async function startExport(request: ExportRequest, opts: { skipUnavailabl
     dialog: state.dialog === 'closed' ? 'details' : state.dialog,
   })
   try {
-    const res = await exportSpace(request.spaceId, request.spaceName, request.withPictures, {
+    const res = await exportSpace(request.spaceId, request.spaceName, request.include, {
       from: request.from || undefined,
       to: request.to || undefined,
       skipUnavailable: opts.skipUnavailable,
@@ -127,14 +134,15 @@ export async function startExport(request: ExportRequest, opts: { skipUnavailabl
           done,
           total,
           current: current ?? null,
-          step: request.withPictures && done < total ? 'pictures' : 'packing',
+          step: hasAttachments(request) && done < total ? 'pictures' : 'packing',
         })
       },
     })
     downloadBlob(res.blob, res.fileName)
     const parts = [`${res.noteCount} ${res.noteCount === 1 ? 'note' : 'notes'}`]
-    if (request.withPictures) parts.push(`${res.pictureCount} ${res.pictureCount === 1 ? 'file' : 'files'}`)
-    let report = `Exported ${parts.join(' and ')}.`
+    if (request.include.pictures) parts.push(`${res.pictureCount} ${res.pictureCount === 1 ? 'picture' : 'pictures'}`)
+    if (request.include.files) parts.push(`${res.fileCount} ${res.fileCount === 1 ? 'file' : 'files'}`)
+    let report = `Exported ${parts.length > 2 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join(' and ')}.`
     if (res.missingPictures > 0) report += ` ${res.missingPictures} ${res.missingPictures === 1 ? 'file is' : 'files are'} not in the export.`
     set({ status: 'done', report, current: null })
     notify('Export ready', 'success')

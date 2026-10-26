@@ -40,7 +40,7 @@ describe('export and import of a space', () => {
     await db.attachments.add({ noteId: parentId as number, serverId: 'a', clientId: 'a', fileName: 'pic.webp', fileType: 'image/webp', fileSize: 4, data: bytesBlob(new Uint8Array([1, 2, 3, 4])), position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
     await db.activities.add({ noteId: parentId as number, typeId: 77, valueRaw: '4', createdAt: NOW, modifiedAt: NOW, isDirty: 0, serverId: 9 } as never)
 
-    const exported = await exportSpace(1, 'Team Alice', true)
+    const exported = await exportSpace(1, 'Team Alice', { pictures: true, files: true })
     expect(exported.fileName).toMatch(/^focuz-Team-Alice-\d{4}-\d{2}-\d{2}\.zip$/)
     expect(exported.noteCount).toBe(2)
     expect(exported.pictureCount).toBe(1)
@@ -77,7 +77,7 @@ describe('export and import of a space', () => {
       return { width: 1280, height: 720 }
     })
 
-    const exported = await exportSpace(1, 'A', true)
+    const exported = await exportSpace(1, 'A', { pictures: true, files: true })
     const result = await importIntoSpace(2, fileOf(exported.fileName, await zipBytes(exported.blob)))
     expect(result).toMatchObject({ notes: 1, pictures: 3, skippedPictures: 1 })
     const copy = (await db.notes.where('spaceId').equals(2).toArray())[0]
@@ -86,12 +86,30 @@ describe('export and import of a space', () => {
     expect(dimsMock).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'notes.md' }))
   })
 
+  it('exports only pictures or only files, and downloads only what it exports', async () => {
+    const id = await db.notes.add({ spaceId: 1, text: 'mixed', tags: [], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 12, clientId: 'mx' } as never)
+    await db.attachments.add({ noteId: id as number, serverId: 'p', clientId: 'p', fileName: 'pic.webp', fileType: 'image/webp', fileSize: 2, data: bytesBlob(new Uint8Array([1, 2])), position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
+    await db.attachments.add({ noteId: id as number, serverId: 'doc-remote', clientId: 'd', fileName: 'doc.pdf', fileType: 'application/pdf', fileSize: 2, data: null, position: 1, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
+
+    fetchMock.mockClear()
+    const pictures = await exportSpace(1, 'A', { pictures: true, files: false })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect([pictures.pictureCount, pictures.fileCount]).toEqual([1, 0])
+    expect(readExport(await zipBytes(pictures.blob)).doc.notes[0].pictures.map(p => p.fileName)).toEqual(['pic.webp'])
+
+    fetchMock.mockResolvedValueOnce(bytesBlob(new Uint8Array([3, 4])))
+    const files = await exportSpace(1, 'A', { pictures: false, files: true })
+    expect(fetchMock).toHaveBeenCalledWith('doc-remote')
+    expect([files.pictureCount, files.fileCount]).toEqual([0, 1])
+    expect(readExport(await zipBytes(files.blob)).doc.notes[0].pictures.map(p => p.fileName)).toEqual(['doc.pdf'])
+  })
+
   it('leaves activities out when the space has no such type', async () => {
     const id = await db.notes.add({ spaceId: 1, text: 'with activity', tags: [], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 1, clientId: 'x' } as never)
     await db.activities.add({ noteId: id as number, typeId: 77, valueRaw: '2', createdAt: NOW, modifiedAt: NOW, isDirty: 0, serverId: 3 } as never)
     await db.activityTypes.where('spaceId').equals(2).delete()
 
-    const exported = await exportSpace(1, 'A', false)
+    const exported = await exportSpace(1, 'A', { pictures: false, files: false })
     expect(exported.blob.type).toBe('application/json')
     const result = await importIntoSpace(2, fileOf('a.json', await zipBytes(exported.blob)))
     expect(result.notes).toBe(1)
@@ -100,7 +118,7 @@ describe('export and import of a space', () => {
 
   it('reads back what it wrote', async () => {
     await db.notes.add({ spaceId: 1, text: 'plain', tags: ['t'], createdAt: NOW, modifiedAt: NOW, date: NOW, parentId: null, deletedAt: null, isDirty: 0, serverId: 2, clientId: 'z' } as never)
-    const exported = await exportSpace(1, 'A', false)
+    const exported = await exportSpace(1, 'A', { pictures: false, files: false })
     const back = readExport(await zipBytes(exported.blob))
     expect(back.doc.space.name).toBe('A')
     expect(back.doc.notes.map(n => n.text)).toEqual(['plain'])
@@ -114,7 +132,7 @@ describe('export waits for every picture', () => {
     fetchMock.mockResolvedValueOnce(bytesBlob(new Uint8Array([7, 8, 9])))
 
     const progress: Array<[number, number]> = []
-    const exported = await exportSpace(1, 'A', true, { onProgress: (d, t) => progress.push([d, t]) })
+    const exported = await exportSpace(1, 'A', { pictures: true, files: true }, { onProgress: (d, t) => progress.push([d, t]) })
 
     expect(fetchMock).toHaveBeenCalledWith('srv-1')
     expect(exported.pictureCount).toBe(1)
@@ -130,7 +148,7 @@ describe('export waits for every picture', () => {
     await db.attachments.add({ noteId: parent as number, serverId: 'srv-2', clientId: 'c2', fileName: 'x.webp', fileType: 'image/webp', fileSize: 3, data: null, position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
     fetchMock.mockRejectedValueOnce(new Error('offline'))
 
-    await expect(exportSpace(1, 'A', true)).rejects.toBeInstanceOf(MissingPicturesError)
+    await expect(exportSpace(1, 'A', { pictures: true, files: true })).rejects.toBeInstanceOf(MissingPicturesError)
   })
 
   it('exports without the pictures that cannot be downloaded when asked to', async () => {
@@ -138,7 +156,7 @@ describe('export waits for every picture', () => {
     await db.attachments.add({ noteId: parent as number, serverId: 'srv-3', clientId: 'c3', fileName: 'bad.webp', fileType: 'image/webp', fileSize: 3, data: null, position: 0, createdAt: NOW, modifiedAt: NOW, isDirty: 0 } as never)
     fetchMock.mockRejectedValueOnce(new Error('500'))
 
-    const exported = await exportSpace(1, 'A', true, { skipUnavailable: true })
+    const exported = await exportSpace(1, 'A', { pictures: true, files: true }, { skipUnavailable: true })
     expect(exported.noteCount).toBe(1)
     expect(exported.pictureCount).toBe(0)
     expect(exported.missingPictures).toBe(1)
@@ -151,7 +169,7 @@ describe('export waits for every picture', () => {
     const control = new ExportControl()
 
     // The skip comes from the UI, after the download has started: a timer stands in for the click.
-    const exporting = exportSpace(1, 'A', true, {
+    const exporting = exportSpace(1, 'A', { pictures: true, files: true }, {
       control,
       onProgress: (done, total, current) => { if (current && done < total) setTimeout(() => control.skipCurrent(), 0) },
     })
@@ -166,7 +184,7 @@ describe('export waits for every picture', () => {
     fetchMock.mockReturnValueOnce(new Promise<Blob>(() => {}))
     const control = new ExportControl()
 
-    const exporting = exportSpace(1, 'A', true, { control, onProgress: (_d, _t, current) => { if (current) setTimeout(() => control.stop(), 0) } })
+    const exporting = exportSpace(1, 'A', { pictures: true, files: true }, { control, onProgress: (_d, _t, current) => { if (current) setTimeout(() => control.stop(), 0) } })
     await expect(exporting).rejects.toBeInstanceOf(ExportCancelledError)
   })
 
@@ -177,7 +195,7 @@ describe('export waits for every picture', () => {
     await db.notes.add({ spaceId: 1, text: 'last', tags: [], createdAt: NOW, modifiedAt: NOW, date: day('2026-03-20'), parentId: null, deletedAt: null, isDirty: 0, serverId: 22, clientId: 'f3' } as never)
     await db.notes.add({ spaceId: 1, text: 'after', tags: [], createdAt: NOW, modifiedAt: NOW, date: day('2026-03-21'), parentId: null, deletedAt: null, isDirty: 0, serverId: 23, clientId: 'f4' } as never)
 
-    const exported = await exportSpace(1, 'A', false, { from: '2026-03-10', to: '2026-03-20' })
+    const exported = await exportSpace(1, 'A', { pictures: false, files: false }, { from: '2026-03-10', to: '2026-03-20' })
     const back = readExport(await zipBytes(exported.blob))
     expect(back.doc.notes.map(n => n.text).sort()).toEqual(['first', 'last'])
   })

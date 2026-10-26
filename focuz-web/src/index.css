@@ -2361,8 +2361,8 @@ button:disabled { cursor: not-allowed; }
   border-radius: var(--r-sm); font-size: var(--fs-ui); color: var(--text-primary); cursor: pointer;
 }
 .export-check input { width: 18px; height: 18px; flex: none; }
-.export-check:has(input:disabled) { color: var(--text-muted); cursor: default; }
-@media (hover: hover) { .export-check:hover:not(:has(input:disabled)) { background: rgba(var(--c-text) / 0.06); } }
+.export-check-hint { margin-left: auto; font-size: var(--fs-small); color: var(--text-muted); }
+@media (hover: hover) { .export-check:hover { background: rgba(var(--c-text) / 0.06); } }
 .export-setting { font-size: var(--fs-ui); line-height: 1.6; color: var(--text-muted); }
 .export-setting .link-btn { font-weight: 600; }
 
