@@ -3,7 +3,7 @@
 Frontend for **focuz-note** (local-first notes).
 
 **Status**: alpha  
-**Version**: 0.1.7
+**Version**: 0.1.8
 
 ## Environment
 

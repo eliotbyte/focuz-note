@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { tags as tagsRepo } from '../data'
 
@@ -229,7 +230,7 @@ export default function TagsInput({ value, onChange, placeholder, className, spa
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeTag(idx) }}
               aria-label="Remove tag"
               title="Remove"
-            >×</button>
+            ><CloseRoundedIcon fontSize="inherit" aria-hidden /></button>
           </span>
         ))}
         <input

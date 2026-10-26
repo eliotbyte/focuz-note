@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import { activityTypes as activityTypesRepo } from '../data'
 import { parseDurationToMs, formatDurationShort } from '../lib/time'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from './ui/dropdown-menu'
@@ -227,7 +228,7 @@ export default function ActivitiesInput({
                   }}
                   aria-label="Remove activity"
                   title="Remove"
-                >×</span>
+                ><CloseRoundedIcon fontSize="inherit" aria-hidden /></span>
               </button>
             )
           })}

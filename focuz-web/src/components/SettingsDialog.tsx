@@ -101,9 +101,19 @@ function AccountTab({ onLogout }: { onLogout: () => void }) {
       )}
       <form className="space-y-2 max-w-sm" onSubmit={e => { e.preventDefault(); void submit() }}>
         <div className="settings-label">Change password</div>
-        <input className="input" type="password" autoComplete="current-password" placeholder="Current password" aria-label="Current password" value={current} onChange={e => setCurrent(e.target.value)} />
-        <input className="input" type="password" autoComplete="new-password" placeholder="New password (8+ characters)" aria-label="New password" value={next} onChange={e => setNext(e.target.value)} />
-        <input className="input" type="password" autoComplete="new-password" placeholder="Repeat new password" aria-label="Repeat new password" aria-invalid={mismatch} value={repeat} onChange={e => setRepeat(e.target.value)} />
+        <div>
+          <label htmlFor="pw-current" className="auth-label block">Current password</label>
+          <input id="pw-current" className="input w-full" type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)} />
+        </div>
+        <div>
+          <label htmlFor="pw-new" className="auth-label block">New password</label>
+          <input id="pw-new" className="input w-full" type="password" autoComplete="new-password" aria-describedby="pw-new-hint" value={next} onChange={e => setNext(e.target.value)} />
+          <div id="pw-new-hint" className="auth-hint">8 characters or more.</div>
+        </div>
+        <div>
+          <label htmlFor="pw-repeat" className="auth-label block">Repeat new password</label>
+          <input id="pw-repeat" className="input w-full" type="password" autoComplete="new-password" aria-invalid={mismatch} value={repeat} onChange={e => setRepeat(e.target.value)} />
+        </div>
         {error && <p className="settings-error" role="alert">{error}</p>}
         <button type="submit" className="button" disabled={busy || !current || !next || !repeat}>Change password</button>
       </form>
