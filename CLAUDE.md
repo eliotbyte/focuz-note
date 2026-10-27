@@ -24,6 +24,8 @@ When deploying or helping someone deploy, check each item and tell the user whic
 5. **Rate limits**: keep `RATE_LIMIT_WHITELIST` empty unless you know exact addresses; never list the
    Docker network or other ranges all traffic may come from.
 6. **E-mail mode** (`AUTH_MODE=email`): configure `SMTP_*`, and `PUBLIC_API_URL` for confirmation links.
+   Behind a proxy that serves the API under a path (`/api`), set `PUBLIC_API_URL` too, or agents' file
+   links miss the path (the API logs a note at startup while it is unset).
 7. After deploying: `curl -sI <web>/` shows `Content-Security-Policy`; the API log has no
    `SECURITY WARNING` lines.
 

@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -238,15 +239,30 @@ type mcpCtx struct {
 	BaseURL string
 }
 
+// forwardedPrefix: a path a proxy strips before the API (Traefik StripPrefix sends it as X-Forwarded-Prefix).
+var forwardedPrefix = regexp.MustCompile(`^(/[A-Za-z0-9._~-]+)+$`)
+
+// requestBaseURL is where links to this API should point. Without PUBLIC_API_URL it is rebuilt from
+// the request, including the host and path prefix a reverse proxy reports. The link goes back only
+// to the caller, so a forged header misleads no one else.
 func requestBaseURL(c *gin.Context, configured string) string {
 	if configured != "" {
 		return configured
 	}
+	first := func(h string) string { return strings.TrimSpace(strings.Split(c.GetHeader(h), ",")[0]) }
 	scheme := "http"
-	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
+	if c.Request.TLS != nil || strings.EqualFold(first("X-Forwarded-Proto"), "https") {
 		scheme = "https"
 	}
-	return scheme + "://" + c.Request.Host
+	host := c.Request.Host
+	if h := first("X-Forwarded-Host"); h != "" && !strings.ContainsAny(h, `/\@ `) {
+		host = h
+	}
+	prefix := strings.TrimRight(first("X-Forwarded-Prefix"), "/")
+	if !forwardedPrefix.MatchString(prefix) {
+		prefix = ""
+	}
+	return scheme + "://" + host + prefix
 }
 
 type fileIn struct {

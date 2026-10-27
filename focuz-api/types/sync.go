@@ -4,7 +4,10 @@ import "time"
 
 // SyncPullResponse represents all changes since a given timestamp.
 type SyncPullResponse struct {
-	Spaces []SpaceChange `json:"spaces"`
+	// SyncedAt is the server's checkpoint for this pull: pass it as since next time. It is not
+	// taken from the data, so a wrong time on one record can't hide later changes.
+	SyncedAt time.Time     `json:"syncedAt"`
+	Spaces   []SpaceChange `json:"spaces"`
 	// Always complete (not incremental): the spaces the user is in, their members and public links.
 	Memberships   interface{}          `json:"memberships,omitempty"`
 	Members       interface{}          `json:"members,omitempty"`

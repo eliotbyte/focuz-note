@@ -23,7 +23,7 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.3.10"
+	mcpServerVersion   = "0.3.11"
 	// Room for a file sent inline as base64 (attach_files); bigger files go through get_upload_link.
 	maxMCPBodyBytes = 16 << 20
 	mcpInstructions = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +
@@ -211,6 +211,24 @@ func parseDay(s string) (*time.Time, error) {
 	return &t, nil
 }
 
+// noteRef is the note a tool acts on: id, or noteId as the other tools call it.
+type noteRef struct {
+	ID     int `json:"id"`
+	NoteID int `json:"noteId"`
+}
+
+func (r noteRef) noteID() (int, error) {
+	switch {
+	case r.ID != 0 && r.NoteID != 0 && r.ID != r.NoteID:
+		return 0, invalidInput("id and noteId differ: send one of them")
+	case r.ID != 0:
+		return r.ID, nil
+	case r.NoteID != 0:
+		return r.NoteID, nil
+	}
+	return 0, invalidInput("id is required")
+}
+
 func objectSchema(props map[string]any, required ...string) map[string]any {
 	s := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -221,6 +239,7 @@ func objectSchema(props map[string]any, required ...string) map[string]any {
 
 var (
 	idSchema    = map[string]any{"type": "integer", "description": "Note id"}
+	noteIDAlias = map[string]any{"type": "integer", "description": "Same as id (the name other tools use)"}
 	spaceSchema = map[string]any{"type": "integer", "description": "Space id from list_spaces"}
 	textSchema  = map[string]any{"type": "string", "description": "Note text (Markdown)"}
 	tagsSchema  = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Tags without #"}
@@ -336,20 +355,25 @@ var mcpTools = []mcpTool{
 	{
 		Name: "get_note",
 		Description: "Get one note with its tags, metric values and attachments. includeReplies adds its replies (up to 100, oldest first). " +
-			"Open an attachment with get_file and its id (the url in the list may not be reachable from outside).",
+			"Open an attachment with get_file and its id. Takes id (noteId also works).",
 		Schema: objectSchema(map[string]any{
 			"id":             idSchema,
+			"noteId":         noteIDAlias,
 			"includeReplies": map[string]any{"type": "boolean"},
-		}, "id"),
+		}),
 		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
 			var a struct {
-				ID             int  `json:"id"`
+				noteRef
 				IncludeReplies bool `json:"includeReplies"`
 			}
 			if err := decodeArgs(raw, &a); err != nil {
 				return nil, err
 			}
-			note, _, err := h.loadNote(userID, a.ID)
+			id, err := a.noteID()
+			if err != nil {
+				return nil, err
+			}
+			note, _, err := h.loadNote(userID, id)
 			if err != nil || !a.IncludeReplies {
 				return note, err
 			}
@@ -422,57 +446,66 @@ var mcpTools = []mcpTool{
 			"of its own. Its replies move with it.",
 		Schema: objectSchema(map[string]any{
 			"id":       idSchema,
+			"noteId":   noteIDAlias,
 			"text":     textSchema,
 			"tags":     tagsSchema,
 			"date":     dateSchema,
 			"parentId": map[string]any{"type": "integer", "description": "Note this one replies to; 0 for none"},
-		}, "id"),
+		}),
 		Write: true,
 		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
 			var a struct {
-				ID int `json:"id"`
+				noteRef
 				noteEdit
 			}
 			if err := decodeArgs(raw, &a); err != nil {
 				return nil, err
 			}
-			return h.editNote(userID, a.ID, a.noteEdit)
+			id, err := a.noteID()
+			if err != nil {
+				return nil, err
+			}
+			return h.editNote(userID, id, a.noteEdit)
 		},
 	},
 	{
 		Name:        "delete_note",
 		Description: "Move a note to the trash. Editors can delete only their own notes; admins and owners can delete any.",
-		Schema:      objectSchema(map[string]any{"id": idSchema}, "id"),
+		Schema:      objectSchema(map[string]any{"id": idSchema, "noteId": noteIDAlias}),
 		Write:       true,
 		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
-			var a struct {
-				ID int `json:"id"`
-			}
+			var a noteRef
 			if err := decodeArgs(raw, &a); err != nil {
 				return nil, err
 			}
-			if err := h.deleteNote(userID, a.ID); err != nil {
+			id, err := a.noteID()
+			if err != nil {
 				return nil, err
 			}
-			return gin.H{"deleted": true, "id": a.ID}, nil
+			if err := h.deleteNote(userID, id); err != nil {
+				return nil, err
+			}
+			return gin.H{"deleted": true, "id": id}, nil
 		},
 	},
 	{
 		Name:        "restore_note",
 		Description: "Bring a note back from the trash, with the same rules as delete_note.",
-		Schema:      objectSchema(map[string]any{"id": idSchema}, "id"),
+		Schema:      objectSchema(map[string]any{"id": idSchema, "noteId": noteIDAlias}),
 		Write:       true,
 		run: func(h *NotesAPIHandler, userID int, raw json.RawMessage) (any, error) {
-			var a struct {
-				ID int `json:"id"`
-			}
+			var a noteRef
 			if err := decodeArgs(raw, &a); err != nil {
 				return nil, err
 			}
-			if err := h.restoreNote(userID, a.ID); err != nil {
+			id, err := a.noteID()
+			if err != nil {
 				return nil, err
 			}
-			return gin.H{"restored": true, "id": a.ID}, nil
+			if err := h.restoreNote(userID, id); err != nil {
+				return nil, err
+			}
+			return gin.H{"restored": true, "id": id}, nil
 		},
 	},
 	{

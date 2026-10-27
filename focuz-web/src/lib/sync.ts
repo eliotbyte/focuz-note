@@ -9,8 +9,8 @@ import { LAST_SYNC_OK_KV, markConflictsDetected, markJobFailed, patchSyncState, 
 import { api, getApiBase, isNetworkError, isTransientError } from './api'
 import { authBC, clearAuthToken, emitAuthRequired, getAuthToken, isAuthRequired, setAuthTokenLS, setLastUsername } from './auth'
 import { pushDirty, recoverLegacyConflicts } from './sync-push'
-import { pullSince } from './sync-pull'
-import { ensureDownloadJob, processNextJob, releaseStaleRunningJobs, retryFailedJobs, THROTTLE_WAIT_MS } from './jobs-worker'
+import { BACKGROUND_DOWNLOAD_PRIORITY, pullSince } from './sync-pull'
+import { ensureDownloadJob, lastJobPriority, processNextJob, releaseStaleRunningJobs, retryFailedJobs, THROTTLE_WAIT_MS } from './jobs-worker'
 
 export { isAuthRequired, onAuthRequired, getLastUsername } from './auth'
 export { validateActivityValue } from './activity-values'
@@ -27,6 +27,7 @@ const NO_CHANGE_BACKOFF_MS = Number(env.VITE_SYNC_BACKOFF_MS ?? '15000') || 1500
 const CURRENT_SPACE_KV = 'currentSpaceId'
 const MAX_PUSH_ROUNDS = 5
 const JOB_IDLE_TICK_MS = 2000
+const BACKGROUND_JOB_GAP_MS = 250
 
 let syncBC: BroadcastChannel | null = null
 try { syncBC = new BroadcastChannel('focuz-sync') } catch {}
@@ -287,7 +288,9 @@ async function jobTick() {
   if (canTalkToServer() && navigator.onLine !== false && !jobsPausedOffline) {
     try {
       const r = await processNextJob((job, error) => markJobFailed(job.kind, String((error as any)?.message || error || '')))
-      if (r === 'did') next = 0
+      // Background downloads (hundreds after a first sync) leave the tab room between pictures;
+      // a picture coming on screen is queued ahead of them and runs at once.
+      if (r === 'did') next = lastJobPriority() >= BACKGROUND_DOWNLOAD_PRIORITY ? BACKGROUND_JOB_GAP_MS : 0
       else if (r === 'throttled') next = THROTTLE_WAIT_MS
       else if (r === 'offline') {
         // Server unreachable: let the sync backoff probe the server, resume jobs after it succeeds.

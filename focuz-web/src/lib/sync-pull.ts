@@ -312,7 +312,10 @@ export async function pullSince(): Promise<PullResult> {
     }
   }
   if (st.sawNotes) await db.transaction('rw', db.notes, linkPendingParents)
-  await setKV(LAST_SYNC_KV, st.maxSyncAt)
+  // The server's checkpoint, not the newest time in the data: one record dated in the future
+  // would otherwise hide every change made before that time. Older servers send none.
+  const syncedAt = typeof first?.syncedAt === 'string' && first.syncedAt ? first.syncedAt : st.maxSyncAt
+  await setKV(LAST_SYNC_KV, syncedAt)
   return { pulled: st.pulled }
 }
 

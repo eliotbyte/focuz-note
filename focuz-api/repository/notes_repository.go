@@ -3,7 +3,6 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
-	"focuz-api/initializers"
 	"focuz-api/models"
 	"strconv"
 	"strings"
@@ -223,11 +222,6 @@ func (r *NotesRepository) GetNoteByID(id int) (*models.Note, error) {
 		if err := attRows.Scan(&att.ID, &att.FileName, &att.FileType, &att.FileSize); err != nil {
 			return nil, err
 		}
-		url, err := initializers.GenerateAttachmentURL(att.ID, att.FileName)
-		if err != nil {
-			return nil, err
-		}
-		att.URL = url
 		attachments = append(attachments, att)
 	}
 	note.Attachments = attachments
@@ -393,18 +387,10 @@ func (r *NotesRepository) GetNotes(userID, spaceID int, filters models.NoteFilte
 			}
 			note.Activities = acts
 		}
-		// Unmarshal attachments and add URLs
 		if len(attachmentsJSON) > 0 {
 			var atts []models.Attachment
 			if err := json.Unmarshal(attachmentsJSON, &atts); err != nil {
 				return nil, 0, err
-			}
-			for i := range atts {
-				url, uerr := initializers.GenerateAttachmentURL(atts[i].ID, atts[i].FileName)
-				if uerr != nil {
-					return nil, 0, uerr
-				}
-				atts[i].URL = url
 			}
 			note.Attachments = atts
 		}

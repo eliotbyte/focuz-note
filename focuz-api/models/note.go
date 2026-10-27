@@ -31,9 +31,10 @@ type NoteActivity struct {
 	Unit   *string `json:"unit,omitempty"`
 }
 
+// Attachment is a file of a note. Its bytes come from GET /files/{id}/content (MCP: get_file):
+// MinIO is not reachable from outside, so no direct storage link is given.
 type Attachment struct {
 	ID       string `json:"id"`
-	URL      string `json:"url"`
 	FileName string `json:"fileName"`
 	FileType string `json:"fileType"`
 	FileSize int64  `json:"fileSize"`

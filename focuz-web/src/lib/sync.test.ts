@@ -195,6 +195,16 @@ describe('server rejections', () => {
 })
 
 describe('pull', () => {
+  it('keeps the server checkpoint, so a record dated in the future hides nothing', async () => {
+    const future = server.addNote('from the future')
+    future.modified_at = '2099-01-01T00:00:00.000Z'
+    await runSync(true)
+    expect(await getKV<string>('lastSyncAt')).not.toBe(future.modified_at)
+    server.addNote('written later')
+    await runSync(true)
+    expect((await db.notes.toArray()).map(n => n.text).sort()).toEqual(['from the future', 'written later'])
+  })
+
   it('maps server parent ids to local ids on a fresh device', async () => {
     server.addNote('other user', { user_id: 99 })
     const parent = server.addNote('parent')

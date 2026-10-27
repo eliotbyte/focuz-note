@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Focuz API
   description: API for a note-taking application with workspaces, notes, charts, and activities
-  version: 0.3.10
+  version: 0.3.11
   contact:
     name: Focuz Team
 servers:
@@ -1814,9 +1814,9 @@ components:
           type: array
           items:
             type: object
+            description: The bytes come from GET /files/{id}/content.
             properties:
               id: { type: string }
-              url: { type: string }
               fileName: { type: string }
               fileType: { type: string }
               fileSize: { type: integer, format: int64 }
@@ -1915,6 +1915,12 @@ components:
     SyncPullResponse:
       type: object
       properties:
+        syncedAt:
+          type: string
+          format: date-time
+          description: >-
+            The server's checkpoint for this pull: send it as `since` next time. Use it instead of the
+            newest time in the data. A `since` later than the server's clock returns everything.
         hasMore:
           type: boolean
           description: When true, this response is partial and must be continued with `nextCursor`.

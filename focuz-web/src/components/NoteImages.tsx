@@ -527,6 +527,8 @@ function AttImg({ att, alt, className, style, draggable, onLoad }: {
     <img
       src={url}
       alt={alt ?? ''}
+      loading="lazy"
+      decoding="async"
       className={className}
       style={style}
       draggable={draggable}

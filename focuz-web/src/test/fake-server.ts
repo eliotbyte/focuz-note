@@ -191,6 +191,7 @@ export class FakeServer {
           .map(a => ({ id: a.id, file_name: a.file_name, file_type: a.file_type, file_size: a.file_size, created_at: a.created_at, modified_at: a.modified_at, position: a.position })),
       }))
     return {
+      syncedAt: new Date(this.clock).toISOString(),
       spaces: [...this.spaces.values()].filter(x => after(x.modified_at)),
       notes,
       tags: [],

@@ -168,6 +168,13 @@ function errorText(e: unknown): string {
   return String((e as any)?.message || e || 'Unknown error')
 }
 
+let lastPriority = 0
+
+/** Priority of the job processNextJob ran last (the caller paces background work by it). */
+export function lastJobPriority(): number {
+  return lastPriority
+}
+
 /**
  * Runs at most one job. Returns what happened so the caller can schedule the next tick.
  * `onFailed` is called when a job is given up on (for user notification).
@@ -176,6 +183,7 @@ export async function processNextJob(onFailed?: (job: JobRecord, error: unknown)
   const candidates = await runnableJobs()
   for (const job of candidates) {
     if (!(await claim(job))) continue
+    lastPriority = job.priority
     const outcome = await runJob(job)
     const finalKind = outcome.kind === 'retry' && (job.attempts ?? 0) + 1 >= MAX_ATTEMPTS ? 'failed' : outcome.kind
     await settle(job, outcome)

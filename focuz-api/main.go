@@ -37,7 +37,7 @@ func main() {
 	var db *sql.DB
 	var err error
 	for i := 0; i < 10; i++ {
-		db, err = sql.Open("postgres", dbURL)
+		db, err = sql.Open("postgres", withUTCSession(dbURL))
 		if err == nil {
 			err = db.Ping()
 			if err == nil {
@@ -185,6 +185,9 @@ func main() {
 	log.Printf("Accounts: mode=%s registration=%v mail=%s", authConfig.Mode, authConfig.RegistrationOpen, mail.Describe())
 	if authConfig.Mode == authcfg.ModeEmail && authConfig.PublicAPIURL == "" {
 		log.Printf("PUBLIC_API_URL is not set: confirmation emails will contain the code only, without a link")
+	}
+	if authConfig.PublicAPIURL == "" {
+		log.Printf("PUBLIC_API_URL is not set: MCP file links are built from each request (Host, X-Forwarded-Host/Proto/Prefix). Behind a proxy that strips a path such as /api without sending X-Forwarded-Prefix, set PUBLIC_API_URL (e.g. https://notes.example.com/api) or the links will not work")
 	}
 	usersRepo := repository.NewUsersRepository(db)
 	sharingHandler := handlers.NewSharingHandler(sharingRepo, usersRepo, notificationsRepo, notifier, mail, authConfig).WithTokens(tokens)
@@ -338,4 +341,19 @@ func parseInt64Env(name string, def int64) int64 {
 		return def
 	}
 	return v
+}
+
+// withUTCSession makes every connection use UTC, so grouping by day and the times read back
+// do not depend on the database server's time zone.
+func withUTCSession(dsn string) string {
+	if strings.Contains(strings.ToLower(dsn), "timezone=") {
+		return dsn
+	}
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		if strings.Contains(dsn, "?") {
+			return dsn + "&timezone=UTC"
+		}
+		return dsn + "?timezone=UTC"
+	}
+	return dsn + " timezone=UTC"
 }

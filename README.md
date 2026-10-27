@@ -5,7 +5,7 @@ Integration repository that bundles:
 - `focuz-api/` (backend)
 
 **Status**: alpha  
-**Version**: 0.3.10 (changes: `CHANGELOG.md`)
+**Version**: 0.3.11 (changes: `CHANGELOG.md`)
 
 ## Environments (Docker Compose)
 
@@ -21,9 +21,9 @@ APP_ENV=test docker compose up -d --build
 
 ## Versions
 
-- **Focuz-Node**: `0.3.10` (this repo, see `package.json`)
-- **Focuz-Web**: `0.3.10` (see `focuz-web/package.json`)
-- **Focuz-API**: `0.3.10` (see `focuz-api/pkg/buildinfo`)
+- **Focuz-Node**: `0.3.11` (this repo, see `package.json`)
+- **Focuz-Web**: `0.3.11` (see `focuz-web/package.json`)
+- **Focuz-API**: `0.3.11` (see `focuz-api/pkg/buildinfo`)
 
 
 ## Tests
@@ -164,7 +164,10 @@ a picture as an image the agent can see and a text file as text, plus a 15-minut
 Links need no token, so they are as private as the agent keeps them; they stop working when the password
 changes. Pictures may be JPEG, PNG or WebP (at least 64 px on the short side, the long side at most
 8 times the short one and 8000 px). Set `PUBLIC_API_URL` when the
-API is behind a proxy, so the links carry the public address.
+API is behind a proxy, so the links carry the public address. Without it the address is rebuilt from the
+request (`X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Forwarded-Prefix`); a proxy that strips a path such as
+`/api` without sending `X-Forwarded-Prefix` gives links that do not work. Notes list their files by id,
+not by a storage link: open them with `get_file` (REST: `GET /files/{id}/content`).
 
 1. Create a personal token while signed in: `POST /me/api-tokens` with `{"name": "Claude", "scope": "write"}`.
    The token (`fct_…`) is shown once. Use `"scope": "read"` for an agent that should only read.

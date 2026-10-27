@@ -39,8 +39,30 @@ func (r *SyncRepository) WithFileRemover(fn func(ids []string)) *SyncRepository 
 	return r
 }
 
+// pullCheckpoint returns the database time now and the time a pull starting now covers
+// everything before. Writes stamp modified_at with their transaction's start, so a push still
+// open is behind the checkpoint until it commits: the checkpoint stops just before the oldest
+// such transaction began.
+func (r *SyncRepository) pullCheckpoint() (now, checkpoint time.Time, err error) {
+	err = r.db.QueryRow(`
+		SELECT NOW(), LEAST(NOW(), COALESCE(MIN(xact_start) - INTERVAL '1 millisecond', NOW()))
+		FROM pg_stat_activity
+		WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_xid IS NOT NULL
+	`).Scan(&now, &checkpoint)
+	return now, checkpoint.UTC(), err
+}
+
 func (r *SyncRepository) GetChangesSince(userID int, accessibleSpaceIDs []int, since time.Time) (*types.SyncPullResponse, error) {
-	resp := &types.SyncPullResponse{}
+	now, checkpoint, err := r.pullCheckpoint()
+	if err != nil {
+		return nil, err
+	}
+	// A since from the future (a client that took it from bad data) would hide every change
+	// made until then: send everything again instead.
+	if since.After(now) {
+		since = time.Unix(0, 0)
+	}
+	resp := &types.SyncPullResponse{SyncedAt: checkpoint}
 
 	// Spaces
 	rows, err := r.db.Query(`
@@ -453,6 +475,16 @@ func (r *SyncRepository) activityTypeUsable(typeID, spaceID int) (bool, error) {
 	return ok, err
 }
 
+// rejectActivity refuses a pushed activity whose value does not fit its metric.
+func rejectActivity(resp *types.SyncPushResponse, a types.ActivityChange) {
+	var id *int
+	if a.ID != 0 {
+		v := a.ID
+		id = &v
+	}
+	reject(resp, "activity", id, nil, "invalid_value")
+}
+
 func reject(resp *types.SyncPushResponse, resource string, id *int, clientID *string, reason string) {
 	resp.Rejected = append(resp.Rejected, types.Rejection{Resource: resource, ID: id, ClientID: clientID, Reason: reason})
 }
@@ -517,7 +549,14 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			// Apply nested activities (create or upsert by type within note)
 			if len(n.Activities) > 0 {
 				for _, a := range n.Activities {
-					val, _ := json.Marshal(a.Value)
+					val, valid, verr := r.activityValue(a)
+					if verr != nil {
+						return nil, verr
+					}
+					if !valid {
+						rejectActivity(resp, a)
+						continue
+					}
 					// If activity with same type already exists for this note, LWW on modified_at
 					var existingID int
 					var existingModified time.Time
@@ -532,15 +571,11 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 						if createdAt.IsZero() {
 							createdAt = time.Now()
 						}
-						modifiedAt := a.ModifiedAt
-						if modifiedAt.IsZero() {
-							modifiedAt = createdAt
-						}
 						isDeleted := a.DeletedAt != nil
 						if _, err := r.q.Exec(`
 							INSERT INTO activities (user_id, type_id, value, note_id, created_at, modified_at, is_deleted)
-							VALUES ($1, $2, $3, $4, $5, $6, $7)
-						`, userID, a.TypeID, val, newID, createdAt, modifiedAt, isDeleted); err != nil {
+							VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+						`, userID, a.TypeID, val, newID, createdAt, isDeleted); err != nil {
 							return nil, err
 						}
 						resp.Applied++
@@ -663,7 +698,14 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			// Apply nested activities for this note (LWW per activity)
 			if len(n.Activities) > 0 {
 				for _, a := range n.Activities {
-					val, _ := json.Marshal(a.Value)
+					val, valid, verr := r.activityValue(a)
+					if verr != nil {
+						return nil, verr
+					}
+					if !valid {
+						rejectActivity(resp, a)
+						continue
+					}
 					if a.ID != 0 {
 						var currentNoteID int
 						var currentModified time.Time
@@ -701,15 +743,11 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 						if createdAt.IsZero() {
 							createdAt = time.Now()
 						}
-						modifiedAt := a.ModifiedAt
-						if modifiedAt.IsZero() {
-							modifiedAt = createdAt
-						}
 						isDeleted := a.DeletedAt != nil
 						if _, err := r.q.Exec(`
 							INSERT INTO activities (user_id, type_id, value, note_id, created_at, modified_at, is_deleted)
-							VALUES ($1, $2, $3, $4, $5, $6, $7)
-						`, userID, a.TypeID, val, *n.ID, createdAt, modifiedAt, isDeleted); err != nil {
+							VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+						`, userID, a.TypeID, val, *n.ID, createdAt, isDeleted); err != nil {
 							return nil, err
 						}
 						resp.Applied++
@@ -780,12 +818,12 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 					}
 					// Rename if file_name provided
 					if a.FileName != "" {
-						if _, err := r.q.Exec(`UPDATE attachments SET file_name = $2, modified_at = $3 WHERE id = $1`, a.ID, a.FileName, a.ModifiedAt); err != nil {
+						if _, err := r.q.Exec(`UPDATE attachments SET file_name = $2, modified_at = NOW() WHERE id = $1`, a.ID, a.FileName); err != nil {
 							return nil, err
 						}
 					} else if !a.ModifiedAt.IsZero() {
 						// Only touch modified_at to reorder
-						if _, err := r.q.Exec(`UPDATE attachments SET modified_at = $2 WHERE id = $1`, a.ID, a.ModifiedAt); err != nil {
+						if _, err := r.q.Exec(`UPDATE attachments SET modified_at = NOW() WHERE id = $1`, a.ID); err != nil {
 							return nil, err
 						}
 					}
@@ -819,7 +857,14 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			// Even if note didn't win LWW, apply nested activities independently (LWW per activity)
 			if len(n.Activities) > 0 {
 				for _, a := range n.Activities {
-					val, _ := json.Marshal(a.Value)
+					val, valid, verr := r.activityValue(a)
+					if verr != nil {
+						return nil, verr
+					}
+					if !valid {
+						rejectActivity(resp, a)
+						continue
+					}
 					if a.ID != 0 {
 						var currentNoteID int
 						var currentModified time.Time
@@ -857,15 +902,11 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 						if createdAt.IsZero() {
 							createdAt = time.Now()
 						}
-						modifiedAt := a.ModifiedAt
-						if modifiedAt.IsZero() {
-							modifiedAt = createdAt
-						}
 						isDeleted := a.DeletedAt != nil
 						if _, err := r.q.Exec(`
 							INSERT INTO activities (user_id, type_id, value, note_id, created_at, modified_at, is_deleted)
-							VALUES ($1, $2, $3, $4, $5, $6, $7)
-						`, userID, a.TypeID, val, *n.ID, createdAt, modifiedAt, isDeleted); err != nil {
+							VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+						`, userID, a.TypeID, val, *n.ID, createdAt, isDeleted); err != nil {
 							return nil, err
 						}
 						resp.Applied++
@@ -1047,7 +1088,14 @@ func (r *SyncRepository) applyChanges(userID int, payload types.SyncPushRequest)
 			continue
 		}
 		if a.ModifiedAt.After(serverModified) {
-			val, _ := json.Marshal(a.Value)
+			val, valid, verr := r.activityValue(a)
+			if verr != nil {
+				return nil, verr
+			}
+			if !valid {
+				rejectActivity(resp, a)
+				continue
+			}
 			_, err := r.q.Exec(`UPDATE activities SET value = $2, is_deleted = $3, modified_at = NOW() WHERE id = $1`, a.ID, val, a.DeletedAt != nil)
 			if err != nil {
 				return nil, err
