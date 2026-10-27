@@ -23,7 +23,7 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.3.9"
+	mcpServerVersion   = "0.3.10"
 	// Room for a file sent inline as base64 (attach_files); bigger files go through get_upload_link.
 	maxMCPBodyBytes = 16 << 20
 	mcpInstructions = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +

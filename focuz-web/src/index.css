@@ -458,6 +458,8 @@ textarea.input { padding-top: 8px; padding-bottom: 8px; }
 }
 .input input:focus-visible { outline: none; }
 select.input { padding-right: 8px; }
+/* The native list takes the options' colors: selects have translucent fills, which it would draw on white. */
+select option { background: rgb(var(--c-surface)); color: var(--text-primary); }
 
 .input-wrap { position: relative; }
 .input-wrap > .input { padding-right: 40px; }
@@ -2091,7 +2093,6 @@ button:disabled { cursor: not-allowed; }
 .member-row { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 6px; border-radius: var(--r-sm); font-size: var(--fs-ui); }
 .member-row:hover { background: rgba(var(--c-text) / 0.04); }
 .role-select { height: 30px; padding: 0 10px; border-radius: var(--r-pill); background: var(--drop-bg); box-shadow: var(--shadow-drop); color: var(--text-primary); font-size: var(--fs-small); }
-.role-select option { background: rgb(var(--c-surface)); color: var(--text-primary); }
 .role-badge { font-size: var(--fs-caption); padding: 3px 8px; border-radius: var(--r-pill); color: var(--text-muted); background: var(--field-bg); box-shadow: var(--shadow-field); flex: none; }
 .copy-field { display: flex; gap: 8px; }
 .copy-field .input { flex: 1; min-width: 0; }
