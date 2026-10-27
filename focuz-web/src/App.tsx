@@ -42,6 +42,7 @@ import { canWrite, roleOf, ROLE_LABEL } from './lib/roles'
 import NoteGrid, { FeedLayoutToggle } from './components/NoteGrid'
 import type { FeedLayout } from './lib/feed-layout'
 import { useFeedLayout } from './lib/useFeedLayout'
+import { useFeedWindow } from './lib/useFeedWindow'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
@@ -306,6 +307,8 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
     const byId = new Map(live.all.map(n => [n.id!, n]))
     return ids.map(id => byId.get(id)).filter((n): n is NoteRecord => !!n)
   }, [live, querySig, scopeIds, searchQ, idsBySearch, freezeKey, freezeSig, freezeReady])
+  const feedWindow = useFeedWindow(notes.length, `${freezeKey ?? ''}|${freezeSig ?? ''}|${querySig}`)
+  const shown = feedWindow.hasMore ? notes.slice(0, feedWindow.limit) : notes
 
   // Parent previews no longer preloaded here; NoteCard handles parent preview on demand
   const repliesById = useLiveQuery(async () => {
@@ -404,7 +407,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
     return (
       <>
         <NoteGrid
-          notes={notes}
+          notes={shown}
           layout={layout}
           onOpenThread={onOpenThread}
           onDelete={(id) => { void removeNote(id) }}
@@ -414,6 +417,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
           showParentPreview={parentId == null}
           emptyText={emptyText}
         />
+        {feedWindow.hasMore && <div ref={feedWindow.sentinelRef} aria-hidden className="h-px" />}
         {foldersFor && <NoteFoldersDialog index={folderIndex} note={foldersFor} onClose={() => setFoldersFor(null)} />}
       </>
     )
@@ -421,7 +425,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
 
   return (
     <ul className="space-y-3">
-      {notes.flatMap((n: NoteRecord) => {
+      {shown.flatMap((n: NoteRecord) => {
         const items: ReactNode[] = []
         const positiveQuickTags = ((quick as any).tags || []).filter((t: string) => !t.startsWith('!')) as string[]
         const hiddenTagsSet = new Set([...positiveQuickTags, ...hiddenTags])
@@ -509,6 +513,7 @@ function NoteList({ spaceId, filter, quick, parentId, onOpenThread, onAddQuickTa
         }
         return items
       })}
+      {feedWindow.hasMore && <li ref={feedWindow.sentinelRef} aria-hidden className="h-px" />}
       {notes.length === 0 && <li className="feed-empty">{emptyText ?? 'No notes'}</li>}
       {foldersFor && <NoteFoldersDialog index={folderIndex} note={foldersFor} onClose={() => setFoldersFor(null)} />}
     </ul>

@@ -136,39 +136,47 @@ export async function searchNotes(spaceId: number, query: string, opts: { inFile
   return order
 }
 
-// Rebuild or update index on app events
+// Rebuild the index after writes. Syncs and edits come in bursts and a rebuild covers every note of the
+// space, so one runs a moment after the last event, never two at once.
 function listenEvents() {
   try {
-    window.addEventListener('focuz:local-write', async () => {
-      const spaceId = await getKV<number>('currentSpaceId')
-      if (!spaceId) return
-      await rebuildSpaceIndex(spaceId)
-    })
-    window.addEventListener('focuz:sync-applied', async () => {
-      const spaceId = await getKV<number>('currentSpaceId')
-      if (!spaceId) return
-      await rebuildSpaceIndex(spaceId)
-    })
-    // A downloaded text file joins its note in the index. Downloads come in bursts: rebuild once after.
-    let jobsTimer: ReturnType<typeof setTimeout> | null = null
-    window.addEventListener('focuz:jobs-changed', () => {
-      if (jobsTimer) clearTimeout(jobsTimer)
-      jobsTimer = setTimeout(async () => {
-        jobsTimer = null
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const schedule = (delay: number) => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(async () => {
+        timer = null
         const spaceId = await getKV<number>('currentSpaceId')
         if (spaceId && indexes.has(spaceId)) await rebuildSpaceIndex(spaceId)
-      }, 800)
-    })
+      }, delay)
+    }
+    window.addEventListener('focuz:local-write', () => schedule(1000))
+    window.addEventListener('focuz:sync-applied', () => schedule(1000))
+    // A downloaded text file joins its note in the index.
+    window.addEventListener('focuz:jobs-changed', () => schedule(1500))
   } catch {}
 }
 
+let rebuilding: Promise<void> | null = null
+let rebuildAgain = false
+
 async function rebuildSpaceIndex(spaceId: number): Promise<void> {
-  await loadFlexSearch()
-  if (!FlexSearchLib) return
-  const idx = indexes.get(spaceId) || createIndex()
-  indexes.set(spaceId, idx)
-  try { idx.clear() } catch {}
-  await fillIndex(idx, spaceId)
+  if (rebuilding) { rebuildAgain = true; return rebuilding }
+  rebuilding = (async () => {
+    try {
+      do {
+        rebuildAgain = false
+        await loadFlexSearch()
+        if (!FlexSearchLib) return
+        // Fill a new index and swap it in, so searches meanwhile still use the old one.
+        const idx = createIndex()
+        await fillIndex(idx, spaceId)
+        indexes.set(spaceId, idx)
+      } while (rebuildAgain)
+    } finally {
+      rebuilding = null
+    }
+  })()
+  return rebuilding
 }
 
 listenEvents()
