@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { describeStatus } from '../lib/sync-status'
 
-const base = { online: true, syncing: false, serverReachable: true, syncError: null, authRequired: false, lastSyncAt: '2030-01-01T00:00:00Z', pendingChanges: 0, uploads: 0, failed: 0 }
+const base = { online: true, serverReachable: true, syncError: null, authRequired: false, unsent: 0 }
 
 describe('sync status indicator', () => {
-  it('says synced only after a successful sync with nothing pending', () => {
-    expect(describeStatus(base).label).toBe('Synced')
-    expect(describeStatus({ ...base, lastSyncAt: null }).label).toBe('Connecting')
-    expect(describeStatus({ ...base, pendingChanges: 2, uploads: 1 }).label).toBe('3 pending')
+  it('shows nothing while notes reach the server', () => {
+    expect(describeStatus(base)).toBeNull()
+    expect(describeStatus({ ...base, unsent: 3 })).toBeNull()
   })
 
-  it('prioritises the reason the user cannot sync', () => {
-    expect(describeStatus({ ...base, online: false, serverReachable: false }).label).toBe('Offline')
-    expect(describeStatus({ ...base, serverReachable: false, syncError: 'Server unreachable', syncing: true }).label).toBe('Server unreachable')
-    expect(describeStatus({ ...base, authRequired: true, serverReachable: false }).label).toBe('Sign in')
-    expect(describeStatus({ ...base, syncError: 'Server error (500)' }).tone).toBe('error')
-    expect(describeStatus({ ...base, failed: 1 }).label).toBe('1 failed')
+  it('shows why notes cannot reach the server, and what waits on this device', () => {
+    expect(describeStatus({ ...base, online: false, serverReachable: false })?.label).toBe('Offline')
+    expect(describeStatus({ ...base, online: false, unsent: 2 })?.detail).toMatch(/^2 changes are kept on this device/)
+    expect(describeStatus({ ...base, serverReachable: false, syncError: 'Server unreachable' })?.label).toBe('No connection')
+    expect(describeStatus({ ...base, authRequired: true, serverReachable: false })?.label).toBe('Signed out')
+    expect(describeStatus({ ...base, syncError: 'Server error (500)' })).toMatchObject({ label: 'Not syncing', tone: 'warn', canRetry: true })
+    expect(describeStatus({ ...base, online: false })?.canRetry).toBe(false)
   })
 })

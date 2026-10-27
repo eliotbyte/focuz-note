@@ -6,7 +6,7 @@ import { __resetSyncEngineForTests, ensureDefaultSpace, runSync, requestAttachme
 import { getAppState } from './app-state'
 import { addLocalAttachment, addLocalAttachments, setNoteParentLocal, updateNoteLocal, deleteLocalAttachment, reorderNoteAttachments, replaceLocalAttachment } from './local-writes'
 import { listDisplayForNote } from '../data/attachments'
-import { processNextJob, retryFailedJobs, MAX_ATTEMPTS } from './jobs-worker'
+import { processNextJob, releaseStaleRunningJobs, retryFailedJobs } from './jobs-worker'
 import { recoverLegacyConflicts, CONFLICT_TAG } from './sync-push'
 import type { NoteRecord } from './types'
 
@@ -444,26 +444,37 @@ describe('attachment jobs', () => {
     expect(job.attempts).toBe(0)
   })
 
-  it('gives up after repeated server errors and can be retried manually', async () => {
+  it('keeps retrying through server errors instead of giving up', async () => {
     const n = server.addNote('remote')
     server.addAttachment(n.id, 'x.webp')
     await ensureDefaultSpace()
     await runSync(true)
-    server.failures.push({ match: /^GET \/files\//, status: 500, times: MAX_ATTEMPTS })
+    server.failures.push({ match: /^GET \/files\//, status: 500, times: 8 })
     const onFailed = vi.fn()
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    for (let i = 0; i < 8; i++) {
       await db.jobs.toCollection().modify({ nextAttemptAt: null })
-      await processNextJob(onFailed)
+      expect(await processNextJob(onFailed)).toBe('did')
     }
     const job = (await db.jobs.toArray())[0]
-    expect(job.status).toBe('failed')
-    expect(onFailed).toHaveBeenCalledTimes(1)
-    expect(await processNextJob()).toBe('idle')
+    expect([job.status, job.attempts]).toEqual(['pending', 8])
+    expect(onFailed).not.toHaveBeenCalled()
 
-    await retryFailedJobs()
+    await db.jobs.toCollection().modify({ nextAttemptAt: null })
     await drainJobs()
     expect(await db.jobs.count()).toBe(0)
     expect((await db.attachments.toArray())[0].data).toBeTruthy()
+  })
+
+  it('re-queues transfers that older versions gave up on, but not refused ones', async () => {
+    const t = new Date().toISOString()
+    await db.jobs.bulkAdd([
+      { kind: 'attachment-download', attachmentId: 1, priority: 1, status: 'failed', attempts: 5, createdAt: t, updatedAt: t },
+      { kind: 'attachment-upload', attachmentId: 2, priority: 1, status: 'failed', refused: true, attempts: 1, createdAt: t, updatedAt: t },
+    ])
+    await releaseStaleRunningJobs()
+    expect((await db.jobs.toArray()).map(j => j.status)).toEqual(['pending', 'failed'])
+    expect(await retryFailedJobs(2)).toBe(1)
+    expect((await db.jobs.toArray()).map(j => j.status)).toEqual(['pending', 'pending'])
   })
 
   it('waits out the rate limit without using up attempts', async () => {
@@ -472,8 +483,8 @@ describe('attachment jobs', () => {
     await addLocalAttachments(id, [1, 2].map(n => new File([new Uint8Array([n])], `${n}.webp`, { type: 'image/webp' })))
     await runSync(true)
     await db.jobs.toCollection().modify({ nextAttemptAt: null })
-    server.failures.push({ match: /^POST \/upload/, status: 429, times: MAX_ATTEMPTS + 2 })
-    for (let i = 0; i < MAX_ATTEMPTS + 2; i++) {
+    server.failures.push({ match: /^POST \/upload/, status: 429, times: 7 })
+    for (let i = 0; i < 7; i++) {
       // The queue pauses after a 429 instead of trying the next file right away.
       expect(await processNextJob()).toBe('throttled')
       await db.jobs.toCollection().modify({ nextAttemptAt: null })
@@ -495,9 +506,12 @@ describe('attachment jobs', () => {
     const onFailed = vi.fn()
     expect(await processNextJob(onFailed)).toBe('did')
     const job = (await db.jobs.toArray())[0]
-    expect(job.status).toBe('failed')
-    expect(job.attempts).toBe(1)
+    expect([job.status, job.refused, job.attempts]).toEqual(['failed', true, 1])
     expect(onFailed).toHaveBeenCalledTimes(1)
+
+    // "Remove" on the picture drops the transfer with it.
+    await deleteLocalAttachment(job.attachmentId)
+    expect(await db.jobs.count()).toBe(0)
   })
 
   it('does not change image order when an image is downloaded', async () => {

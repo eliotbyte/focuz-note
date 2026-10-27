@@ -50,7 +50,7 @@ export default function NoteFiles({ noteId, mayEdit = false }: { noteId: number;
         {files.map(a => (
           <li key={a.id}>
             <FileChip att={a} onPreview={() => setPreview(attachmentSource(a, mayEdit))}>
-              <UploadBadge state={uploads.get(a.id!)} />
+              <UploadBadge state={uploads.get(a.id!)} attachmentId={a.id} />
             </FileChip>
           </li>
         ))}

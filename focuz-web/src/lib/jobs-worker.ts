@@ -4,14 +4,14 @@
 //  - a job that cannot run yet (note not on the server, backoff) never blocks the others;
 //  - "server unreachable" is not a job failure: the job just waits, attempts are not counted;
 //  - "too many requests" (429) is not one either: the whole queue pauses for THROTTLE_WAIT_MS;
-//  - a request the server refuses (other 4xx) fails at once: sending it again gives the same answer;
-//  - other errors are retried with exponential backoff and marked `failed` after MAX_ATTEMPTS,
-//    then only a manual retry (status popover) re-queues them.
+//  - a request the server refuses (other 4xx) fails at once: sending it again gives the same answer.
+//    Only these jobs are `failed`; the picture itself shows it (UploadBadge, MissingPicture);
+//  - other errors are retried with exponential backoff (up to 5 minutes apart) for as long as it takes:
+//    the user can do nothing about a server error, so there is nothing to show them.
 import { db } from './db'
 import { ApiError, api, apiBlob, apiMultipart, fetchBlobUrl, isNetworkError, isTransientError } from './api'
 import type { AttachmentRecord, JobRecord } from './types'
 
-export const MAX_ATTEMPTS = 5
 const RUNNING_STALE_MS = 3 * 60 * 1000
 const WAIT_FOR_NOTE_MS = 3000
 /** The API's rate limiter answers 429 with Retry-After: 1. Wait a little longer than that. */
@@ -146,19 +146,17 @@ async function settle(job: JobRecord, outcome: JobOutcome): Promise<void> {
       break
     case 'retry': {
       const attempts = (job.attempts ?? 0) + 1
-      const failed = attempts >= MAX_ATTEMPTS
       await db.jobs.update(job.id!, {
-        status: failed ? 'failed' : 'pending',
+        status: 'pending',
         attempts,
         updatedAt: nowIso,
-        nextAttemptAt: failed ? null : new Date(now + retryDelayMs(attempts)).toISOString(),
+        nextAttemptAt: new Date(now + retryDelayMs(attempts)).toISOString(),
         lastError: errorText(outcome.error),
       })
-      if (failed) outcome = { kind: 'failed', error: outcome.error }
       break
     }
     case 'failed':
-      await db.jobs.update(job.id!, { status: 'failed', attempts: (job.attempts ?? 0) + 1, updatedAt: nowIso, nextAttemptAt: null, lastError: errorText(outcome.error) })
+      await db.jobs.update(job.id!, { status: 'failed', refused: true, attempts: (job.attempts ?? 0) + 1, updatedAt: nowIso, nextAttemptAt: null, lastError: errorText(outcome.error) })
       break
   }
   emitJobsChanged()
@@ -185,9 +183,8 @@ export async function processNextJob(onFailed?: (job: JobRecord, error: unknown)
     if (!(await claim(job))) continue
     lastPriority = job.priority
     const outcome = await runJob(job)
-    const finalKind = outcome.kind === 'retry' && (job.attempts ?? 0) + 1 >= MAX_ATTEMPTS ? 'failed' : outcome.kind
     await settle(job, outcome)
-    if (finalKind === 'failed' && onFailed) onFailed(job, (outcome as any).error)
+    if (outcome.kind === 'failed' && onFailed) onFailed(job, outcome.error)
     if (outcome.kind === 'deferred') continue
     if (outcome.kind === 'offline') return 'offline'
     // The limit is per user: the next job would get 429 too.
@@ -214,14 +211,20 @@ export async function ensureDownloadJob(attachmentLocalId: number, priority: num
   })
 }
 
-/** Re-queue every failed job (manual "Retry" in the status popover). */
-export async function retryFailedJobs(): Promise<number> {
-  const n = await db.jobs.where('status').equals('failed').modify({ status: 'pending', attempts: 0, nextAttemptAt: null, updatedAt: new Date().toISOString() })
+/** Re-queue failed jobs: all of them, or those of one attachment ("Try again" on the picture). */
+export async function retryFailedJobs(attachmentId?: number): Promise<number> {
+  const failed = db.jobs.where('status').equals('failed')
+  const n = await (attachmentId == null ? failed : failed.and(j => j.attachmentId === attachmentId))
+    .modify({ status: 'pending', refused: false, attempts: 0, nextAttemptAt: null, updatedAt: new Date().toISOString() })
   emitJobsChanged()
   return n
 }
 
-/** Called once per leader start: jobs left "running" by a closed tab become runnable again. */
+/**
+ * Called once per leader start: jobs left "running" by a closed tab become runnable again, and so do
+ * jobs that older versions gave up on after a few server errors (only refusals stay failed now).
+ */
 export async function releaseStaleRunningJobs(): Promise<void> {
   await db.jobs.where('status').equals('running').modify({ status: 'pending' })
+  await db.jobs.where('status').equals('failed').and(j => !j.refused).modify({ status: 'pending', attempts: 0, nextAttemptAt: null })
 }

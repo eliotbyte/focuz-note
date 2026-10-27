@@ -16,6 +16,8 @@ import { changePassword, errorText, updateMe } from '../lib/spaces-api'
 import { getThemePreference, setThemePreference, type ThemePreference } from '../lib/theme'
 import { getServer, serverLabel } from '../lib/server'
 import { useAppState } from '../lib/app-state'
+import { syncNow } from '../lib/sync'
+import { useUnsentCount } from './SystemStatus'
 import { notify } from '../ui/notify'
 import { createApiToken, listApiTokens, revokeApiToken, type ApiTokenInfo, type ApiTokenScope } from '../lib/api-tokens'
 
@@ -287,12 +289,21 @@ function AppearanceTab() {
 function AboutTab() {
   const lastSyncAt = useAppState(s => s.lastSyncAt)
   const reachable = useAppState(s => s.serverReachable)
+  const syncing = useAppState(s => s.syncing)
+  const unsent = useUnsentCount()
   const server = getServer()
   return (
     <div className="space-y-3 text-sm">
       <dl className="settings-dl">
         <dt>Server</dt><dd>{serverLabel(server)}<span className="block text-xs text-secondary break-all">{server}</span></dd>
         <dt>Status</dt><dd>{reachable ? 'Connected' : 'Unreachable right now'}{lastSyncAt ? <span className="block text-xs text-secondary">Last sync {new Date(lastSyncAt).toLocaleString()}</span> : null}</dd>
+        <dt>Sync</dt>
+        <dd>
+          {unsent === 0 ? 'Everything is on the server' : `${unsent} ${unsent === 1 ? 'change' : 'changes'} not sent yet`}
+          <button type="button" className="button button-secondary mt-2 block" disabled={syncing} onClick={() => { void syncNow() }}>
+            {syncing ? 'Syncing…' : 'Sync now'}
+          </button>
+        </dd>
         <dt>App</dt><dd>focuz web</dd>
       </dl>
       <p className="settings-note">To use another server, sign out and choose it on the sign-in screen.</p>

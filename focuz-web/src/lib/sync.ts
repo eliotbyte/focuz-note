@@ -287,7 +287,10 @@ async function jobTick() {
   let next = JOB_IDLE_TICK_MS
   if (canTalkToServer() && navigator.onLine !== false && !jobsPausedOffline) {
     try {
-      const r = await processNextJob((job, error) => markJobFailed(job.kind, String((error as any)?.message || error || '')))
+      const r = await processNextJob((job, error) => {
+        // A refused download is shown on the picture; a refused upload is worth a toast too.
+        if (job.kind === 'attachment-upload') void db.attachments.get(job.attachmentId).then(a => markJobFailed(job.kind, String((error as any)?.message || error || ''), a?.fileName))
+      })
       // Background downloads (hundreds after a first sync) leave the tab room between pictures;
       // a picture coming on screen is queued ahead of them and runs at once.
       if (r === 'did') next = lastJobPriority() >= BACKGROUND_DOWNLOAD_PRIORITY ? BACKGROUND_JOB_GAP_MS : 0
@@ -310,8 +313,9 @@ export async function requestAttachmentPrefetch(attachmentLocalId: number, prior
   kickJobs()
 }
 
-export async function retryFailedAttachments(): Promise<void> {
-  await retryFailedJobs()
+/** Try failed transfers again: all of them, or one picture's ("Try again" on the picture). */
+export async function retryFailedAttachments(attachmentLocalId?: number): Promise<void> {
+  await retryFailedJobs(attachmentLocalId)
   jobsPausedOffline = false
   kickJobs()
 }

@@ -405,12 +405,16 @@ static stripes under reduced motion. Spinners: `.auth-spinner` (16px), `.upload-
   sign-in. Pictures still downloading: their box with `--c-media-bg`; in tiles with a centred 12px
   `.upload-spinner` (`.tile-media-loading`) and `aria-busy` on the tile's media.
 - Error: inline next to what failed, `--c-danger` text with an icon or a `role="alert"` line, plus a way to
-  retry. Toasts only for events, not for continuous state (the status chip shows that).
+  retry. Toasts only for events, not for continuous state (the status chip shows that). A picture or
+  file that failed shows it on itself: a red `.upload-badge.is-action` that opens the reason with
+  "Remove" / "Try again", or a "not available on the server" box with "Try again". Never a global counter.
 
 ### App chrome
 
 - Top bar: transparent over a canvas-coloured fade; brand `focuz` with `.brand-mark` (green gel diamond).
-  Right side: status chip (droplet, 30px), bell, settings (`.icon-btn .icon-35`).
+  Right side: status chip (droplet, 30px), bell, settings (`.icon-btn .icon-35`). The chip is there only
+  while notes cannot reach the server (offline, no connection, not syncing, signed out), amber, red only
+  for signed out; when everything syncs there is no chip. Sync details and "Sync now" live in Settings → About.
 - Sidebar: space rail (Wii U bezel tiles, 46px; selected tile has a green bezel and the side pill;
   unselected tiles are `scale(0.9)` and slightly dimmer, XMB) + glass panel with space header and folder
   tree.

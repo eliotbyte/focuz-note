@@ -24,6 +24,7 @@ export interface AppStateSnapshot {
   lastJobFailureAt: string | null
   lastJobFailureKind: JobKind | null
   lastJobFailureMessage: string | null
+  lastJobFailureFile: string | null
 }
 
 let state: AppStateSnapshot = {
@@ -40,6 +41,7 @@ let state: AppStateSnapshot = {
   lastJobFailureAt: null,
   lastJobFailureKind: null,
   lastJobFailureMessage: null,
+  lastJobFailureFile: null,
 }
 
 const listeners = new Set<() => void>()
@@ -65,7 +67,8 @@ function setState(partial: Partial<AppStateSnapshot>) {
     next.jobsFailedCount === state.jobsFailedCount &&
     next.lastJobFailureAt === state.lastJobFailureAt &&
     next.lastJobFailureKind === state.lastJobFailureKind &&
-    next.lastJobFailureMessage === state.lastJobFailureMessage
+    next.lastJobFailureMessage === state.lastJobFailureMessage &&
+    next.lastJobFailureFile === state.lastJobFailureFile
   if (same) return
   state = next
   emit()
@@ -163,10 +166,11 @@ export function markConflictsDetected(count: number): void {
   setState({ lastConflictAt: new Date().toISOString(), lastConflictCount: n })
 }
 
-export function markJobFailed(kind: JobKind, message?: string | null): void {
+export function markJobFailed(kind: JobKind, message?: string | null, fileName?: string | null): void {
   setState({
     lastJobFailureAt: new Date().toISOString(),
     lastJobFailureKind: kind,
     lastJobFailureMessage: message ? String(message) : null,
+    lastJobFailureFile: fileName ?? null,
   })
 }

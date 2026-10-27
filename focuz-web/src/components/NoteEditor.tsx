@@ -287,7 +287,7 @@ export default function NoteEditor({
                 ) : (
                   <div className="thumb-empty">img</div>
                 )}
-                <UploadBadge state={existingUploads.get(att.id!)} />
+                <UploadBadge state={existingUploads.get(att.id!)} attachmentId={att.id} />
                 <button
                   type="button"
                   className="thumb-remove"
@@ -337,7 +337,7 @@ export default function NoteEditor({
                   onRemove={() => { if (att.id != null) void deleteLocalAttachment(att.id).catch(() => {}) }}
                   onOpen={() => setOpenDoc(attachmentSource(att, true))}
                 >
-                  <UploadBadge state={existingUploads.get(att.id!)} />
+                  <UploadBadge state={existingUploads.get(att.id!)} attachmentId={att.id} />
                 </EditableFileChip>
               </li>
             ))}

@@ -126,8 +126,10 @@ export interface JobRecord {
   attachmentId: number
   priority: number
   // pending: will run (not before nextAttemptAt); running: claimed by a worker;
-  // failed: gave up after repeated non-network errors, waits for a manual retry.
+  // failed: the server refused it (4xx); the picture shows it and offers to try again.
   status: JobStatus
+  // Set with `failed`. Failed jobs without it come from older versions that gave up on server errors.
+  refused?: boolean
   attempts: number
   createdAt: string
   updatedAt: string

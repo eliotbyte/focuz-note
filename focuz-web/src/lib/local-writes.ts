@@ -157,8 +157,10 @@ export async function deleteLocalAttachment(attachmentLocalId: number): Promise<
   const now = new Date().toISOString()
   const att = await db.attachments.get(attachmentLocalId)
   if (!att) return
-  await db.transaction('rw', db.attachments, db.notes, async () => {
+  await db.transaction('rw', db.attachments, db.notes, db.jobs, async () => {
     await db.attachments.update(attachmentLocalId, { deletedAt: now, modifiedAt: now, isDirty: 1 })
+    // A transfer the server refused would never run again: it would only keep the file marked.
+    await db.jobs.where('attachmentId').equals(attachmentLocalId).and(j => j.status === 'failed').delete()
     // Touch parent note so /sync will accept attachment edits
     const note = await db.notes.get(att.noteId)
     if (note?.id) {

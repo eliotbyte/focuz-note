@@ -6,8 +6,10 @@ import { useUploadStates, type UploadState } from '../lib/useUploadStates'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { AttachmentRecord } from '../lib/types'
 import { attachments as attachmentsRepo } from '../data'
-import { requestAttachmentPrefetch } from '../lib/sync'
+import { requestAttachmentPrefetch, retryFailedAttachments } from '../lib/sync'
+import { db } from '../lib/db'
 import { isPicture } from '../lib/attachment-files'
+import ImageNotSupportedRounded from '@mui/icons-material/ImageNotSupportedRounded'
 import { IMAGE_LONG_RATIO, isLongImage } from '../lib/image'
 
 // Images in the feed never grow past their own size and never get taller than this.
@@ -180,7 +182,7 @@ function SingleImage({ att, upload, onOpen }: { att: AttachmentRecord; upload?: 
   if (!att.data) {
     return (
       <div ref={ref} className="rounded-[var(--radius)] media-frame h-[160px] flex items-center justify-center text-muted">
-        Loading…
+        <PicturePlaceholder att={att} />
       </div>
     )
   }
@@ -211,7 +213,7 @@ function SingleImage({ att, upload, onOpen }: { att: AttachmentRecord; upload?: 
           draggable={false}
         />
       )}
-      <UploadBadge state={upload} />
+      <UploadBadge state={upload} attachmentId={att.id} />
     </div>
   )
 }
@@ -283,9 +285,9 @@ function Collage({ attachments, uploads, onOpen }: { attachments: AttachmentReco
                       </>
                     )
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
+                    <div className="w-full h-full flex items-center justify-center text-muted"><PicturePlaceholder att={att} /></div>
                   )}
-                  <UploadBadge state={uploads.get(att.id!)} />
+                  <UploadBadge state={uploads.get(att.id!)} attachmentId={att.id} />
                 </div>
               )
             })}
@@ -408,9 +410,9 @@ function Carousel({ attachments, uploads, index, onIndexChange, onOpen }: {
                 </>
               )
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
+              <div className="w-full h-full flex items-center justify-center text-muted"><PicturePlaceholder att={att} /></div>
             )}
-            <UploadBadge state={uploads.get(att.id!)} />
+            <UploadBadge state={uploads.get(att.id!)} attachmentId={att.id} />
           </div>
         ))}
       </div>
@@ -555,13 +557,43 @@ export function NoteTileImages({ attachments, className }: { attachments: Attach
         <div key={a.id ?? i} className="tile-media-cell">
           {a.data
             ? <AttImg att={a} alt={a.fileName} className={tileImgClass(a.id != null ? dims[a.id] : undefined)} draggable={false} />
-            : <span className="tile-media-loading" title="Loading picture" aria-hidden><span className="upload-spinner" /></span>}
-          <UploadBadge state={uploads.get(a.id!)} />
+            : <TilePlaceholder att={a} />}
+          <UploadBadge state={uploads.get(a.id!)} attachmentId={a.id} />
           {more > 0 && i === shown.length - 1 && <span className="tile-media-more">+{more}</span>}
         </div>
       ))}
     </div>
   )
+}
+
+/** Whether the server refused to send this picture (it is gone, or no longer shared with the user). */
+function useDownloadRefused(att: AttachmentRecord): boolean {
+  return useLiveQuery(
+    () => att.id == null || att.data ? false : db.jobs.where('attachmentId').equals(att.id)
+      .filter(j => j.kind === 'attachment-download' && j.status === 'failed').count().then(n => n > 0),
+    [att.id, !!att.data],
+  ) ?? false
+}
+
+// A picture that is not on this device yet. It loads by itself, retrying through bad connections;
+// only a picture the server will not send says so and offers to ask again.
+function PicturePlaceholder({ att }: { att: AttachmentRecord }) {
+  const refused = useDownloadRefused(att)
+  if (!refused) return <>Loading…</>
+  return (
+    <span className="flex flex-col items-center gap-2 text-center px-3">
+      <span>This picture is not available on the server.</span>
+      <button type="button" className="button button-secondary" onClick={e => { e.stopPropagation(); void retryFailedAttachments(att.id) }}>
+        Try again
+      </button>
+    </span>
+  )
+}
+
+function TilePlaceholder({ att }: { att: AttachmentRecord }) {
+  const refused = useDownloadRefused(att)
+  if (refused) return <span className="tile-media-loading" title="This picture is not available on the server"><ImageNotSupportedRounded fontSize="inherit" /></span>
+  return <span className="tile-media-loading" title="Loading picture" aria-hidden><span className="upload-spinner" /></span>
 }
 
 // Tiles crop pictures to fill the cell; a small one keeps its own size, centred, and a tall one is
