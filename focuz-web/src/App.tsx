@@ -622,6 +622,18 @@ function App() {
     return () => ro.disconnect()
   }, [authed, headerHidden])
 
+  // Width of the scroll container's scrollbar (0 for overlay scrollbars), so the fixed header can leave it uncovered.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const root = document.documentElement
+    if (!authed || !el) { root.style.removeProperty('--scrollbar-w'); return }
+    const update = () => root.style.setProperty('--scrollbar-w', `${el.offsetWidth - el.clientWidth}px`)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [authed])
+
   // Hide on scroll down, show on scroll up. At scrollTop=0 always show.
   useEffect(() => {
     const root = document.documentElement
@@ -1190,8 +1202,10 @@ function App() {
     <div className="h-dvh">
       <header
         ref={topbarRef}
-        className="fixed left-0 right-0 top-0 layer-topbar"
+        className="fixed left-0 top-0 layer-topbar"
         style={{
+          // Stop at the scroll container's scrollbar instead of covering it.
+          right: 'var(--scrollbar-w, 0px)',
           transform: headerHidden ? 'translateY(-100%)' : 'translateY(0)',
           transition: 'transform var(--dur-small) var(--ease-standard)',
           willChange: 'transform',
@@ -1227,8 +1241,8 @@ function App() {
         ref={scrollRef}
         className="fixed inset-0 overflow-y-auto"
         style={{
-          paddingTop: 'var(--topbar-effective-h, var(--topbar-h, 96px))',
-          transition: 'padding-top var(--dur-small) var(--ease-standard)',
+          // Constant: the header slides over the content. Changing the padding when it hides moved the feed under the reader.
+          paddingTop: authed ? 'var(--topbar-h, 96px)' : 0,
           // Keep the scrollbar's room even when a short feed needs no scrolling, so the layout does not shift sideways.
           scrollbarGutter: 'stable',
         }}
@@ -1258,10 +1272,11 @@ function App() {
               className="hidden md:block py-4 self-start"
               style={{
                 position: 'sticky',
-                // The global scroll container already has padding-top = topbar height.
-                // So sticky top should be 0 to avoid double offset.
-                top: 0,
+                // Sticky offsets count from the scroll container's padding edge (padding-top = topbar height),
+                // so a hidden header pulls the sidebar up by that height.
+                top: 'calc(var(--topbar-effective-h, var(--topbar-h, 96px)) - var(--topbar-h, 96px))',
                 height: 'calc(100vh - var(--topbar-effective-h, var(--topbar-h, 96px)))',
+                transition: 'top var(--dur-small) var(--ease-standard), height var(--dur-small) var(--ease-standard)',
               }}
             >
               <div className="h-full flex gap-2">
