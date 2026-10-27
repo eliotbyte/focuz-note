@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAttachmentUrl } from '../lib/useObjectUrl'
 import UploadBadge from './UploadBadge'
@@ -8,6 +8,7 @@ import type { AttachmentRecord } from '../lib/types'
 import { attachments as attachmentsRepo } from '../data'
 import { requestAttachmentPrefetch } from '../lib/sync'
 import { isPicture } from '../lib/attachment-files'
+import { IMAGE_LONG_RATIO, isLongImage } from '../lib/image'
 
 // Images in the feed never grow past their own size and never get taller than this.
 const MAX_MEDIA_HEIGHT = 360
@@ -17,12 +18,21 @@ const NONE: AttachmentRecord[] = []
 // Up to this many pictures are packed together; more go into the carousel.
 const MAX_COLLAGE = 3
 const COLLAGE_GAP = 4
+// In a grid tile, pictures with a short side under this are shown at their own size instead of
+// being blown up to fill the cell.
+const TILE_SMALL_SIDE = 320
+
+const isLong = (d?: { w: number; h: number }) => !!d && isLongImage({ width: d.w, height: d.h })
+// A long picture cropped in a preview: a tall one (a chat or page screenshot) from its top.
+const coverClass = (d?: { w: number; h: number }) => (d && d.h > d.w ? 'media-cover media-cover-top' : 'media-cover')
 
 export default function NoteImages({ noteId }: { noteId: number }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
   const [slide, setSlide] = useState(0)
   const wheelAccumRef = useRef(0)
   const wheelCooldownRef = useRef<number | null>(null)
+  // Pictures the viewer has loaded: long ones scroll instead of shrinking to fit the screen.
+  const [viewerDims, setViewerDims] = useState<Record<number, { w: number; h: number }>>({})
 
   // Documents are listed under the text (NoteFiles).
   const attachments = (useLiveQuery(async () => {
@@ -70,6 +80,10 @@ export default function NoteImages({ noteId }: { noteId: number }) {
 
   if (attachments.length === 0) return null
 
+  const viewerAtt = viewerIndex != null ? attachments[viewerIndex] : undefined
+  const viewerDim = viewerAtt?.id != null ? viewerDims[viewerAtt.id] : undefined
+  const viewerLong = isLong(viewerDim)
+
   return (
     <div>
       {attachments.length === 1
@@ -84,6 +98,8 @@ export default function NoteImages({ noteId }: { noteId: number }) {
             className="fixed inset-0 layer-popover"
             onClick={() => setViewerIndex(null)}
             onWheel={(e) => {
+              // A long picture takes the wheel to scroll; the arrows and keys still flip.
+              if (viewerLong) return
               e.preventDefault()
               // Debounce to approximate one step per wheel turn
               if (wheelCooldownRef.current != null) return
@@ -101,13 +117,22 @@ export default function NoteImages({ noteId }: { noteId: number }) {
             }}
           >
             <div className="absolute inset-0 bg-black/60" />
-            <div className="absolute inset-0 flex items-center justify-center p-4">
-              {attachments[viewerIndex]?.data ? (
+            <div className={viewerLong ? 'absolute inset-0 flex overflow-auto overscroll-contain p-4' : 'absolute inset-0 flex items-center justify-center p-4'}>
+              {viewerAtt?.data ? (
                 <AttImg
-                  att={attachments[viewerIndex]!}
-                  alt={attachments[viewerIndex]?.fileName}
-                  className="max-w-[95vw] max-h-[95vh] w-auto h-auto object-contain"
+                  att={viewerAtt}
+                  alt={viewerAtt.fileName}
+                  // Never enlarged past its own size. A long picture is shown whole across its short side
+                  // and scrolls along the long one (m-auto centres it without cutting off the start).
+                  className={!viewerLong
+                    ? 'max-w-[95vw] max-h-[95vh] w-auto h-auto object-contain'
+                    : viewerDim!.h > viewerDim!.w ? 'm-auto block max-w-full w-auto h-auto' : 'm-auto block max-h-full w-auto h-auto max-w-none'}
                   draggable={false}
+                  onLoad={(e) => {
+                    const id = viewerAtt.id
+                    const img = e.currentTarget
+                    if (id != null && !viewerDims[id]) setViewerDims(prev => ({ ...prev, [id]: { w: img.naturalWidth, h: img.naturalHeight } }))
+                  }}
                 />
               ) : (
                 <div className="text-secondary">Loading…</div>
@@ -143,9 +168,14 @@ export default function NoteImages({ noteId }: { noteId: number }) {
 }
 
 // One picture: shown at its own size, only ever scaled down to fit the card and the height cap. No cropping.
+// A long picture (a page screenshot, a panorama) is cropped to a frame of at most IMAGE_LONG_RATIO;
+// the viewer shows it whole.
 function SingleImage({ att, upload, onOpen }: { att: AttachmentRecord; upload?: UploadState; onOpen: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null)
   usePrefetchWhenVisible(ref, att.data ? [] : [att])
+  const one = useMemo(() => [att], [att])
+  const dims = useImageDimensions(one)
+  const d = att.id != null ? dims[att.id] : undefined
 
   if (!att.data) {
     return (
@@ -163,13 +193,24 @@ function SingleImage({ att, upload, onOpen }: { att: AttachmentRecord; upload?: 
       aria-label="Open image"
       tabIndex={-1}
     >
-      <AttImg
-        att={att}
-        alt={att.fileName}
-        className="block w-auto h-auto max-w-full"
-        style={{ maxHeight: `min(${MAX_MEDIA_HEIGHT}px, 60vh)` }}
-        draggable={false}
-      />
+      {isLong(d) ? (
+        <div
+          className="relative max-w-full"
+          style={d!.h > d!.w
+            ? { height: `min(${MAX_MEDIA_HEIGHT}px, 60vh, ${d!.h}px)`, aspectRatio: `1 / ${IMAGE_LONG_RATIO}` }
+            : { width: d!.w, aspectRatio: `${IMAGE_LONG_RATIO} / 1`, maxHeight: `min(${MAX_MEDIA_HEIGHT}px, 60vh)` }}
+        >
+          <AttImg att={att} alt={att.fileName} className={coverClass(d)} draggable={false} />
+        </div>
+      ) : (
+        <AttImg
+          att={att}
+          alt={att.fileName}
+          className="block w-auto h-auto max-w-full"
+          style={{ maxHeight: `min(${MAX_MEDIA_HEIGHT}px, 60vh)` }}
+          draggable={false}
+        />
+      )}
       <UploadBadge state={upload} />
     </div>
   )
@@ -201,6 +242,8 @@ function Collage({ attachments, uploads, onOpen }: { attachments: AttachmentReco
     const d = a.id != null ? dims[a.id] : undefined
     return d && d.w > 0 && d.h > 0 ? d : { w: 1, h: 1 }
   }
+  // A long picture is cropped, so it takes the room of one at the ratio limit, not a sliver or the whole row.
+  const shareOf = (i: number) => Math.min(Math.max(sizeOf(i).w / sizeOf(i).h, 1 / IMAGE_LONG_RATIO), IMAGE_LONG_RATIO)
   const rows: Array<{ items: number[]; maxH: number }> = attachments.length === 2
     ? [{ items: [0, 1], maxH: 320 }]
     : [{ items: [0], maxH: 260 }, { items: [1, 2], maxH: 180 }]
@@ -210,7 +253,7 @@ function Collage({ attachments, uploads, onOpen }: { attachments: AttachmentReco
   return (
     <div ref={rootRef} className="flex flex-col" style={{ gap: COLLAGE_GAP }}>
       {W > 0 && rows.map((row, r) => {
-        const ratios = row.items.map(i => sizeOf(i).w / sizeOf(i).h)
+        const ratios = row.items.map(shareOf)
         const free = W - COLLAGE_GAP * (row.items.length - 1)
         const fitted = free / ratios.reduce((s, x) => s + x, 0)
         // Small pictures get a row no taller than the tallest of them, not a big empty frame.
@@ -231,10 +274,14 @@ function Collage({ attachments, uploads, onOpen }: { attachments: AttachmentReco
                   tabIndex={-1}
                 >
                   {att.data ? (
-                    <>
-                      <AttImg att={att} className="media-backdrop" draggable={false} />
-                      <AttImg att={att} alt={att.fileName} className="media-fit" draggable={false} />
-                    </>
+                    isLong(sizeOf(i)) ? (
+                      <AttImg att={att} alt={att.fileName} className={coverClass(sizeOf(i))} draggable={false} />
+                    ) : (
+                      <>
+                        <AttImg att={att} className="media-backdrop" draggable={false} />
+                        <AttImg att={att} alt={att.fileName} className="media-fit" draggable={false} />
+                      </>
+                    )
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
                   )}
@@ -352,10 +399,14 @@ function Carousel({ attachments, uploads, index, onIndexChange, onOpen }: {
             tabIndex={-1}
           >
             {att.data ? (
-              <>
-                <AttImg att={att} className="media-backdrop" draggable={false} />
-                <AttImg att={att} alt={att.fileName} className="media-fit" draggable={false} />
-              </>
+              att.id != null && isLong(dims[att.id]) ? (
+                <AttImg att={att} alt={att.fileName} className={coverClass(dims[att.id])} draggable={false} />
+              ) : (
+                <>
+                  <AttImg att={att} className="media-backdrop" draggable={false} />
+                  <AttImg att={att} alt={att.fileName} className="media-fit" draggable={false} />
+                </>
+              )
             ) : (
               <div className="w-full h-full flex items-center justify-center text-muted">Loading…</div>
             )}
@@ -466,7 +517,10 @@ function useImageDimensions(attachments: AttachmentRecord[]) {
   return dims
 }
 
-function AttImg({ att, alt, className, style, draggable }: { att: AttachmentRecord; alt?: string; className?: string; style?: React.CSSProperties; draggable?: boolean }) {
+function AttImg({ att, alt, className, style, draggable, onLoad }: {
+  att: AttachmentRecord; alt?: string; className?: string; style?: React.CSSProperties; draggable?: boolean
+  onLoad?: React.ReactEventHandler<HTMLImageElement>
+}) {
   const url = useAttachmentUrl(att)
   if (!url) return null
   return (
@@ -476,6 +530,7 @@ function AttImg({ att, alt, className, style, draggable }: { att: AttachmentReco
       className={className}
       style={style}
       draggable={draggable}
+      onLoad={onLoad}
     />
   )
 }
@@ -485,7 +540,8 @@ function AttImg({ att, alt, className, style, draggable }: { att: AttachmentReco
 // more show the first four with "+N" on the last.
 export function NoteTileImages({ attachments, className }: { attachments: AttachmentRecord[]; className?: string }) {
   const ref = useRef<HTMLDivElement | null>(null)
-  const shown = attachments.slice(0, 4)
+  const shown = useMemo(() => attachments.slice(0, 4), [attachments])
+  const dims = useImageDimensions(shown)
   const uploads = useUploadStates(shown)
   usePrefetchWhenVisible(ref, shown.filter(a => !a.data))
   if (attachments.length === 0) return null
@@ -496,7 +552,7 @@ export function NoteTileImages({ attachments, className }: { attachments: Attach
       {shown.map((a, i) => (
         <div key={a.id ?? i} className="tile-media-cell">
           {a.data
-            ? <AttImg att={a} alt={a.fileName} className="tile-media-img" draggable={false} />
+            ? <AttImg att={a} alt={a.fileName} className={tileImgClass(a.id != null ? dims[a.id] : undefined)} draggable={false} />
             : <span className="tile-media-loading" title="Loading picture" aria-hidden><span className="upload-spinner" /></span>}
           <UploadBadge state={uploads.get(a.id!)} />
           {more > 0 && i === shown.length - 1 && <span className="tile-media-more">+{more}</span>}
@@ -504,4 +560,12 @@ export function NoteTileImages({ attachments, className }: { attachments: Attach
       ))}
     </div>
   )
+}
+
+// Tiles crop pictures to fill the cell; a small one keeps its own size, centred, and a tall one is
+// cropped from its top.
+function tileImgClass(d?: { w: number; h: number }): string {
+  if (!d) return 'tile-media-img'
+  if (Math.min(d.w, d.h) < TILE_SMALL_SIDE) return 'tile-media-img is-small'
+  return d.h > d.w * 1.2 ? 'tile-media-img media-cover-top' : 'tile-media-img'
 }

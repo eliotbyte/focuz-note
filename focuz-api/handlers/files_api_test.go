@@ -140,7 +140,7 @@ func (s *E2ETestSuite) Test330_AgentFiles() {
 	s.Contains(blockText(res, 0), `"fileType": "image/png"`)
 	s.Contains(blockText(res, 0), `"picture": true`)
 	res = s.mcpTool(ownerTok, "attach_files", map[string]any{"noteId": note.ID, "files": []any{
-		map[string]any{"fileName": "icon.png", "base64": base64.StdEncoding.EncodeToString(testPNG(100))},
+		map[string]any{"fileName": "icon.png", "base64": base64.StdEncoding.EncodeToString(testPNG(32))},
 	}})
 	s.Equal(true, res["isError"])
 	s.Contains(blockText(res, 0), "short side")
@@ -230,7 +230,7 @@ func (s *E2ETestSuite) Test331_AgentPictureOnlyNote() {
 	space := s.createSpace(tok, "Pictures")
 	// A picture alone makes a note; a refused picture makes none.
 	res := s.mcpTool(tok, "create_note", map[string]any{"spaceId": space, "files": []any{
-		map[string]any{"fileName": "small.png", "base64": base64.StdEncoding.EncodeToString(testPNG(300))},
+		map[string]any{"fileName": "small.png", "base64": base64.StdEncoding.EncodeToString(testPNG(40))},
 	}})
 	s.Equal(true, res["isError"])
 	s.Contains(blockText(res, 0), "small.png: The picture is not accepted")

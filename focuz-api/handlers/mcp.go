@@ -23,7 +23,7 @@ import (
 
 const (
 	mcpProtocolVersion = "2025-06-18"
-	mcpServerVersion   = "0.3.6"
+	mcpServerVersion   = "0.3.7"
 	// Room for a file sent inline as base64 (attach_files); bigger files go through get_upload_link.
 	maxMCPBodyBytes = 16 << 20
 	mcpInstructions = "Focuz is the user's notes app and long-term memory; the user also reads it themselves. " +
@@ -604,7 +604,7 @@ var mcpTools = []mcpTool{
 	{
 		Name: "attach_files",
 		Description: "Attach files to a note: text files you write (Markdown, plain text, CSV) as text, small other files as base64. " +
-			"Pictures (JPEG, PNG, WebP; at least 480 px on the short side) show in the note; documents (PDF, Word, Excel, PowerPoint, " +
+			"Pictures (JPEG, PNG, WebP; at least 64 px on the short side, the long side at most 8 times the short one and 8000 px) show in the note; documents (PDF, Word, Excel, PowerPoint, " +
 			"OpenDocument, RTF) show as files. The type is read from the content. For a file on disk, use get_upload_link instead.",
 		Schema: objectSchema(map[string]any{
 			"noteId": idSchema,

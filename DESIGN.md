@@ -341,6 +341,10 @@ with an Undo toast, never a confirm dialog.
   note with replies (the replies link takes the left of the footer) keep the footer row.
 - Tile: glass square, `--r-lg`, hover lifts 2px with the hot-track glow; picture tiles keep text on a
   dark fade.
+- Pictures are never enlarged past their own size: in a tile a small one (short side under 320 px)
+  sits centred at its size (`.tile-media-img.is-small`). A long one (beyond 1:2.4, a page screenshot or
+  a panorama) is cropped in previews (`.media-cover`, a tall one from its top); the viewer shows it whole
+  across its short side and scrolls along the long one.
 - Tree rows (`.filter-row`): 32px, `--r-sm`; hover tint 6 %; selected = selection glow + 600.
 - Member rows, bell items, settings rows: 40px min, `--r-sm`.
 

@@ -72,7 +72,7 @@ describe('export and import of a space', () => {
     await add('broken.webp', 'image/webp', 2)
     await add('notes.md', 'text/markdown', 3)
     dimsMock.mockImplementation(async (f: File) => {
-      if (f.name === 'tiny.webp') return { width: 300, height: 200 }
+      if (f.name === 'tiny.webp') return { width: 48, height: 32 }
       if (f.name === 'broken.webp') throw new Error('Failed to read image')
       return { width: 1280, height: 720 }
     })

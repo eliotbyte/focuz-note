@@ -327,9 +327,11 @@ func (h *NotesAPIHandler) uploadLink(ctx mcpCtx, noteID int) (gin.H, error) {
 }
 
 func uploadLimitsText() string {
-	return fmt.Sprintf("Pictures (JPEG, PNG, WebP) up to %d MB, at least %d px on the short side; documents (PDF, Word, Excel, "+
+	return fmt.Sprintf("Pictures (JPEG, PNG, WebP) up to %d MB, at least %d px on the short side, the long side at most %d times the short one and %d px; "+
+		"documents (PDF, Word, Excel, "+
 		"PowerPoint, OpenDocument, RTF, text, Markdown, CSV) up to %d MB.",
-		initializers.Conf.MaxSize>>20, imagegeom.MinShortSide, initializers.Conf.MaxDocumentSize>>20)
+		initializers.Conf.MaxSize>>20, imagegeom.MinShortSide, imagegeom.MaxRatio, imagegeom.MaxLongSide,
+		initializers.Conf.MaxDocumentSize>>20)
 }
 
 func isTextType(ct string) bool {

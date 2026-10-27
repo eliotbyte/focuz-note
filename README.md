@@ -5,7 +5,7 @@ Integration repository that bundles:
 - `focuz-api/` (backend)
 
 **Status**: alpha  
-**Version**: 0.3.6 (changes: `CHANGELOG.md`)
+**Version**: 0.3.7 (changes: `CHANGELOG.md`)
 
 ## Environments (Docker Compose)
 
@@ -21,9 +21,9 @@ APP_ENV=test docker compose up -d --build
 
 ## Versions
 
-- **Focuz-Node**: `0.3.6` (this repo, see `package.json`)
-- **Focuz-Web**: `0.3.6` (see `focuz-web/package.json`)
-- **Focuz-API**: `0.3.6` (see `focuz-api/pkg/buildinfo`)
+- **Focuz-Node**: `0.3.7` (this repo, see `package.json`)
+- **Focuz-Web**: `0.3.7` (see `focuz-web/package.json`)
+- **Focuz-API**: `0.3.7` (see `focuz-api/pkg/buildinfo`)
 
 
 ## Tests
@@ -162,7 +162,8 @@ Files: an agent sends text files it writes (Markdown, CSV) and small files as ba
 for one note, valid 15 minutes, that it posts to with `curl -F "file=@photo.jpg" '<url>'`. `get_file` returns
 a picture as an image the agent can see and a text file as text, plus a 15-minute download link for any file.
 Links need no token, so they are as private as the agent keeps them; they stop working when the password
-changes. Pictures may be JPEG, PNG or WebP (at least 480 px on the short side). Set `PUBLIC_API_URL` when the
+changes. Pictures may be JPEG, PNG or WebP (at least 64 px on the short side, the long side at most
+8 times the short one and 8000 px). Set `PUBLIC_API_URL` when the
 API is behind a proxy, so the links carry the public address.
 
 1. Create a personal token while signed in: `POST /me/api-tokens` with `{"name": "Claude", "scope": "write"}`.

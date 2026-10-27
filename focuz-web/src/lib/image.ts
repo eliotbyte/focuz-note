@@ -116,19 +116,28 @@ export async function getImageDimensions(file: File): Promise<{ width: number; h
   }
 }
 
-// Criteria for note pictures, agreed in the to-do list: not too small, not too narrow or too tall,
-// not absurdly long. 16:9 (1.78) and 21:9 (2.33) pass; 1:3 banners and tiny thumbnails do not.
-export const IMAGE_MIN_SHORT_SIDE = 480
-export const IMAGE_MAX_RATIO = 2.4
+// Criteria for note pictures, the same as the server's (focuz-api/pkg/imagegeom). The short side only
+// keeps out icons and tracking pixels; long screenshots and panoramas up to 1:8 pass; the long side
+// guards against huge files.
+export const IMAGE_MIN_SHORT_SIDE = 64
+export const IMAGE_MAX_RATIO = 8
 export const IMAGE_MAX_LONG_SIDE = 8000
 
+// Pictures longer than this are shown cropped in previews and scroll in the viewer.
+export const IMAGE_LONG_RATIO = 2.4
+
+export function isLongImage(dim: { width: number; height: number }): boolean {
+  const minSide = Math.min(dim.width, dim.height)
+  return minSide > 0 && Math.max(dim.width, dim.height) / minSide > IMAGE_LONG_RATIO
+}
+
+// Every broken rule is named in the reason, not only the first one.
 export function validateImageGeometry(dim: { width: number; height: number }): { ok: boolean; reason?: string } {
   const minSide = Math.min(dim.width, dim.height)
   const maxSide = Math.max(dim.width, dim.height)
-  if (minSide < IMAGE_MIN_SHORT_SIDE) return { ok: false, reason: `the short side must be at least ${IMAGE_MIN_SHORT_SIDE} px` }
-  if (maxSide / minSide > IMAGE_MAX_RATIO) return { ok: false, reason: `the long side can be at most ${IMAGE_MAX_RATIO} times the short side` }
-  if (maxSide > IMAGE_MAX_LONG_SIDE) return { ok: false, reason: `the long side can be at most ${IMAGE_MAX_LONG_SIDE} px` }
-  return { ok: true }
+  const broken: string[] = []
+  if (minSide < IMAGE_MIN_SHORT_SIDE) broken.push(`the short side must be at least ${IMAGE_MIN_SHORT_SIDE} px`)
+  if (minSide <= 0 || maxSide / minSide > IMAGE_MAX_RATIO) broken.push(`the long side can be at most ${IMAGE_MAX_RATIO} times the short side`)
+  if (maxSide > IMAGE_MAX_LONG_SIDE) broken.push(`the long side can be at most ${IMAGE_MAX_LONG_SIDE} px`)
+  return broken.length ? { ok: false, reason: broken.join('; ') } : { ok: true }
 }
-
-
