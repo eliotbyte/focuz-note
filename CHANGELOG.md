@@ -3,6 +3,72 @@
 Versions before 0.2.0 were not tagged. From 0.2.0 on, each release has a `vX.Y.Z` tag, and every
 commit to `main` raises the patch number.
 
+## 0.4.0 (2026-10-27)
+
+Agents work with files and organise spaces, the feed holds thousands of notes, and sync stays quiet
+unless something needs you. Status: still alpha.
+
+### Agents (MCP)
+
+- Files: `attach_files` (text files as text, small files as base64), `create_note` takes files (also
+  without text), `get_upload_link` (a signed 15-minute link for one note to post a file from disk with
+  `curl -F file=@...`), `get_file` (a picture comes back as an image, a text file as text, any file with
+  a 15-minute download link), `delete_file`. JPEG and PNG are accepted next to WebP.
+- Organising: `create_space`, `rename_space`, `delete_space`, `restore_space`; `create_folder`,
+  `update_folder`, `delete_folder`, `restore_folder`; `list_notes` with `inTrash`.
+- `update_note` moves a note into a thread or out of one (`parentId`).
+- Note tools take `noteId` as well as `id`.
+
+### Notes and the feed
+
+- Notes move between threads: ⋮ → "Move to thread…" and "Detach from thread", with Undo; replies move
+  with the note. REST: `PATCH /notes/:id` with `parentId`.
+- Thousands of notes: the feed shows 40 notes and adds more as you scroll, and the search index is
+  rebuilt in the background. Signing in on an empty device with 2900 notes no longer freezes the tab
+  (longest block 5.2 s → 0.14 s). Pictures load lazily and download one after another with a gap.
+- Pictures: the short side must be at least 64 px (was 480), the long side up to 8 times the short one
+  (was 2.4), at most 8000 px. Previews crop long pictures; the viewer scrolls along them. Small pictures
+  are not enlarged.
+- Note cards put the footer (author, date, ⋮) at the end of the last line when it fits.
+
+### Sync
+
+- The status chip in the top bar shows only while notes cannot reach the server: Offline, No
+  connection, Not syncing, Signed out. When everything syncs there is no chip. Sync details and
+  "Sync now" are in Settings → About.
+- No "N failed" counter: transfers are retried for as long as it takes. A file the server refuses is
+  marked on the file itself, with the reason and "Remove" / "Try again" (uploads) or "Try again"
+  (a picture the server does not have).
+- The pull checkpoint comes from the server clock (`syncedAt`), so a record dated in the future no
+  longer hides later changes; a client stuck on such a checkpoint gets everything again.
+- Times with an offset (`+03:00`) keep the instant they name.
+- `/sync` refuses metric values that are not `{"data": <value of the metric's type>}`
+  (reason `invalid_value`); such values used to break the metric tools.
+
+### Fixes
+
+- A deleted space stayed readable and writable for its members; now it is gone until restored.
+- `PATCH /filters/:id` without `parentId` moved the folder to the top level; it now keeps its place.
+- File links behind a proxy that serves the API under a path (`/api`) missed the path.
+- Display: native select lists in the dark theme, the header covering the feed's scrollbar, tags stuck
+  to file chips.
+
+### Upgrading from 0.3.x
+
+- Migration `000010_timestamptz` converts every timestamp column to `TIMESTAMPTZ` (stored values were
+  UTC and stay the same instants). It rewrites the tables, so large databases take a moment on start.
+- Notes from REST and MCP no longer carry a presigned storage `url` for attachments; read files with
+  `get_file` or `GET /files/{id}/content`.
+- Behind a reverse proxy, set `PUBLIC_API_URL` (or have the proxy send `X-Forwarded-Host`,
+  `X-Forwarded-Proto` and `X-Forwarded-Prefix`), or agents' file links point to the wrong address.
+  The API logs a note at startup while it is unset.
+- Web: transfers an older version gave up on are queued again once. Rebuild both images.
+
+### Known gaps
+
+- Still no charts in the app, and no token form in the web app (tokens: `POST /me/api-tokens`).
+- No sign-in through OAuth for the claude.ai connector screen yet.
+
 ## 0.3.0 (2026-10-26)
 
 Metrics, and an agent that can use the notes as its memory. Status: still alpha.
